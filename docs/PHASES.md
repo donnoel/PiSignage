@@ -61,6 +61,8 @@ Validation:
 
 Goal: document contracts before implementation.
 
+Implementation status: initial API and MQTT contracts are documented. They are not implemented or deployed.
+
 Document but do not deploy:
 
 - Device pairing.
@@ -72,6 +74,7 @@ Document but do not deploy:
 Validation:
 
 - Review `docs/API_CONTRACT.md` for request/response examples and versioning notes.
+- Confirm the local playlist and heartbeat files map cleanly to the future playlist and heartbeat contracts.
 
 ## Phase 4: AWS Design Documentation
 

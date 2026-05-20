@@ -1,14 +1,66 @@
 # API Contract
 
-Contracts are documented before deployment. The current implementation uses local mocks and does not expose a real API.
+Phase 3 defines the API and MQTT contract before implementation. The current repository still uses local files and does not expose or deploy a real API.
+
+These contracts are intentionally scoped to the initial proof of concept: one account, one screen, one Raspberry Pi, one playlist, and image playback. They must remain mockable until a future AWS phase is explicitly approved.
 
 All examples are illustrative and contain no real secrets.
 
-## Versioning
+## Contract Rules
 
-Start with `/v1`. Breaking changes should create a new version or a clearly documented migration.
+- Base path starts at `/v1`.
+- All timestamps are ISO 8601 UTC strings.
+- IDs are stable opaque strings; clients must not parse meaning from them.
+- JSON field names use `camelCase`.
+- Requests and responses use `application/json` unless an upload URL is being used directly.
+- Device clients should treat duplicate commands and repeated playlist versions as idempotent.
+- Devices must keep using the last known good local playlist if cloud requests fail.
+- Signed URLs and credentials must never be logged.
+- Breaking changes require a new version or an explicit migration note.
+
+## Shared Types
+
+### Playlist Asset
+
+```json
+{
+  "assetId": "asset-welcome",
+  "type": "image",
+  "uri": "https://example.cloudfront.net/assets/welcome.png",
+  "durationSeconds": 10,
+  "altText": "Welcome title card",
+  "checksumSha256": "example-checksum"
+}
+```
+
+Rules:
+
+- `type` starts with `image` only.
+- `durationSeconds` must be at least `1`.
+- `altText` is required so dashboard/player UI has a meaningful accessible label.
+- `checksumSha256` is optional for the mock phase but expected before production device caching.
+
+### Error Response
+
+```json
+{
+  "error": {
+    "code": "playlist_not_found",
+    "message": "Playlist could not be found.",
+    "requestId": "req-example"
+  }
+}
+```
+
+Rules:
+
+- `message` should be safe to show in dashboard diagnostics.
+- `requestId` should be safe to log.
+- Secrets, signed URLs, and credentials must not appear in errors.
 
 ## Device Pairing
+
+Pairing creates a relationship between one physical device and one screen. The initial POC does not support organizations, fleet ownership transfer, or advanced RBAC.
 
 Future endpoint:
 
@@ -21,7 +73,9 @@ Request:
 ```json
 {
   "pairingCode": "ABCD-1234",
-  "deviceLabel": "Lobby TV"
+  "deviceLabel": "Lobby Pi",
+  "screenName": "Lobby TV",
+  "agentVersion": "0.1.0"
 }
 ```
 
@@ -31,11 +85,28 @@ Response:
 {
   "deviceId": "device-local-demo",
   "screenId": "screen-lobby",
-  "mqttClientId": "device-local-demo"
+  "screenName": "Lobby TV",
+  "mqttClientId": "device-local-demo",
+  "heartbeatIntervalSeconds": 60,
+  "playlistPollIntervalSeconds": 300
 }
 ```
 
+Expected failures:
+
+- `400 invalid_pairing_code`
+- `409 device_already_paired`
+- `410 pairing_code_expired`
+
+Security notes:
+
+- Pairing codes must be short-lived.
+- Device credentials are not returned in this plain JSON response until the credential provisioning design is approved.
+- A device should not erase its last known good local playlist during re-pairing.
+
 ## Heartbeat
+
+Heartbeat is the first monitoring model. It tells the dashboard whether the device recently reported status, but it is not a command channel.
 
 Future endpoint:
 
@@ -48,7 +119,7 @@ Request:
 ```json
 {
   "deviceId": "device-local-demo",
-  "timestamp": "2026-05-20T12:00:00.000Z",
+  "timestamp": "2026-05-20T20:17:32.971Z",
   "appVersion": "0.1.0",
   "currentPlaylistId": "playlist-local-demo",
   "currentAssetId": "asset-welcome",
@@ -62,11 +133,26 @@ Response:
 ```json
 {
   "accepted": true,
-  "serverTime": "2026-05-20T12:00:01.000Z"
+  "serverTime": "2026-05-20T20:17:33.100Z",
+  "nextHeartbeatInSeconds": 60
 }
 ```
 
+Expected failures:
+
+- `400 invalid_heartbeat`
+- `401 device_not_authenticated`
+- `404 device_not_found`
+
+Device behavior:
+
+- Heartbeat failure must not stop playback.
+- Device should log the failure and retry on the next interval.
+- Device should keep writing local heartbeat JSON for local diagnostics.
+
 ## Playlist Fetch
+
+Playlist fetch gives the device the current screen assignment and asset list. It must be safe for the device to call repeatedly.
 
 Future endpoint:
 
@@ -78,21 +164,39 @@ Response:
 
 ```json
 {
+  "screenId": "screen-lobby",
   "playlistId": "playlist-local-demo",
+  "name": "Local Demo Playlist",
   "version": 1,
+  "updatedAt": "2026-05-20T00:00:00.000Z",
   "assets": [
     {
       "assetId": "asset-welcome",
       "type": "image",
       "uri": "https://example.cloudfront.net/assets/welcome.png",
       "durationSeconds": 10,
-      "altText": "Welcome title card"
+      "altText": "PiSignage demo title card",
+      "checksumSha256": "example-checksum"
     }
   ]
 }
 ```
 
+Expected failures:
+
+- `401 device_not_authenticated`
+- `404 playlist_not_assigned`
+- `409 playlist_not_ready`
+
+Device behavior:
+
+- If the response version is unchanged, the device may keep its current cache.
+- If fetch fails, the device must keep playing the last known good cached playlist.
+- If a new playlist references assets that fail to download, the device must not delete the current working asset set.
+
 ## Asset Upload
+
+The dashboard eventually needs a way to upload media without sending large files through Lambda. The first contract returns a signed upload URL and records intended metadata.
 
 Future endpoint:
 
@@ -105,7 +209,8 @@ Request:
 ```json
 {
   "fileName": "welcome.png",
-  "contentType": "image/png"
+  "contentType": "image/png",
+  "sizeBytes": 245760
 }
 ```
 
@@ -115,13 +220,28 @@ Response:
 {
   "assetId": "asset-welcome",
   "uploadUrl": "https://example-signed-upload-url",
-  "expiresAt": "2026-05-20T12:15:00.000Z"
+  "expiresAt": "2026-05-20T20:32:00.000Z",
+  "requiredHeaders": {
+    "content-type": "image/png"
+  }
 }
 ```
 
-Do not log signed URLs.
+Expected failures:
+
+- `400 unsupported_media_type`
+- `400 file_too_large`
+- `401 dashboard_not_authenticated`
+
+Rules:
+
+- The dashboard must not log `uploadUrl`.
+- Image upload comes before video.
+- Server-side validation and processing status should be designed before production uploads.
 
 ## Screen Assignment
+
+Screen assignment connects the single screen to a playlist. This is intentionally not a scheduling system yet.
 
 Future endpoint:
 
@@ -143,9 +263,22 @@ Response:
 {
   "screenId": "screen-lobby",
   "playlistId": "playlist-local-demo",
-  "version": 1
+  "version": 1,
+  "updatedAt": "2026-05-20T20:20:00.000Z"
 }
 ```
+
+Expected failures:
+
+- `401 dashboard_not_authenticated`
+- `404 screen_not_found`
+- `404 playlist_not_found`
+- `409 playlist_not_ready`
+
+Device notification:
+
+- Assignment changes should publish a lightweight MQTT notification.
+- The notification should tell the device to fetch the latest playlist rather than embedding the full playlist.
 
 ## MQTT Topics
 
@@ -158,4 +291,45 @@ pisignage/devices/{deviceId}/heartbeat
 pisignage/screens/{screenId}/playlist-updated
 ```
 
-MQTT commands should be idempotent where practical. Playlist update messages should notify the device to fetch the latest contract rather than embedding large payloads.
+### Playlist Updated Message
+
+```json
+{
+  "type": "playlist.updated",
+  "screenId": "screen-lobby",
+  "playlistId": "playlist-local-demo",
+  "version": 2,
+  "timestamp": "2026-05-20T20:20:00.000Z"
+}
+```
+
+### Device Event Message
+
+```json
+{
+  "type": "device.playback.started",
+  "deviceId": "device-local-demo",
+  "playlistId": "playlist-local-demo",
+  "assetId": "asset-welcome",
+  "timestamp": "2026-05-20T20:20:05.000Z"
+}
+```
+
+MQTT rules:
+
+- Commands must be idempotent where practical.
+- Large payloads do not belong in MQTT messages.
+- Device policies must scope each device to its own topics.
+- MQTT is not required for the current local POC.
+
+## Local Mock Mapping
+
+Current local files map to future contracts:
+
+| Local file | Future contract |
+| --- | --- |
+| `sample-content/playlist.local.json` | `GET /v1/devices/{deviceId}/playlist` response |
+| `device-agent/local-state/heartbeat.json` | `POST /v1/devices/{deviceId}/heartbeat` request |
+| `device-agent/local-cache/playlists/current.json` | Last known good playlist cache |
+
+No local file should contain credentials or signed production URLs.

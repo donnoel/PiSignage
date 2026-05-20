@@ -78,7 +78,7 @@ PiSignage/
 
 ## Current Phase
 
-Phase 2 is in progress: local dashboard state, local fullscreen image playback, local playlist loading, and local heartbeat/cache behavior.
+Phase 3 is in progress: API and MQTT contracts are documented before backend or AWS implementation.
 
 See `docs/PHASES.md` for the full phase plan.
 
