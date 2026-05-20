@@ -1,0 +1,25 @@
+{
+  "name": "pisignage",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "dashboard",
+    "device-agent",
+    "player"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "dev:dashboard": "npm --workspace dashboard run dev",
+    "dev:player": "npm --workspace player run dev",
+    "agent:heartbeat": "npm --workspace device-agent run heartbeat"
+  },
+  "overrides": {
+    "postcss": "^8.5.10"
+  },
+  "engines": {
+    "node": ">=20",
+    "npm": ">=10"
+  }
+}

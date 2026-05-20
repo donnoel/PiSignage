@@ -1,35 +1,85 @@
 # PiSignage
 
-<p align="center">
-  <img src="https://img.shields.io/badge/SwiftUI-app-orange?logo=swift">
-  <img src="https://img.shields.io/badge/Platform-multiplatform-blue">
-</p>
+PiSignage is a phased proof of concept for Raspberry Pi based digital signage backed by AWS services later. The first target is intentionally small: one account, one dashboard, one Raspberry Pi, one TV, and reliable fullscreen playback from local content.
 
-## Overview
-PiSignage is a SwiftUI app scaffold created by **ProjectPilot**. This README is intentionally minimal and will grow as the project evolves.
+The current repository provides a local-only foundation. It does not deploy AWS infrastructure, require AWS credentials, or attempt to clone a full enterprise signage platform.
 
-- Template profile: **Starter App**
+## What Exists Now
 
-## Requirements
-- macOS with Xcode installed
-- Swift / SwiftUI
+- `dashboard/`: Next.js + TypeScript + Tailwind mock dashboard.
+- `player/`: TypeScript fullscreen image playback proof of concept.
+- `device-agent/`: Node.js + TypeScript local device agent that reads a playlist and writes heartbeat JSON.
+- `docs/`: architecture, phases, API contract, AWS design, security notes, and device setup.
+- `sample-content/`: local playlist and mock media fixture.
+- `infra/`: future AWS IaC placeholder only.
+
+The original Apple/Xcode starter scaffold is still present as legacy starter material. The active signage POC foundation is the Node/TypeScript workspace described above.
+
+## Local Requirements
+
+- Node.js 20 or newer.
+- npm 10 or newer.
+
+No AWS credentials are required for the current local POC.
 
 ## Getting Started
-1. Open `PiSignage.xcodeproj`
-2. Select a destination (Mac, iPhone Simulator, etc.)
-3. Build and Run
 
-## Project Structure
-```text
-PiSignage/
-├── PiSignage/
-├── PiSignageTests/
-└── PiSignageUITests/
+```sh
+npm install
+npm run typecheck
+npm run build
 ```
 
-## Roadmap
-- [ ] Define app goals and core flows
-- [ ] Add real UI and data model
-- [ ] Add tests for key behaviors
+Run the mocked dashboard:
+
+```sh
+npm run dev:dashboard
+```
+
+Run the local player:
+
+```sh
+npm run dev:player
+```
+
+Generate a local device heartbeat:
+
+```sh
+npm run agent:heartbeat
+```
+
+The heartbeat file is written to `device-agent/local-state/heartbeat.json` and is intentionally ignored by git.
+
+## Project Structure
+
+```text
+PiSignage/
+├── dashboard/
+├── device-agent/
+├── docs/
+├── infra/
+├── player/
+├── sample-content/
+├── AGENTS.md
+├── AGENTS.project.md
+└── README.md
+```
+
+## Current Phase
+
+Phase 0 is in progress: architecture skeleton, documentation, and local-only runnable foundations.
+
+See `docs/PHASES.md` for the full phase plan.
+
+## Core Principles
+
+- Reliability over cleverness.
+- Offline-first playback.
+- Appliance-like Raspberry Pi behavior.
+- Simple architecture with clean dashboard/backend/device boundaries.
+- Mock cloud integrations before implementing AWS.
+- Build incrementally with validation at every phase.
+
 ## Credits
-Created with **ProjectPilot**.
+
+Created from a ProjectPilot starter and evolved for the PiSignage proof of concept.

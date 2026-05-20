@@ -1,0 +1,15 @@
+{
+  "playlistId": "playlist-local-demo",
+  "name": "Local Demo Playlist",
+  "version": 1,
+  "updatedAt": "2026-05-20T00:00:00.000Z",
+  "assets": [
+    {
+      "assetId": "asset-welcome",
+      "type": "image",
+      "uri": "assets/welcome.svg",
+      "durationSeconds": 10,
+      "altText": "PiSignage demo title card"
+    }
+  ]
+}

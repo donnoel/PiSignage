@@ -8,6 +8,18 @@ xcuserdata/
 # SwiftPM
 .build/
 
+# Node
+node_modules/
+npm-debug.log*
+
+# Build output
+.next/
+dist/
+*.tsbuildinfo
+
+# Local runtime state
+device-agent/local-state/
+
 # macOS
 .DS_Store
 

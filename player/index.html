@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PiSignage Player</title>
+  </head>
+  <body>
+    <main class="player-shell" aria-label="PiSignage fullscreen player">
+      <img id="asset" class="asset" alt="" />
+      <div class="status-bar" aria-live="polite">
+        <span id="playlist-name">Loading playlist</span>
+        <span id="asset-status">Preparing playback</span>
+      </div>
+      <button id="fullscreen-button" class="fullscreen-button" type="button">
+        Fullscreen
+      </button>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

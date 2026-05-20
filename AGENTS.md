@@ -1,82 +1,121 @@
 # AGENTS.md
 
-This repo is an Apple-platform app codebase. You are an engineering agent (Codex) collaborating with the human. Your job is to make small, correct, testable changes with a clean build at every step.
+This repository is a Raspberry Pi + AWS digital signage proof of concept. Agents work here to build a small, reliable foundation for one dashboard, one Raspberry Pi, one TV, and offline-capable fullscreen playback.
 
-## Hard requirements (do not violate)
-- **No build warnings.** Treat warnings as errors in practice.
-- **No large rewrites.** Prefer small, surgical diffs.
-- **Apple-native only.** No third-party libraries unless explicitly requested.
-- **SwiftUI + MVVM.** Keep UI declarative; isolate logic in view models/services.
-- **Concurrency correctness.** Avoid broad `@MainActor` on data models / filesystem / networking types. Use actors/services for isolation.
-- **File persistence must be safe.** Use atomic writes where appropriate.
-- **Privacy-first.** No unexpected network calls.
-- **Preserve core behavior contracts.** Do not regress existing user-visible flows without explicitly calling it out.
-- **Accessibility is first-class.** Treat accessibility as a foundation requirement for every user-facing change, not a later polish pass.
+The project is intentionally not an enterprise signage platform yet. Prefer production-quality guidance, clear contracts, and local validation over broad rewrites or premature cloud complexity.
+
+## Hard Requirements
+
+- **Small, focused diffs.** Solve the specific task first, then generalize only when the code proves the need.
+- **Clean builds.** Keep builds, type checks, and configured linters passing with zero warnings.
+- **No secrets.** Never commit credentials, tokens, private keys, `.env` files with real values, device certificates, or AWS account identifiers that should remain private.
+- **No unapproved AWS deployment.** Do not create, modify, or deploy real AWS infrastructure unless the human explicitly asks for it.
+- **No unnecessary dependencies.** Use platform and framework capabilities first. Add dependencies only when they clearly reduce risk or complexity.
+- **Offline-first playback.** Device playback must continue from local cached state when network or cloud services are unavailable.
+- **Reliability over cleverness.** Device behavior should be appliance-like: deterministic startup, clear status, safe persistence, and recoverable failures.
+- **Preserve behavior contracts.** Do not regress playback, local playlist loading, heartbeat writing, reboot recovery, or documented API contracts without calling it out.
+- **Accessibility is first-class.** Dashboard and player UI must use semantic controls, readable text, keyboard-friendly flows where applicable, and meaningful labels for visual media.
 
 ## Workflow
-1. Read existing code and architecture before editing.
-2. Read `AGENTS.project.md` before making project-specific decisions.
-3. Propose a minimal plan in 2-5 bullets.
-4. Implement the smallest viable patch; solve the specific problem first before generalizing.
-5. Ensure build passes with **zero warnings**.
-6. If tests exist or are touched, run them. Add tests for non-trivial logic.
-7. If behavior changed, update docs (`README.md` / `AGENTS.project.md`) in the same patch.
-8. Keep changes easy to validate locally.
-9. For user-facing UI work, perform an accessibility pass before considering the task done.
 
-## Accessibility baseline (required)
-For every user-facing view, feature, or interaction, evaluate and implement the accessibility support that is relevant to that code.
+1. Read existing code, docs, and `AGENTS.project.md` before editing.
+2. Propose a minimal plan in 2-5 bullets before making changes.
+3. Implement the smallest viable patch.
+4. Update docs when behavior, architecture, setup, contracts, or phase scope changes.
+5. Run reasonable local validation for touched areas:
+   - `npm install` or `npm ci` when dependencies change
+   - `npm run build` when buildable code changes
+   - `npm run typecheck` when TypeScript changes
+   - `npm run lint` when linting is configured
+6. If validation cannot run, explain exactly why and what remains unverified.
+7. For user-facing UI work, perform an accessibility pass before considering the task done.
 
-Always scan for and handle, where applicable:
-- VoiceOver support with clear labels, values, hints, traits, and reading order
-- Semantic controls and roles using Apple-native accessibility APIs
-- Dynamic Type / scalable text where the platform and UI call for it
-- Sufficient contrast and legibility in light/dark appearances
-- Hit target size and interaction affordance
-- Reduce Motion / Reduce Transparency accommodations where motion, blur, or translucency are used
-- State communication for toggles, selections, progress, timers, alerts, and transient status
-- Focus behavior and keyboard navigation where relevant (especially macOS/tvOS)
-- Image/chart/media descriptions when visual meaning would otherwise be lost
-- Accessibility actions or adjustable behavior for custom controls when needed
+## Architecture Boundaries
 
-Rules:
-- Do not claim accessibility support exists unless there is concrete code evidence.
-- Prefer semantic SwiftUI / Apple-native APIs over custom accessibility workarounds.
-- If a custom control or visual treatment weakens accessibility, fix it or call out the gap explicitly.
-- When shipping or reviewing a feature, note what accessibility support was added, verified, missing, or not applicable.
-- When asked for an accessibility audit, report: what was scanned, what was identified in code, what is missing, and what can be safely declared in App Store Connect.
+Keep boundaries explicit:
 
-## Code style
-- Keep types small and focused.
-- Avoid invasive refactors unless the current structure is blocking progress.
-- Prefer `Foundation` + `OSLog`/structured status over ad-hoc prints.
-- Use actors/services for mutable shared state that should not run on the main thread.
-- Prefer `@MainActor` only for UI/view models that must touch SwiftUI state.
-- Keep mutable state ownership explicit and avoid duplicate mutation paths for the same source of truth.
-- Prefer derived state over duplicated stored state where practical.
-- Keep side effects behind narrow, intentional boundaries.
-- Prefer cohesive feature-local code over premature modularization.
-- Add abstractions only when they improve clarity, reduce coupling, or enable testing.
-- Treat performance, memory use, energy use, and UI smoothness as architectural concerns.
-- Avoid unbounded caches without a clear eviction strategy.
-- Avoid broad invalidation, unnecessary recomputation, large observable surfaces, and expensive work in SwiftUI render paths.
-- Avoid global singletons (unless explicitly designed).
-- Keep command execution wrappers deterministic and easy to retry.
-- Document non-obvious invariants, ownership rules, and architectural constraints when needed; favor intent and constraints over obvious narration.
+- `dashboard/` owns the web dashboard user experience and mocked admin views.
+- `device-agent/` owns Raspberry Pi local status, playlist reads, heartbeat writes, cache management, and future MQTT communication.
+- `player/` owns fullscreen playback behavior and should remain able to run from local playlist/cache data.
+- `docs/` owns architecture, phases, setup, API contracts, AWS design, and security notes.
+- `infra/` is a placeholder for future infrastructure-as-code. Do not add deployable real cloud resources without approval.
+- `sample-content/` contains local playlists and mock media used for development and validation.
 
-## Deliverables for each change
-- Mention which files were modified and why.
-- Provide a short commit message suggestion.
-- Mention any user-visible behavior changes explicitly.
-- Mention accessibility impact for user-facing changes: what was improved, verified, still missing, or not applicable.
+Do not blur dashboard, backend, and device responsibilities. Cloud integrations must stay mockable until real AWS implementation is approved.
 
-## What not to do
-- Don't introduce new dependencies.
-- Don't "fix" code by disabling concurrency checks.
-- Don't add `@MainActor` broadly to silence warnings.
-- Don't change public behavior without stating it.
-- Don't hide failures; surface actionable status and retry paths.
-- Don't replace plain-language setup guidance with unnecessary jargon.
-- Don't mark an accessibility feature as supported unless the implementation is actually present and appropriate.
+## Device Reliability Rules
 
-If something is ambiguous, default to the simplest solution that preserves correctness and forward progress.
+- Playback must have a local fallback path.
+- Playlist and heartbeat writes must be atomic where practical.
+- Startup and reboot behavior must be documented before being treated as supported.
+- Watchdog/recovery behavior should prefer simple, observable retries over hidden failure loops.
+- Do not make the device depend on dashboard availability for playback.
+- Device logs should be structured enough to diagnose startup, playlist, cache, heartbeat, and playback failures.
+
+## API Contract Discipline
+
+- Document API and MQTT contracts before implementing clients.
+- Version contracts when shape or semantics change.
+- Mock contract responses locally before wiring real cloud services.
+- Keep request/response examples free of real secrets and private account data.
+- Treat device pairing, heartbeat, playlist fetch, asset upload, and screen assignment as explicit contracts.
+
+## Persistence and Files
+
+- Use atomic writes for heartbeat, playlist cache, and device state files where practical.
+- Keep generated runtime files out of git unless they are intentional sample fixtures.
+- Prefer plain JSON for local POC state so behavior is inspectable and easy to reset.
+- Document file locations used by the Raspberry Pi agent and player.
+
+## Security and Privacy
+
+- Never log secrets or signed URL tokens.
+- Use least-privilege IAM principles in docs and future infra.
+- Device identity material must be generated, stored, and rotated intentionally once real AWS IoT pairing exists.
+- Screenshot capture, analytics, remote reboot, OTA updates, and fleet management are deferred until explicitly approved.
+- Avoid unexpected network calls in local development.
+
+## Accessibility Baseline
+
+For dashboard and player UI, evaluate and implement relevant support:
+
+- Clear page structure, headings, and landmarks.
+- Semantic buttons, links, form controls, and status text.
+- Keyboard navigation for interactive dashboard controls.
+- Sufficient color contrast and legible typography.
+- Meaningful alt text or accessible names for displayed media.
+- Status communication for online/offline state, heartbeat age, playback state, errors, and loading.
+- Reduced-motion handling if animations or transitions are introduced.
+
+Do not claim accessibility support exists unless there is concrete code evidence.
+
+## Code Style
+
+- Keep modules small and feature-local.
+- Use TypeScript types for playlist, heartbeat, screen, and API contract shapes.
+- Prefer explicit data ownership over shared mutable globals.
+- Keep side effects behind narrow functions or services.
+- Avoid background loops without bounded intervals, logging, and shutdown behavior.
+- Keep command wrappers deterministic and easy to retry.
+- Document non-obvious invariants and operational assumptions.
+
+## Deliverables For Each Change
+
+- Summary of what changed.
+- Files modified and why.
+- User-visible behavior changes.
+- What is mocked and what is real.
+- Validation performed.
+- Accessibility impact for user-facing work.
+- Short commit message suggestion.
+
+## What Not To Do
+
+- Do not build the full production platform in one pass.
+- Do not add billing, advanced RBAC, analytics, screenshots, remote reboot, OTA updates, or fleet management unless explicitly requested.
+- Do not require AWS credentials for local development.
+- Do not deploy real infrastructure from this repo without approval.
+- Do not hide failures; surface actionable status and retry paths.
+- Do not replace simple setup guidance with unnecessary jargon.
+
+If something is ambiguous, pause and ask when guessing would create project risk. Otherwise choose the simplest solution that preserves reliability and forward progress.
