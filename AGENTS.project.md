@@ -19,13 +19,13 @@ This is not a full enterprise clone. The project should evolve incrementally fro
 
 ## Current Product Phase
 
-The repository is in Phase 0: architecture skeleton, documentation, and local-only runnable foundations.
+The repository is in Phase 2: a local mock dashboard backed by the same local playlist and heartbeat files used by the player and device agent.
 
 Current goals:
 
-- Align repository guidance with signage/server/device architecture.
-- Add project docs and explicit phase plan.
-- Provide local mocks for dashboard, player, and device heartbeat behavior.
+- Keep the dashboard focused on one account, one screen, and one playlist.
+- Surface local playlist and heartbeat state without introducing a backend.
+- Keep dashboard, player, and device-agent boundaries clear.
 - Avoid real AWS resources, credentials, and deployment requirements.
 
 ## Non-Goals For The Initial POC

@@ -6,7 +6,7 @@ The current repository provides a local-only foundation. It does not deploy AWS 
 
 ## What Exists Now
 
-- `dashboard/`: Next.js + TypeScript + Tailwind mock dashboard.
+- `dashboard/`: Next.js + TypeScript + Tailwind local dashboard.
 - `player/`: TypeScript fullscreen image playback proof of concept.
 - `device-agent/`: Node.js + TypeScript local device agent that reads a playlist and writes heartbeat JSON.
 - `docs/`: architecture, phases, API contract, AWS design, security notes, and device setup.
@@ -78,7 +78,7 @@ PiSignage/
 
 ## Current Phase
 
-Phase 1 is in progress: local fullscreen image playback, local playlist loading, and local heartbeat/cache behavior.
+Phase 2 is in progress: local dashboard state, local fullscreen image playback, local playlist loading, and local heartbeat/cache behavior.
 
 See `docs/PHASES.md` for the full phase plan.
 

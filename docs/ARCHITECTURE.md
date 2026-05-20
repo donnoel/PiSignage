@@ -36,7 +36,7 @@ In the current POC, cloud services are replaced by local JSON fixtures.
 2. The player loads that playlist fixture and renders the current image full-viewport.
 3. The device agent reads the same playlist fixture.
 4. The device agent writes `device-agent/local-state/heartbeat.json` atomically.
-5. The dashboard shows mocked screen, playlist, and status data.
+5. The dashboard reads the local playlist and optional heartbeat file to render one screen, one playlist, and one device status view.
 
 ## Future Cloud Data Flow
 

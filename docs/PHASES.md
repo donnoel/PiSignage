@@ -43,6 +43,8 @@ Validation:
 
 Goal: show the basic operator view without backend services.
 
+Implementation status: local Phase 2 behavior exists. The dashboard reads the sample playlist and optional local heartbeat file at request time.
+
 Acceptance:
 
 - Dashboard displays one mocked screen.
@@ -53,6 +55,7 @@ Validation:
 
 - `npm run dev:dashboard`
 - Manual browser smoke test.
+- Run `npm run agent:heartbeat`, refresh the dashboard, and confirm the heartbeat fields update.
 
 ## Phase 3: API Contract Definition
 
