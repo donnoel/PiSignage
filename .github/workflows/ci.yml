@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve test destination
+        id: destination
+        run: |
+          DESTINATION="platform=macOS"
+
+          if [[ "$DESTINATION" == "platform=macOS" ]]; then
+            echo "value=$DESTINATION" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$DESTINATION" == "platform=iOS Simulator" ]]; then
+            DEVICE_ID=$(xcrun simctl list devices available | awk -F '[()]' '/iPhone|iPad/ { print $2; exit }')
+          else
+            DEVICE_ID=$(xcrun simctl list devices available | awk -F '[()]' '/Apple TV/ { print $2; exit }')
+          fi
+
+          if [[ -z "$DEVICE_ID" ]]; then
+            echo "No compatible simulator found for $DESTINATION."
+            exit 1
+          fi
+
+          echo "value=id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Build and test
+        run: |
+          xcodebuild \
+            -project PiSignage.xcodeproj \
+            -scheme PiSignage \
+            -destination '${{ steps.destination.outputs.value }}' \
+            CODE_SIGNING_ALLOWED=NO \
+            clean test
