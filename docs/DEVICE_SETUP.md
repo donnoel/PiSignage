@@ -21,7 +21,12 @@ npm run dev:player
 npm run agent:heartbeat
 ```
 
-The player uses the local sample playlist. The device agent writes a heartbeat file to `device-agent/local-state/heartbeat.json`.
+The player uses the local sample playlist served from `sample-content/`. The device agent writes a last-known-good playlist cache and heartbeat files:
+
+```text
+device-agent/local-cache/playlists/current.json
+device-agent/local-state/heartbeat.json
+```
 
 ## Future Pi Directory Layout
 

@@ -18,6 +18,7 @@ dist/
 *.tsbuildinfo
 
 # Local runtime state
+device-agent/local-cache/
 device-agent/local-state/
 
 # macOS

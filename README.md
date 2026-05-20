@@ -42,13 +42,24 @@ Run the local player:
 npm run dev:player
 ```
 
+The player loads `sample-content/playlist.local.json` at runtime. To test another same-origin playlist, pass a path in the browser:
+
+```text
+http://localhost:5173/?playlist=/playlist.local.json
+```
+
 Generate a local device heartbeat:
 
 ```sh
 npm run agent:heartbeat
 ```
 
-The heartbeat file is written to `device-agent/local-state/heartbeat.json` and is intentionally ignored by git.
+The agent reads the local playlist, writes a last-known-good playlist cache, and writes a heartbeat file. Runtime files are intentionally ignored by git:
+
+```text
+device-agent/local-cache/playlists/current.json
+device-agent/local-state/heartbeat.json
+```
 
 ## Project Structure
 
@@ -67,7 +78,7 @@ PiSignage/
 
 ## Current Phase
 
-Phase 0 is in progress: architecture skeleton, documentation, and local-only runnable foundations.
+Phase 1 is in progress: local fullscreen image playback, local playlist loading, and local heartbeat/cache behavior.
 
 See `docs/PHASES.md` for the full phase plan.
 

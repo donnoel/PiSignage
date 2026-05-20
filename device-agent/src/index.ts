@@ -28,6 +28,7 @@ type Heartbeat = {
 };
 
 const appVersion = "0.1.0";
+const currentPlaylistFileName = "current.json";
 
 function repoRoot(): string {
   return path.resolve(__dirname, "..", "..");
@@ -44,8 +45,7 @@ function log(level: "info" | "error", event: string, details: Record<string, unk
   );
 }
 
-async function readPlaylist(playlistPath: string): Promise<Playlist> {
-  const rawPlaylist = await fs.readFile(playlistPath, "utf8");
+function parsePlaylist(rawPlaylist: string, source: string): Playlist {
   const parsed = JSON.parse(rawPlaylist) as Partial<Playlist>;
 
   if (
@@ -55,10 +55,14 @@ async function readPlaylist(playlistPath: string): Promise<Playlist> {
     typeof parsed.updatedAt !== "string" ||
     !Array.isArray(parsed.assets)
   ) {
-    throw new Error(`Invalid playlist shape: ${playlistPath}`);
+    throw new Error(`Invalid playlist shape: ${source}`);
   }
 
   return parsed as Playlist;
+}
+
+async function readPlaylist(playlistPath: string): Promise<Playlist> {
+  return parsePlaylist(await fs.readFile(playlistPath, "utf8"), playlistPath);
 }
 
 async function diskFreeBytes(rootPath: string): Promise<number | null> {
@@ -85,10 +89,45 @@ async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> 
   }
 }
 
+function playlistCachePath(cacheDirectory: string, playlistId: string): string {
+  return path.join(cacheDirectory, "playlists", `${playlistId}.json`);
+}
+
+function currentPlaylistCachePath(cacheDirectory: string): string {
+  return path.join(cacheDirectory, "playlists", currentPlaylistFileName);
+}
+
+async function cachePlaylist(cacheDirectory: string, playlist: Playlist): Promise<void> {
+  await writeJsonAtomic(playlistCachePath(cacheDirectory, playlist.playlistId), playlist);
+  await writeJsonAtomic(currentPlaylistCachePath(cacheDirectory), playlist);
+}
+
+async function loadPlaylistWithCache(
+  playlistPath: string,
+  cacheDirectory: string
+): Promise<{ playlist: Playlist; source: "playlist" | "cache" }> {
+  try {
+    const playlist = await readPlaylist(playlistPath);
+    await cachePlaylist(cacheDirectory, playlist);
+    return { playlist, source: "playlist" };
+  } catch (error) {
+    log("error", "playlist.read.failed", {
+      playlistPath,
+      message: error instanceof Error ? error.message : String(error)
+    });
+
+    const cachedPath = currentPlaylistCachePath(cacheDirectory);
+    const playlist = await readPlaylist(cachedPath);
+    return { playlist, source: "cache" };
+  }
+}
+
 async function main(): Promise<void> {
   const root = repoRoot();
   const playlistPath =
     process.env.PISIGNAGE_PLAYLIST_PATH ?? path.join(root, "sample-content", "playlist.local.json");
+  const cacheDirectory =
+    process.env.PISIGNAGE_CACHE_DIR ?? path.join(root, "device-agent", "local-cache");
   const heartbeatPath =
     process.env.PISIGNAGE_HEARTBEAT_PATH ??
     path.join(root, "device-agent", "local-state", "heartbeat.json");
@@ -96,7 +135,12 @@ async function main(): Promise<void> {
   const networkOnline = process.env.PISIGNAGE_NETWORK_ONLINE === "true";
 
   log("info", "playlist.read.start", { playlistPath });
-  const playlist = await readPlaylist(playlistPath);
+  const { playlist, source } = await loadPlaylistWithCache(playlistPath, cacheDirectory);
+  log("info", "playlist.ready", {
+    playlistId: playlist.playlistId,
+    source,
+    cacheDirectory
+  });
   const firstAsset = playlist.assets[0] ?? null;
 
   const heartbeat: Heartbeat = {

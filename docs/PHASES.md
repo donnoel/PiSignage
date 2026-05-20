@@ -23,6 +23,8 @@ Validation:
 
 Goal: prove local fullscreen image playback and local device status.
 
+Implementation status: local Phase 1 behavior exists. The player fetches the local playlist at runtime, and the device agent writes both heartbeat state and a last-known-good playlist cache.
+
 Acceptance:
 
 - Fullscreen image playback works locally.
@@ -35,6 +37,7 @@ Validation:
 - `npm run dev:player`
 - `npm run agent:heartbeat`
 - Confirm `device-agent/local-state/heartbeat.json` exists.
+- Confirm `device-agent/local-cache/playlists/current.json` exists.
 
 ## Phase 2: Mock Dashboard
 
