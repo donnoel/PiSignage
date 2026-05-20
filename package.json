@@ -13,7 +13,8 @@
     "lint": "npm run lint --workspaces --if-present",
     "dev:dashboard": "npm --workspace dashboard run dev",
     "dev:player": "npm --workspace player run dev",
-    "agent:heartbeat": "npm --workspace device-agent run heartbeat"
+    "agent:heartbeat": "npm --workspace device-agent run heartbeat",
+    "simulate:failures": "node scripts/local-failure-smoke.mjs"
   },
   "overrides": {
     "postcss": "^8.5.10"

@@ -1,0 +1,10 @@
+{
+  "deviceId": "device-local-demo",
+  "screenId": "screen-lobby",
+  "environment": "local",
+  "playlistSourcePath": "sample-content/playlist.local.json",
+  "cacheDirectory": "device-agent/local-cache",
+  "heartbeatPath": "device-agent/local-state/heartbeat.json",
+  "pollIntervalSeconds": 60,
+  "appVersion": "0.1.0"
+}

@@ -1,59 +1,244 @@
 # AWS Design
 
-No AWS resources are deployed in the current phase. This document records the intended direction so implementation can stay incremental and mockable.
+No AWS resources are deployed in the current phase. This document records the intended Phase 4 design so implementation can stay incremental, mockable, and easy to validate before any cloud work starts.
+
+The first cloud alpha should still serve the same narrow product: one account, one dashboard, one Raspberry Pi, one TV, one assigned playlist, and reliable offline-capable playback.
 
 ## Services
 
 - API Gateway: HTTPS API for dashboard and device contract endpoints.
 - Lambda: small request handlers for pairing, heartbeat, playlist, asset, and assignment flows.
-- DynamoDB: device, screen, playlist, asset, and heartbeat metadata.
-- S3: original and processed media storage.
+- DynamoDB: account, screen, device, playlist, asset, assignment, and heartbeat metadata.
+- S3: private source media and processed media storage.
 - CloudFront: signed asset delivery to devices.
-- Cognito: simple account authentication for the dashboard.
-- AWS IoT Core: MQTT device command, event, and heartbeat messaging.
+- Cognito: simple dashboard sign-in boundary.
+- AWS IoT Core: MQTT device command, event, and playlist update messages.
 
 Greengrass may be considered later, but it is not part of the initial alpha.
 
-## S3 Strategy
+## S3 Media Bucket And Key Strategy
 
-Use separate prefixes for original uploads, processed assets, and future thumbnails:
+Use private S3 buckets. Do not make media buckets public.
+
+Initial bucket split:
 
 ```text
-s3://pisignage-assets/{accountId}/originals/
-s3://pisignage-assets/{accountId}/processed/
-s3://pisignage-assets/{accountId}/thumbnails/
+pisignage-media-{environment}
+pisignage-logs-{environment}
 ```
 
-For the first POC, keep media private and serve device-readable URLs through signed CloudFront URLs when cloud playback begins.
+Media keys:
 
-## DynamoDB Tables
+```text
+accounts/{accountId}/uploads/original/{assetId}/{fileName}
+accounts/{accountId}/assets/image/{assetId}/{renditionName}
+accounts/{accountId}/assets/video/{assetId}/{renditionName}
+accounts/{accountId}/thumbnails/{assetId}/{thumbnailName}
+```
 
-Initial table candidates:
+Rules:
 
-- `Accounts`: one account initially.
-- `Screens`: screen metadata and assigned playlist.
-- `Devices`: paired device metadata and status.
-- `Playlists`: playlist metadata and ordered asset references.
-- `Assets`: media metadata, storage keys, and processing status.
-- `Heartbeats`: latest heartbeat per device, with optional time-series expansion later.
+- `assetId` is the durable lookup key; file names are display metadata only.
+- Original uploads and processed playback assets use separate prefixes.
+- The first alpha should support image assets only.
+- Video prefixes are reserved for later and should not drive current implementation.
+- Device cache keys should use `assetId` plus checksum/version, not raw file name.
+- S3 lifecycle rules can clean failed uploads and obsolete processed renditions later.
 
-Avoid multi-tenant complexity beyond a simple account boundary until the one-screen flow is proven.
+## CloudFront Signed URL Approach
 
-## CloudFront
+CloudFront should sit in front of private S3 media. Devices receive short-lived signed URLs in playlist responses, then cache assets locally.
 
-Use CloudFront signed URLs or signed cookies for private asset delivery. Signed URLs should be short-lived enough to limit exposure but long-lived enough for intermittent device connectivity.
+Expected approach:
 
-The device should cache assets locally and continue playback after URL expiry.
+- Use CloudFront Origin Access Control for private S3 access.
+- Generate signed URLs server-side from Lambda/API code.
+- Keep signed URLs long enough for intermittent Pi connectivity, but not permanent.
+- Do not store signed URLs in DynamoDB.
+- Do not log signed URLs in dashboard, Lambda, device-agent, or player logs.
+- Device should continue playback after URL expiry if the asset is already cached.
 
-## Cognito Boundaries
+Open design question for Phase 5:
 
-Start with one account and one dashboard user. Avoid advanced RBAC in the initial POC.
+- Choose exact signed URL TTL after testing device download/retry timing on real Wi-Fi.
 
-Future roles can be added after core playback and publishing are proven.
+## DynamoDB Table Design
 
-## IoT Topics
+Start with single-table complexity only if it is clearly useful. For the alpha, simple focused tables are easier to inspect and migrate.
 
-Planned topics:
+### Accounts
+
+Primary key:
+
+```text
+accountId
+```
+
+Fields:
+
+- `accountId`
+- `displayName`
+- `createdAt`
+- `updatedAt`
+
+Initial scope has one account. Avoid organization hierarchy until needed.
+
+### Screens
+
+Primary key:
+
+```text
+screenId
+```
+
+Fields:
+
+- `screenId`
+- `accountId`
+- `name`
+- `assignedPlaylistId`
+- `pairedDeviceId`
+- `createdAt`
+- `updatedAt`
+
+Index candidates:
+
+- `accountId`
+
+### Devices
+
+Primary key:
+
+```text
+deviceId
+```
+
+Fields:
+
+- `deviceId`
+- `accountId`
+- `screenId`
+- `label`
+- `status`
+- `agentVersion`
+- `iotThingName`
+- `pairedAt`
+- `lastSeenAt`
+- `createdAt`
+- `updatedAt`
+
+Index candidates:
+
+- `accountId`
+- `screenId`
+
+### Playlists
+
+Primary key:
+
+```text
+playlistId
+```
+
+Fields:
+
+- `playlistId`
+- `accountId`
+- `name`
+- `version`
+- `assets`
+- `createdAt`
+- `updatedAt`
+
+Rules:
+
+- Each playlist update increments `version`.
+- Assets remain ordered in the playlist response.
+- The first alpha supports one assigned playlist per screen.
+
+### Assets
+
+Primary key:
+
+```text
+assetId
+```
+
+Fields:
+
+- `assetId`
+- `accountId`
+- `type`
+- `fileName`
+- `contentType`
+- `sizeBytes`
+- `sourceS3Key`
+- `playbackS3Key`
+- `checksumSha256`
+- `processingStatus`
+- `createdAt`
+- `updatedAt`
+
+### Heartbeats
+
+Primary key:
+
+```text
+deviceId
+```
+
+Fields:
+
+- `deviceId`
+- `timestamp`
+- `appVersion`
+- `currentPlaylistId`
+- `currentAssetId`
+- `diskFreeBytes`
+- `networkOnline`
+- `receivedAt`
+
+Start with latest heartbeat only. Time-series heartbeat history can be added later if there is a concrete operational need.
+
+## Cognito User/Auth Boundary
+
+Initial Cognito scope:
+
+- One user pool for dashboard sign-in.
+- One app client for the dashboard.
+- One account membership per dashboard user.
+- No advanced RBAC initially.
+
+Rules:
+
+- Browser code never receives AWS access keys.
+- Dashboard calls API Gateway with Cognito-authenticated requests.
+- API handlers derive account access from the authenticated user, not from client-supplied account IDs alone.
+- Billing, organizations, admin roles, and delegated access are deferred.
+
+## Device Identity Model
+
+Device identity is separate from dashboard user identity.
+
+Initial model:
+
+- A dashboard user creates a pairing code for one screen.
+- The Pi agent submits the pairing code.
+- Backend creates or links a `deviceId` and `screenId`.
+- Future IoT credentials are scoped to that device only.
+
+Device credential direction:
+
+- AWS IoT Thing per device.
+- X.509 certificate per device.
+- IoT policy limited to topics for that device and assigned screen.
+- Certificate provisioning and rotation require a dedicated Phase 5 design before implementation.
+
+Do not store device private keys in git, docs, logs, or dashboard-visible payloads.
+
+## AWS IoT Core Topic Layout
+
+Topics:
 
 ```text
 pisignage/devices/{deviceId}/commands
@@ -62,15 +247,75 @@ pisignage/devices/{deviceId}/heartbeat
 pisignage/screens/{screenId}/playlist-updated
 ```
 
-Device policies should restrict each device certificate to its own device topics.
+Device policy should allow:
 
-## IAM Principles
+- Subscribe to `pisignage/devices/{deviceId}/commands`.
+- Subscribe to `pisignage/screens/{screenId}/playlist-updated`.
+- Publish to `pisignage/devices/{deviceId}/events`.
+- Publish to `pisignage/devices/{deviceId}/heartbeat`.
 
-- Least privilege for every Lambda.
-- Separate read/write permissions for assets and metadata.
-- No broad wildcard access in production policies.
-- Device credentials scoped to a single device.
-- Dashboard users should not receive direct AWS credentials in browser code.
+Rules:
+
+- MQTT messages stay small.
+- Playlist update messages contain identifiers and version only.
+- The device fetches the full playlist over HTTPS.
+- Commands must be idempotent where practical.
+
+## IAM Least-Privilege Principles
+
+- Lambda functions get separate roles by responsibility.
+- Pairing Lambda can read/write devices and screens, but not media objects.
+- Heartbeat Lambda can update heartbeat/device status only.
+- Playlist Lambda can read screens, playlists, assets, and generate signed asset URLs.
+- Asset upload Lambda can create upload records and signed upload URLs only.
+- No broad `s3:*`, `dynamodb:*`, or `iot:*` policies in production.
+- Device IoT policy is scoped to a single device and assigned screen.
+- Dashboard users never receive direct S3 write permissions.
+
+## API-To-AWS Mapping
+
+| Contract | AWS services | Notes |
+| --- | --- | --- |
+| `POST /v1/devices/pair` | API Gateway, Lambda, DynamoDB, future IoT provisioning | Pair one Pi to one screen. Credential provisioning needs separate approval. |
+| `POST /v1/devices/{deviceId}/heartbeat` | API Gateway, Lambda, DynamoDB, optional IoT | Store latest heartbeat; failure must not stop playback. |
+| `GET /v1/devices/{deviceId}/playlist` | API Gateway, Lambda, DynamoDB, CloudFront signing | Return assignment and signed asset URLs. |
+| `POST /v1/assets/upload-url` | API Gateway, Lambda, DynamoDB, S3 | Return signed upload URL, never log it. |
+| `PUT /v1/screens/{screenId}/assignment` | API Gateway, Lambda, DynamoDB, IoT publish | Update assignment and publish lightweight playlist update. |
+
+## Local Mock-To-AWS Migration Path
+
+Current local file mapping:
+
+| Local file | AWS-backed future |
+| --- | --- |
+| `sample-content/playlist.local.json` | Playlist fetch response from DynamoDB plus signed CloudFront URLs |
+| `device-agent/local-cache/playlists/current.json` | Device last-known-good cache after HTTPS playlist fetch |
+| `device-agent/local-state/heartbeat.json` | Heartbeat request body sent to API Gateway or IoT |
+| `device-agent/config.example.json` | Provisioned device config after pairing |
+
+Migration steps:
+
+1. Keep local file mode as the default development path.
+2. Add API clients behind explicit config flags.
+3. Mock API responses with the same shapes as `docs/API_CONTRACT.md`.
+4. Add AWS implementation only after contracts and local failure behavior are stable.
+5. Keep the device cache fallback path identical for local and cloud playlists.
+
+## Phase 5 Readiness Checklist
+
+Before implementing AWS alpha:
+
+- Confirm Phase 1 local playback survives missing playlist and missing asset tests.
+- Confirm Phase 2 dashboard renders heartbeat and playlist state clearly.
+- Confirm Phase 3 contracts are accepted as the source of truth.
+- Choose environment names such as `dev` and `alpha`.
+- Decide IaC tool, but do not introduce it until implementation is approved.
+- Define secret storage and rotation approach.
+- Define IoT certificate provisioning flow.
+- Define CloudFront signing key ownership.
+- Define rollback behavior for playlist assignment changes.
+- Define minimal hosted CI checks for cloud code.
+- Confirm AWS account and billing guardrails with the human.
 
 ## Deferred
 
@@ -80,4 +325,6 @@ Device policies should restrict each device certificate to its own device topics
 - Greengrass.
 - Advanced fleet management.
 - Screenshot capture.
+- Remote reboot.
 - OTA update service.
+- Billing and analytics.

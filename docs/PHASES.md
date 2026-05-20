@@ -80,6 +80,8 @@ Validation:
 
 Goal: define AWS architecture before infrastructure exists.
 
+Implementation status: AWS design documentation is prepared. No infrastructure has been created.
+
 Document:
 
 - S3 strategy.
@@ -94,6 +96,7 @@ Do not deploy.
 Validation:
 
 - Review `docs/AWS_DESIGN.md` for least-privilege boundaries and mockability.
+- Confirm no AWS credentials, deploy commands, or IaC resources are required.
 
 ## Phase 5: Future AWS Alpha Implementation
 

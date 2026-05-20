@@ -78,7 +78,7 @@ PiSignage/
 
 ## Current Phase
 
-Phase 3 is in progress: API and MQTT contracts are documented before backend or AWS implementation.
+Phase 4 is in progress: AWS architecture and Raspberry Pi setup are documented before cloud deployment or hardware-specific implementation.
 
 See `docs/PHASES.md` for the full phase plan.
 

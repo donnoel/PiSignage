@@ -19,13 +19,14 @@ This is not a full enterprise clone. The project should evolve incrementally fro
 
 ## Current Product Phase
 
-The repository is in Phase 3: API and MQTT contracts are being documented before backend or AWS implementation.
+The repository is in Phase 4: AWS architecture and Raspberry Pi setup are being prepared without deploying cloud resources or requiring hardware access.
 
 Current goals:
 
 - Keep the dashboard focused on one account, one screen, and one playlist.
 - Keep dashboard, player, and device-agent boundaries clear.
-- Document device/backend contracts before adding live services.
+- Document AWS and device setup plans before adding live services.
+- Prepare Pi-free local failure checks for tomorrow’s hardware setup.
 - Avoid real AWS resources, credentials, and deployment requirements.
 
 ## Non-Goals For The Initial POC
