@@ -1,14 +1,15 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { LocalUploadForm } from "./local-upload-form";
 
 export const dynamic = "force-dynamic";
 
 type PlaylistAsset = {
   assetId: string;
-  type: "image";
+  type: "image" | "video";
   uri: string;
-  durationSeconds: number;
-  altText: string;
+  durationSeconds?: number;
+  altText?: string;
 };
 
 type Playlist = {
@@ -45,6 +46,7 @@ type DashboardState = {
     currentAsset: string;
     version: number;
     updatedAt: string;
+    assets: PlaylistAsset[];
   };
   device: {
     appVersion: string;
@@ -144,7 +146,8 @@ async function loadDashboardState(): Promise<DashboardState> {
       assetCount: playlist.assets.length,
       currentAsset: assetLabel(playlist, heartbeat?.currentAssetId),
       version: playlist.version,
-      updatedAt: formatTimestamp(playlist.updatedAt)
+      updatedAt: formatTimestamp(playlist.updatedAt),
+      assets: playlist.assets
     },
     device: {
       appVersion: heartbeat?.appVersion ?? "Not reported",
@@ -201,8 +204,8 @@ export default async function DashboardPage() {
               <dd className="mt-1 text-lg font-semibold text-zinc-950">{playlist.name}</dd>
             </div>
             <div>
-              <dt className="text-sm font-medium text-zinc-500">Playback mode</dt>
-              <dd className="mt-1 text-lg font-semibold text-zinc-950">Local image</dd>
+            <dt className="text-sm font-medium text-zinc-500">Playback mode</dt>
+              <dd className="mt-1 text-lg font-semibold text-zinc-950">Local playlist</dd>
             </div>
           </dl>
           <p className="mt-6 rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm leading-6 text-zinc-700">
@@ -234,7 +237,7 @@ export default async function DashboardPage() {
             </p>
           </div>
           <p className="text-sm font-medium text-zinc-700">
-            {playlist.assetCount} {playlist.assetCount === 1 ? "image asset" : "image assets"}
+            {playlist.assetCount} {playlist.assetCount === 1 ? "asset" : "assets"}
           </p>
         </div>
 
@@ -248,6 +251,21 @@ export default async function DashboardPage() {
             <dd className="mt-1 text-lg font-semibold text-zinc-950">{playlist.updatedAt}</dd>
           </div>
         </dl>
+        <div className="mt-5 rounded-md border border-zinc-200 bg-zinc-50 p-4">
+          <h3 className="text-sm font-semibold text-zinc-700">Playlist assets</h3>
+          <ul className="mt-3 divide-y divide-zinc-200 text-sm text-zinc-700">
+            {playlist.assets.map((asset) => (
+              <li key={asset.assetId} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <span className="font-medium text-zinc-950">{asset.altText ?? asset.assetId}</span>
+                <span>
+                  {asset.type} · {asset.uri}
+                  {asset.durationSeconds ? ` · ${asset.durationSeconds}s` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <LocalUploadForm />
       </section>
 
       <section aria-labelledby="device-heading" className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">

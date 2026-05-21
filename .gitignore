@@ -21,6 +21,7 @@ dist/
 # Local runtime state
 device-agent/local-cache/
 device-agent/local-state/
+sample-content/assets/*.mp4
 
 # macOS
 .DS_Store

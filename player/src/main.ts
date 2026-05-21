@@ -24,7 +24,12 @@ const fullscreenButton = document.querySelector<HTMLButtonElement>("#fullscreen-
 
 let currentIndex = 0;
 let playbackTimer: number | undefined;
+let playlistRefreshTimer: number | undefined;
+let activePlaylist: Playlist | null = null;
+let activePlaylistUrl: URL | null = null;
+let activePlaylistSignature = "";
 const defaultPlaylistUrl = "/playlist.local.json";
+const playlistRefreshIntervalMs = 5000;
 
 function requireElement<TElement extends Element>(
   element: TElement | null,
@@ -111,6 +116,14 @@ function imageUrlFor(asset: PlaylistAsset, playlistUrl: URL): string {
   return assetUrl.toString();
 }
 
+function playlistSignature(playlist: Playlist): string {
+  return JSON.stringify({
+    playlistId: playlist.playlistId,
+    version: playlist.version,
+    assets: playlist.assets
+  });
+}
+
 function hideImage(): void {
   playerImage.classList.add("hidden");
   playerImage.removeAttribute("src");
@@ -141,10 +154,19 @@ function showVideoAsset(asset: PlaylistAsset, playlistUrl: URL): void {
   void playerVideo.play();
 }
 
-function showAsset(playlist: Playlist, playlistUrl: URL, index: number): void {
+function showAsset(index: number): void {
+  if (!activePlaylist || !activePlaylistUrl) {
+    return;
+  }
+
+  const playlist = activePlaylist;
+  const playlistUrl = activePlaylistUrl;
+
   if (playlist.assets.length === 0) {
     playlistNameLabel.textContent = playlist.name;
     assetStatusLabel.textContent = "No assets in playlist";
+    currentIndex = 0;
+    window.clearTimeout(playbackTimer);
     hideImage();
     hideVideo();
     return;
@@ -163,8 +185,45 @@ function showAsset(playlist: Playlist, playlistUrl: URL, index: number): void {
   window.clearTimeout(playbackTimer);
   if (asset.durationSeconds !== undefined) {
     playbackTimer = window.setTimeout(() => {
-      showAsset(playlist, playlistUrl, (currentIndex + 1) % playlist.assets.length);
+      showAsset((currentIndex + 1) % playlist.assets.length);
     }, Math.max(asset.durationSeconds, 1) * 1000);
+  }
+}
+
+function applyPlaylist(playlist: Playlist, playlistUrl: URL): void {
+  const nextSignature = playlistSignature(playlist);
+
+  if (nextSignature === activePlaylistSignature) {
+    return;
+  }
+
+  const currentAssetId = activePlaylist?.assets[currentIndex]?.assetId;
+  const wasPlaying = activePlaylist !== null;
+  activePlaylist = playlist;
+  activePlaylistUrl = playlistUrl;
+  activePlaylistSignature = nextSignature;
+
+  if (!wasPlaying) {
+    showAsset(0);
+    return;
+  }
+
+  const matchingIndex = playlist.assets.findIndex((asset) => asset.assetId === currentAssetId);
+
+  if (matchingIndex >= 0) {
+    currentIndex = matchingIndex;
+    playlistNameLabel.textContent = playlist.name;
+    return;
+  }
+
+  showAsset(Math.min(currentIndex, Math.max(playlist.assets.length - 1, 0)));
+}
+
+async function refreshPlaylist(playlistUrl: URL): Promise<void> {
+  try {
+    applyPlaylist(await loadPlaylist(playlistUrl), playlistUrl);
+  } catch (error) {
+    console.error("Playlist refresh failed; keeping last valid playlist", error);
   }
 }
 
@@ -186,11 +245,15 @@ async function startPlayback(): Promise<void> {
   assetStatusLabel.textContent = playlistUrl.pathname;
 
   const playlist = await loadPlaylist(playlistUrl);
-  showAsset(playlist, playlistUrl, 0);
+  applyPlaylist(playlist, playlistUrl);
+  playlistRefreshTimer = window.setInterval(() => {
+    void refreshPlaylist(playlistUrl);
+  }, playlistRefreshIntervalMs);
 }
 
 startPlayback().catch((error: unknown) => {
   window.clearTimeout(playbackTimer);
+  window.clearInterval(playlistRefreshTimer);
   playlistNameLabel.textContent = "Playback unavailable";
   assetStatusLabel.textContent = error instanceof Error ? error.message : "Unknown playback error";
   hideImage();
