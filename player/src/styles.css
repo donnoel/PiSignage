@@ -25,6 +25,10 @@ body {
   background: #05070d;
 }
 
+.hidden {
+  display: none;
+}
+
 .status-bar {
   position: absolute;
   left: 24px;

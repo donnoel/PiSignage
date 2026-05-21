@@ -2,10 +2,10 @@ import "./styles.css";
 
 type PlaylistAsset = {
   assetId: string;
-  type: "image";
+  type: "image" | "video";
   uri: string;
-  durationSeconds: number;
-  altText: string;
+  durationSeconds?: number;
+  altText?: string;
 };
 
 type Playlist = {
@@ -17,6 +17,7 @@ type Playlist = {
 };
 
 const image = document.querySelector<HTMLImageElement>("#asset");
+const video = document.querySelector<HTMLVideoElement>("#video-asset");
 const playlistName = document.querySelector<HTMLSpanElement>("#playlist-name");
 const assetStatus = document.querySelector<HTMLSpanElement>("#asset-status");
 const fullscreenButton = document.querySelector<HTMLButtonElement>("#fullscreen-button");
@@ -37,6 +38,7 @@ function requireElement<TElement extends Element>(
 }
 
 const playerImage = requireElement(image, "asset");
+const playerVideo = requireElement(video, "video-asset");
 const playlistNameLabel = requireElement(playlistName, "playlist-name");
 const assetStatusLabel = requireElement(assetStatus, "asset-status");
 const fullscreenControl = requireElement(fullscreenButton, "fullscreen-button");
@@ -68,12 +70,21 @@ function parsePlaylist(value: unknown, source: string): Playlist {
   for (const asset of candidate.assets) {
     if (
       typeof asset.assetId !== "string" ||
-      asset.type !== "image" ||
-      typeof asset.uri !== "string" ||
-      typeof asset.durationSeconds !== "number" ||
-      typeof asset.altText !== "string"
+      (asset.type !== "image" && asset.type !== "video") ||
+      typeof asset.uri !== "string"
     ) {
       throw new Error(`Invalid playlist asset: ${source}`);
+    }
+
+    if (
+      asset.type === "image" &&
+      (typeof asset.durationSeconds !== "number" || typeof asset.altText !== "string")
+    ) {
+      throw new Error(`Invalid image asset: ${source}`);
+    }
+
+    if (asset.durationSeconds !== undefined && typeof asset.durationSeconds !== "number") {
+      throw new Error(`Invalid asset duration: ${source}`);
     }
   }
 
@@ -100,12 +111,42 @@ function imageUrlFor(asset: PlaylistAsset, playlistUrl: URL): string {
   return assetUrl.toString();
 }
 
+function hideImage(): void {
+  playerImage.classList.add("hidden");
+  playerImage.removeAttribute("src");
+  playerImage.alt = "";
+}
+
+function hideVideo(): void {
+  playerVideo.pause();
+  playerVideo.classList.add("hidden");
+  playerVideo.removeAttribute("src");
+  playerVideo.removeAttribute("aria-label");
+  playerVideo.load();
+}
+
+function showImageAsset(asset: PlaylistAsset, playlistUrl: URL): void {
+  hideVideo();
+  playerImage.src = imageUrlFor(asset, playlistUrl);
+  playerImage.alt = asset.altText ?? asset.assetId;
+  playerImage.classList.remove("hidden");
+}
+
+function showVideoAsset(asset: PlaylistAsset, playlistUrl: URL): void {
+  hideImage();
+  playerVideo.src = imageUrlFor(asset, playlistUrl);
+  playerVideo.setAttribute("aria-label", asset.altText ?? asset.assetId);
+  playerVideo.classList.remove("hidden");
+  playerVideo.load();
+  void playerVideo.play();
+}
+
 function showAsset(playlist: Playlist, playlistUrl: URL, index: number): void {
   if (playlist.assets.length === 0) {
     playlistNameLabel.textContent = playlist.name;
     assetStatusLabel.textContent = "No assets in playlist";
-    playerImage.removeAttribute("src");
-    playerImage.alt = "No playlist asset is available";
+    hideImage();
+    hideVideo();
     return;
   }
 
@@ -113,13 +154,18 @@ function showAsset(playlist: Playlist, playlistUrl: URL, index: number): void {
   currentIndex = index;
   playlistNameLabel.textContent = playlist.name;
   assetStatusLabel.textContent = `Playing ${asset.assetId}`;
-  playerImage.src = imageUrlFor(asset, playlistUrl);
-  playerImage.alt = asset.altText;
+  if (asset.type === "video") {
+    showVideoAsset(asset, playlistUrl);
+  } else {
+    showImageAsset(asset, playlistUrl);
+  }
 
   window.clearTimeout(playbackTimer);
-  playbackTimer = window.setTimeout(() => {
-    showAsset(playlist, playlistUrl, (currentIndex + 1) % playlist.assets.length);
-  }, Math.max(asset.durationSeconds, 1) * 1000);
+  if (asset.durationSeconds !== undefined) {
+    playbackTimer = window.setTimeout(() => {
+      showAsset(playlist, playlistUrl, (currentIndex + 1) % playlist.assets.length);
+    }, Math.max(asset.durationSeconds, 1) * 1000);
+  }
 }
 
 fullscreenControl.addEventListener("click", async () => {
@@ -147,7 +193,7 @@ startPlayback().catch((error: unknown) => {
   window.clearTimeout(playbackTimer);
   playlistNameLabel.textContent = "Playback unavailable";
   assetStatusLabel.textContent = error instanceof Error ? error.message : "Unknown playback error";
-  playerImage.removeAttribute("src");
-  playerImage.alt = "Playlist failed to load";
+  hideImage();
+  hideVideo();
   console.error(error);
 });
