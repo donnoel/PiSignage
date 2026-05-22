@@ -63,6 +63,13 @@ body {
   outline-offset: 3px;
 }
 
+body.is-fullscreen .status-bar,
+body.is-fullscreen .fullscreen-button,
+:fullscreen .status-bar,
+:fullscreen .fullscreen-button {
+  display: none;
+}
+
 @media (prefers-reduced-transparency: reduce) {
   .status-bar,
   .fullscreen-button {

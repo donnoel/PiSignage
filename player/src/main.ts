@@ -97,7 +97,9 @@ function parsePlaylist(value: unknown, source: string): Playlist {
 }
 
 async function loadPlaylist(playlistUrl: URL): Promise<Playlist> {
-  const response = await fetch(playlistUrl);
+  const cacheBustedPlaylistUrl = new URL(playlistUrl);
+  cacheBustedPlaylistUrl.searchParams.set("t", Date.now().toString());
+  const response = await fetch(cacheBustedPlaylistUrl, { cache: "no-store" });
 
   if (!response.ok) {
     throw new Error(`Playlist load failed: ${response.status}`);
@@ -236,7 +238,9 @@ fullscreenControl.addEventListener("click", async () => {
 });
 
 document.addEventListener("fullscreenchange", () => {
-  fullscreenControl.textContent = document.fullscreenElement ? "Exit Fullscreen" : "Fullscreen";
+  const isFullscreen = document.fullscreenElement !== null;
+  document.body.classList.toggle("is-fullscreen", isFullscreen);
+  fullscreenControl.textContent = isFullscreen ? "Exit Fullscreen" : "Fullscreen";
 });
 
 async function startPlayback(): Promise<void> {

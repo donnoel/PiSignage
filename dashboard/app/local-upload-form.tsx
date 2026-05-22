@@ -8,6 +8,16 @@ type UploadState = {
   kind: "idle" | "success" | "error";
 };
 
+type UploadResponse = {
+  assetId?: string;
+  error?: string;
+  piPublish?: {
+    enabled: boolean;
+    ok: boolean;
+    message: string;
+  };
+};
+
 export function LocalUploadForm() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -35,18 +45,20 @@ export function LocalUploadForm() {
         method: "POST",
         body: formData
       });
-      const result = (await response.json()) as { assetId?: string; error?: string };
+      const result = (await response.json()) as UploadResponse;
 
       if (!response.ok) {
         throw new Error(result.error ?? "Upload failed");
       }
 
+      const publishMessage = result.piPublish?.message ? ` ${result.piPublish.message}` : "";
+
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
       setUploadState({
-        message: `Added ${result.assetId ?? file.name} to the local playlist.`,
-        kind: "success"
+        message: `Added ${result.assetId ?? file.name} to the local playlist.${publishMessage}`,
+        kind: result.piPublish && !result.piPublish.ok ? "error" : "success"
       });
       startTransition(() => router.refresh());
     } catch (error) {

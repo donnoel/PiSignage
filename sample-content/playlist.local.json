@@ -1,8 +1,8 @@
 {
   "playlistId": "playlist-local-demo",
   "name": "Local Demo Playlist",
-  "version": 2,
-  "updatedAt": "2026-05-21T00:00:00.000Z",
+  "version": 6,
+  "updatedAt": "2026-05-21T20:37:31.802Z",
   "assets": [
     {
       "assetId": "asset-demo-video",
@@ -17,6 +17,34 @@
       "uri": "assets/demo1.mp4",
       "durationSeconds": 20,
       "altText": "PiSignage second demo video"
+    },
+    {
+      "assetId": "asset-ace-commercial-master",
+      "type": "video",
+      "uri": "assets/Ace-COMMERCIAL-MASTER.mp4",
+      "durationSeconds": 30,
+      "altText": "Ace-COMMERCIAL-MASTER"
+    },
+    {
+      "assetId": "asset-2026-03-17-adams-ave-barber",
+      "type": "video",
+      "uri": "assets/2026-03-17-Adams-Ave-Barber.mp4",
+      "durationSeconds": 30,
+      "altText": "2026-03-17-Adams-Ave-Barber"
+    },
+    {
+      "assetId": "asset-2022-03-23-alone-book-meet-and-greet",
+      "type": "video",
+      "uri": "assets/2022-03-23-Alone-Book-Meet-and-Greet.mp4",
+      "durationSeconds": 30,
+      "altText": "2022-03-23-Alone-Book-Meet-and-Greet"
+    },
+    {
+      "assetId": "asset-2026-american-red-cross-blood-drive",
+      "type": "video",
+      "uri": "assets/2026-American-Red-Cross-Blood-Drive.mp4",
+      "durationSeconds": 30,
+      "altText": "2026-American-Red-Cross-Blood-Drive"
     }
   ]
 }

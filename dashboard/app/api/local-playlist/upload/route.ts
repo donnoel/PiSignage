@@ -1,5 +1,7 @@
 import { promises as fs } from "node:fs";
+import { execFile } from "node:child_process";
 import path from "node:path";
+import { promisify } from "node:util";
 import { NextResponse } from "next/server";
 
 type PlaylistAsset = {
@@ -18,7 +20,21 @@ type Playlist = {
   assets: PlaylistAsset[];
 };
 
+type PiPublishConfig = {
+  host: string;
+  user: string;
+  root: string;
+  password?: string;
+};
+
+type PiPublishResult = {
+  enabled: boolean;
+  ok: boolean;
+  message: string;
+};
+
 const defaultDurationSeconds = 30;
+const execFileAsync = promisify(execFile);
 
 export const runtime = "nodejs";
 
@@ -43,6 +59,84 @@ function sanitizeMp4FileName(fileName: string): string {
   }
 
   return baseName;
+}
+
+function readPiPublishConfig(): PiPublishConfig | null {
+  const host = process.env.PISIGNAGE_PI_HOST?.trim();
+
+  if (!host) {
+    return null;
+  }
+
+  return {
+    host,
+    user: process.env.PISIGNAGE_PI_USER?.trim() || "donnoel",
+    root: process.env.PISIGNAGE_PI_ROOT?.trim() || "/home/donnoel/PiSignage",
+    password: process.env.PISIGNAGE_PI_PASSWORD
+  };
+}
+
+function remoteLogin(config: PiPublishConfig): string {
+  return `${config.user}@${config.host}`;
+}
+
+function quoteRemoteShell(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+async function runSsh(config: PiPublishConfig, remoteCommand: string): Promise<void> {
+  const args = [
+    "-o",
+    "StrictHostKeyChecking=accept-new",
+    "-o",
+    "ConnectTimeout=8",
+    ...(config.password ? [] : ["-o", "BatchMode=yes"]),
+    remoteLogin(config),
+    remoteCommand
+  ];
+
+  await runCommand("ssh", args, config.password);
+}
+
+async function runScp(config: PiPublishConfig, sourcePath: string, targetPath: string): Promise<void> {
+  const args = [
+    "-o",
+    "StrictHostKeyChecking=accept-new",
+    "-o",
+    "ConnectTimeout=8",
+    ...(config.password ? [] : ["-o", "BatchMode=yes"]),
+    sourcePath,
+    `${remoteLogin(config)}:${targetPath}`
+  ];
+
+  await runCommand("scp", args, config.password);
+}
+
+async function runCommand(command: string, args: string[], password?: string): Promise<void> {
+  if (!password) {
+    await execFileAsync(command, args, { timeout: 120_000, maxBuffer: 1024 * 1024 });
+    return;
+  }
+
+  const expectScript = `
+set timeout 120
+set password [lindex $argv 0]
+set commandArgs [lrange $argv 1 end]
+spawn {*}$commandArgs
+expect {
+  -re "(?i)password:" { send -- "$password\\r"; exp_continue }
+  -re "(?i)permission denied" { exit 13 }
+  timeout { exit 124 }
+  eof
+}
+catch wait result
+exit [lindex $result 3]
+`;
+
+  await execFileAsync("expect", ["-c", expectScript, password, command, ...args], {
+    timeout: 130_000,
+    maxBuffer: 1024 * 1024
+  });
 }
 
 async function uniqueFileName(assetsDirectory: string, fileName: string): Promise<string> {
@@ -119,6 +213,49 @@ function appendAsset(playlist: Playlist, savedFileName: string): Playlist {
   };
 }
 
+async function publishToPi(
+  savedFilePath: string,
+  savedFileName: string,
+  playlistPath: string
+): Promise<PiPublishResult> {
+  const config = readPiPublishConfig();
+
+  if (!config) {
+    return {
+      enabled: false,
+      ok: false,
+      message: "Pi publish is not configured; upload was saved locally only."
+    };
+  }
+
+  const remoteAssetsDirectory = path.posix.join(config.root, "sample-content", "assets");
+  const remotePlaylistPath = path.posix.join(config.root, "sample-content", "playlist.local.json");
+  const temporaryPlaylistPath = `${remotePlaylistPath}.${Date.now()}.tmp`;
+
+  try {
+    await runSsh(config, `mkdir -p ${quoteRemoteShell(remoteAssetsDirectory)}`);
+    await runScp(config, savedFilePath, path.posix.join(remoteAssetsDirectory, savedFileName));
+    await runScp(config, playlistPath, temporaryPlaylistPath);
+    await runSsh(
+      config,
+      `mv ${quoteRemoteShell(temporaryPlaylistPath)} ${quoteRemoteShell(remotePlaylistPath)}`
+    );
+
+    return {
+      enabled: true,
+      ok: true,
+      message: `Published to Pi at ${config.host}.`
+    };
+  } catch (error) {
+    console.error("local Pi publish failed", error);
+    return {
+      enabled: true,
+      ok: false,
+      message: "Upload was saved locally, but Pi publish failed. Check local Pi SSH settings."
+    };
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
@@ -140,12 +277,14 @@ export async function POST(request: Request) {
 
     await writeFileAtomic(savedFilePath, uploadedBytes);
     await writeFileAtomic(playlistPath, `${JSON.stringify(nextPlaylist, null, 2)}\n`);
+    const piPublish = await publishToPi(savedFilePath, savedFileName, playlistPath);
 
     const appendedAsset = nextPlaylist.assets[nextPlaylist.assets.length - 1];
     return NextResponse.json({
       assetId: appendedAsset.assetId,
       uri: appendedAsset.uri,
-      playlistVersion: nextPlaylist.version
+      playlistVersion: nextPlaylist.version,
+      piPublish
     });
   } catch (error) {
     console.error("local playlist upload failed", error);

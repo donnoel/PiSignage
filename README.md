@@ -36,6 +36,23 @@ Run the mocked dashboard:
 npm run dev:dashboard
 ```
 
+If the dashboard is running on a Mac and the player is running on a Raspberry Pi,
+configure local Pi publishing before starting the dashboard. Prefer SSH keys; for
+password-only local testing, keep the password in your shell environment and do
+not commit it. Password mode requires the local `expect` command.
+
+```sh
+PISIGNAGE_PI_HOST=192.168.1.172 \
+PISIGNAGE_PI_USER=donnoel \
+PISIGNAGE_PI_ROOT=/home/donnoel/PiSignage \
+PISIGNAGE_PI_PASSWORD='<local-pi-password>' \
+npm run dev:dashboard
+```
+
+Dashboard uploads still save to the local checkout first, then copy the uploaded
+MP4 and playlist JSON to the Pi with `scp`/`ssh`. If Pi publishing is not
+configured, the dashboard will show that the upload was saved locally only.
+
 Run the local player:
 
 ```sh
