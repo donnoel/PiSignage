@@ -110,4 +110,4 @@ See `docs/PHASES.md` for the full phase plan.
 
 ## Credits
 
-Created from a ProjectPilot starter and evolved for the PiSignage proof of concept.
+Built with care by **Don Noel** and AI collaboration.
