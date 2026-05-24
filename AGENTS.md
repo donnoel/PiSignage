@@ -119,3 +119,51 @@ Do not claim accessibility support exists unless there is concrete code evidence
 - Do not replace simple setup guidance with unnecessary jargon.
 
 If something is ambiguous, pause and ask when guessing would create project risk. Otherwise choose the simplest solution that preserves reliability and forward progress.
+
+## Quota Discipline / Quota-Smart Codex Mode
+
+Use the smallest amount of work necessary to complete the task correctly.
+
+### Before editing
+
+- Read only the files needed for the requested change.
+- Do not scan the whole repository unless the task truly requires it.
+- Do not run broad audits unless explicitly asked.
+- Prefer targeted searches by filename, symbol name, failing test output, or known feature area.
+- Ask for clarification only if the requested change is unsafe or ambiguous enough to risk breaking behavior.
+- If the likely fix is unclear, use an investigate-first pass and do not edit files until the smallest safe change is identified.
+
+### While editing
+
+- Make the smallest safe diff.
+- Avoid opportunistic refactors.
+- Do not rewrite working code to improve style.
+- Do not touch unrelated files.
+- Do not expand the scope beyond the requested task.
+- Stop after the requested change is complete.
+
+### Validation
+
+Use the narrowest useful validation first.
+
+Preferred validation ladder:
+
+1. Syntax or build check for the touched target.
+2. Targeted unit test if logic changed.
+3. Targeted UI test if navigation or user flow changed.
+4. Full test suite only for shared architecture, persistence, app startup, CI, release behavior, or broad refactors.
+
+Do not run broad validation when a targeted check is enough.
+
+### Output
+
+Keep responses short and concrete.
+
+Report only:
+
+- what changed
+- files touched
+- validation performed
+- anything skipped and why
+
+Do not produce long explanations, broad recommendations, or extra cleanup unless explicitly requested.
