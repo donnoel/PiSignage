@@ -65,6 +65,11 @@ The player loads `sample-content/playlist.local.json` at runtime. To test anothe
 http://localhost:5173/?playlist=/playlist.local.json
 ```
 
+The Raspberry Pi display launcher is tracked under `device/pi/`. It defaults to
+operator mode during hands-on testing so Chromium can be minimized after leaving
+webpage fullscreen. Kiosk mode remains available for unattended TV playback; see
+`docs/DEVICE_SETUP.md`.
+
 Generate a local device heartbeat:
 
 ```sh

@@ -117,13 +117,23 @@ journalctl -u pisignage-player.service -n 100 --no-pager
 journalctl -u pisignage-kiosk.service -n 100 --no-pager
 ```
 
-## Chromium Kiosk Mode Plan
+## Chromium Display Modes
 
-Manual first test:
+During hands-on testing, launch Chromium in operator mode so normal window controls
+remain available after exiting the player's fullscreen button:
 
 ```sh
-chromium-browser --kiosk --noerrdialogs --disable-infobars http://localhost:5173
+/usr/bin/chromium --start-maximized --no-first-run --autoplay-policy=no-user-gesture-required http://localhost:5173/
 ```
+
+Use kiosk mode only when the TV should behave as an unattended display:
+
+```sh
+/usr/bin/chromium --kiosk --start-fullscreen --no-first-run --autoplay-policy=no-user-gesture-required http://localhost:5173/
+```
+
+The player's `Fullscreen` button controls webpage fullscreen only. It cannot
+restore minimize/window controls when Chromium itself was launched with `--kiosk`.
 
 If the Pi image uses a different Chromium binary, check:
 
@@ -132,10 +142,11 @@ which chromium-browser
 which chromium
 ```
 
-Kiosk expectations:
+Display expectations:
 
 - Browser opens directly to the player.
-- Player fills the visible TV area.
+- Operator mode permits leaving fullscreen and minimizing Chromium while testing.
+- Kiosk mode fills the visible TV area without window controls.
 - Fullscreen playback survives page refresh.
 - No dashboard interaction is needed for playback.
 
@@ -167,50 +178,54 @@ WantedBy=multi-user.target
 
 The current `agent:heartbeat` command runs once and exits. A recurring agent loop is a future implementation task; for tomorrow, use manual runs or a timer if needed.
 
-## systemd Player Service Draft
+## systemd Player Service
 
-Draft only.
+The source-controlled user service is:
 
-```ini
-[Unit]
-Description=PiSignage Player Dev Server
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/opt/pisignage/app
-ExecStart=/usr/bin/npm run dev:player
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
+```text
+device/pi/systemd/user/pisignage-player.service
 ```
 
 For a later appliance build, replace the dev server with a static preview/server command.
 
-## systemd Kiosk Service Draft
+## systemd Display Browser Service
 
-Draft only. The display environment can vary by Raspberry Pi OS version.
+The tracked display launcher waits for the player server and selects either
+operator or kiosk mode:
 
-```ini
-[Unit]
-Description=PiSignage Chromium Kiosk
-After=graphical.target pisignage-player.service
-Wants=pisignage-player.service
-
-[Service]
-Type=simple
-Environment=DISPLAY=:0
-ExecStart=/usr/bin/chromium-browser --kiosk --noerrdialogs --disable-infobars http://localhost:5173
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=graphical.target
+```text
+device/pi/bin/pisignage-start-display.sh
+device/pi/systemd/user/pisignage-kiosk.service
 ```
 
-Validate the exact Chromium path and display environment on the Pi before enabling.
+The checked-in service defaults to:
+
+```ini
+Environment=PISIGNAGE_DISPLAY_MODE=operator
+```
+
+Install or update the tracked services and launcher for the current user:
+
+```sh
+install -Dm755 device/pi/bin/pisignage-start-display.sh ~/.local/bin/pisignage-start-display.sh
+install -Dm644 device/pi/systemd/user/pisignage-player.service ~/.config/systemd/user/pisignage-player.service
+install -Dm644 device/pi/systemd/user/pisignage-kiosk.service ~/.config/systemd/user/pisignage-kiosk.service
+systemctl --user daemon-reload
+systemctl --user enable --now pisignage-player.service pisignage-kiosk.service
+```
+
+This is intentional while testing: clicking `Fullscreen` displays only the media,
+and exiting fullscreen returns to a minimizable Chromium window. To switch the TV
+back to unattended display mode later, change that value to `kiosk`, reload the
+user service, and restart it:
+
+```sh
+systemctl --user daemon-reload
+systemctl --user restart pisignage-kiosk.service
+```
+
+Validate the Chromium path and display environment on the Pi before enabling on a
+new device.
 
 ## Reboot Recovery Plan
 
@@ -235,7 +250,8 @@ Use this tomorrow once the Pi and TV are available:
 - Desktop resolution fits the screen.
 - Browser can open `http://localhost:5173`.
 - Player image is visible and not cropped unexpectedly.
-- Fullscreen/kiosk mode hides browser chrome.
+- Operator mode can exit fullscreen and minimize Chromium.
+- Kiosk mode hides browser chrome when deliberately enabled.
 - `npm run agent:heartbeat` writes heartbeat JSON.
 - Dashboard shows updated heartbeat when viewed locally.
 - Missing network does not stop already-visible playback.

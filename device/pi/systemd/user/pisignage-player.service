@@ -1,0 +1,13 @@
+[Unit]
+Description=PiSignage Player Dev Server
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donnoel/PiSignage
+ExecStart=/usr/bin/npm run dev:player
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

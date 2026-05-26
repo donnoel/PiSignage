@@ -1,0 +1,14 @@
+[Unit]
+Description=PiSignage Display Browser
+After=pisignage-player.service
+Wants=pisignage-player.service
+
+[Service]
+Type=simple
+Environment=PISIGNAGE_DISPLAY_MODE=operator
+ExecStart=%h/.local/bin/pisignage-start-display.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
