@@ -241,6 +241,11 @@ systemctl --user restart pisignage-kiosk.service
 Validate the Chromium path and display environment on the Pi before enabling on a
 new device.
 
+The launcher also forces the primary HDMI output to `1920x1080@60.000000` with
+`wlr-randr` when available. This avoids unstable post-power-loss negotiation with
+4K TV modes. Override `PISIGNAGE_DISPLAY_OUTPUT` or
+`PISIGNAGE_DISPLAY_RESOLUTION` only when a specific screen requires it.
+
 ## Reboot Recovery Plan
 
 Manual recovery expectations for tomorrow:

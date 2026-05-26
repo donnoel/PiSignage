@@ -9,6 +9,8 @@ readonly player_url="${PISIGNAGE_PLAYER_URL:-http://localhost:5173/}"
 readonly chromium_binary="${PISIGNAGE_CHROMIUM_BIN:-/usr/bin/chromium}"
 readonly display_mode="${PISIGNAGE_DISPLAY_MODE:-kiosk}"
 readonly chromium_profile_dir="${PISIGNAGE_CHROMIUM_PROFILE_DIR:-${HOME}/.local/share/pisignage/chromium}"
+readonly output_name="${PISIGNAGE_DISPLAY_OUTPUT:-HDMI-A-1}"
+readonly output_mode="${PISIGNAGE_DISPLAY_RESOLUTION:-1920x1080@60.000000}"
 
 for _ in {1..60}; do
   if /usr/bin/curl -fsS "${player_url}" >/dev/null; then
@@ -16,6 +18,10 @@ for _ in {1..60}; do
   fi
   sleep 1
 done
+
+if command -v /usr/bin/wlr-randr >/dev/null 2>&1; then
+  /usr/bin/wlr-randr --output "${output_name}" --mode "${output_mode}" || true
+fi
 
 case "${display_mode}" in
   operator)
