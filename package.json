@@ -13,6 +13,7 @@
     "lint": "npm run lint --workspaces --if-present",
     "dev:dashboard": "npm --workspace dashboard run dev",
     "dev:player": "npm --workspace player run dev",
+    "serve:player": "node device/pi/bin/pisignage-serve-player.mjs",
     "agent:heartbeat": "npm --workspace device-agent run heartbeat",
     "simulate:failures": "node scripts/local-failure-smoke.mjs"
   },

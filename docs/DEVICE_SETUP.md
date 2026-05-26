@@ -38,13 +38,13 @@ Recommended tomorrow:
 
 - The first device test can run fully local after dependencies are installed.
 - Internet is useful for install/update, but playback should not depend on internet.
-- The player should use `http://localhost:5173` or a local static preview service.
+- The player should use `http://localhost:5173` from the local static player service on the Pi.
 - AWS is not required for tomorrow’s test.
 - If Wi-Fi is unreliable, keep validating local playback and reboot recovery.
 
 ## Local POC Flow
 
-For development on a workstation or Pi:
+For development on a workstation:
 
 ```sh
 npm install
@@ -52,7 +52,18 @@ npm run dev:player
 npm run agent:heartbeat
 ```
 
-The player uses the local sample playlist served from `sample-content/`. The device agent writes a last-known-good playlist cache and heartbeat files:
+For unattended Pi playback, build the player and run the local static server:
+
+```sh
+npm --workspace player run build
+npm run serve:player
+```
+
+The player uses the local sample playlist served from `sample-content/`. The
+static server serves the built player shell from `player/dist`, but keeps
+`/playlist.local.json` and `/assets/*` backed by live `sample-content` files so
+local dashboard publishes do not require rebuilding. The device agent writes a
+last-known-good playlist cache and heartbeat files:
 
 ```text
 device-agent/local-cache/playlists/current.json
@@ -186,7 +197,9 @@ The source-controlled user service is:
 device/pi/systemd/user/pisignage-player.service
 ```
 
-For a later appliance build, replace the dev server with a static preview/server command.
+The service builds the player bundle before startup, then serves it with the
+local static server instead of Vite dev mode. This keeps reboot recovery local
+and avoids a development server in field-style playback.
 
 ## systemd Display Browser Service
 

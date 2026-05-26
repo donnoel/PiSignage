@@ -1,10 +1,11 @@
 [Unit]
-Description=PiSignage Player Dev Server
+Description=PiSignage Player Static Server
 
 [Service]
 Type=simple
 WorkingDirectory=/home/donnoel/PiSignage
-ExecStart=/usr/bin/npm run dev:player
+ExecStartPre=/usr/bin/npm --workspace player run build
+ExecStart=/usr/bin/npm run serve:player
 Restart=always
 RestartSec=5
 
