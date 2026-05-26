@@ -8,7 +8,8 @@
   <body>
     <main class="player-shell" aria-label="PiSignage fullscreen player">
       <img id="asset" class="asset" alt="" />
-      <video id="video-asset" class="asset hidden" autoplay muted loop playsinline></video>
+      <video id="video-asset" class="asset hidden" autoplay muted playsinline preload="auto"></video>
+      <video id="video-preload" class="asset hidden" muted playsinline preload="auto"></video>
       <div class="status-bar" aria-live="polite">
         <span id="playlist-name">Loading playlist</span>
         <span id="asset-status">Preparing playback</span>

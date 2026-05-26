@@ -216,7 +216,8 @@ function appendAsset(playlist: Playlist, savedFileName: string): Playlist {
 async function publishToPi(
   savedFilePath: string,
   savedFileName: string,
-  playlistPath: string
+  playlistPath: string,
+  playlist: Playlist
 ): Promise<PiPublishResult> {
   const config = readPiPublishConfig();
 
@@ -231,10 +232,28 @@ async function publishToPi(
   const remoteAssetsDirectory = path.posix.join(config.root, "sample-content", "assets");
   const remotePlaylistPath = path.posix.join(config.root, "sample-content", "playlist.local.json");
   const temporaryPlaylistPath = `${remotePlaylistPath}.${Date.now()}.tmp`;
+  const requiredRemoteAssets = playlist.assets.map((asset) => {
+    const normalizedUri = path.posix.normalize(asset.uri);
+    if (
+      path.posix.isAbsolute(normalizedUri) ||
+      normalizedUri === ".." ||
+      normalizedUri.startsWith("../")
+    ) {
+      throw new Error(`Playlist asset path is not local: ${asset.assetId}`);
+    }
+
+    return path.posix.join(config.root, "sample-content", normalizedUri);
+  });
 
   try {
     await runSsh(config, `mkdir -p ${quoteRemoteShell(remoteAssetsDirectory)}`);
     await runScp(config, savedFilePath, path.posix.join(remoteAssetsDirectory, savedFileName));
+    await runSsh(
+      config,
+      requiredRemoteAssets
+        .map((assetPath) => `test -f ${quoteRemoteShell(assetPath)}`)
+        .join(" && ")
+    );
     await runScp(config, playlistPath, temporaryPlaylistPath);
     await runSsh(
       config,
@@ -251,7 +270,8 @@ async function publishToPi(
     return {
       enabled: true,
       ok: false,
-      message: "Upload was saved locally, but Pi publish failed. Check local Pi SSH settings."
+      message:
+        "Upload was saved locally, but Pi publish failed. Check Pi connectivity and required media files."
     };
   }
 }
@@ -277,7 +297,7 @@ export async function POST(request: Request) {
 
     await writeFileAtomic(savedFilePath, uploadedBytes);
     await writeFileAtomic(playlistPath, `${JSON.stringify(nextPlaylist, null, 2)}\n`);
-    const piPublish = await publishToPi(savedFilePath, savedFileName, playlistPath);
+    const piPublish = await publishToPi(savedFilePath, savedFileName, playlistPath, nextPlaylist);
 
     const appendedAsset = nextPlaylist.assets[nextPlaylist.assets.length - 1];
     return NextResponse.json({
