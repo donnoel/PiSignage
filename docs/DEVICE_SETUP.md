@@ -198,10 +198,10 @@ device/pi/bin/pisignage-start-display.sh
 device/pi/systemd/user/pisignage-kiosk.service
 ```
 
-The checked-in service defaults to:
+The checked-in service defaults to field/appliance mode:
 
 ```ini
-Environment=PISIGNAGE_DISPLAY_MODE=operator
+Environment=PISIGNAGE_DISPLAY_MODE=kiosk
 ```
 
 Install or update the tracked services and launcher for the current user:
@@ -214,10 +214,11 @@ systemctl --user daemon-reload
 systemctl --user enable --now pisignage-player.service pisignage-kiosk.service
 ```
 
-This is intentional while testing: clicking `Fullscreen` displays only the media,
-and exiting fullscreen returns to a minimizable Chromium window. To switch the TV
-back to unattended display mode later, change that value to `kiosk`, reload the
-user service, and restart it:
+In kiosk mode, Chromium uses an isolated PiSignage profile and avoids desktop
+keyring prompts with `--password-store=basic`. It also opens the player with
+`display=signage`, which hides the player overlay. To temporarily switch back to
+operator mode for testing, change `PISIGNAGE_DISPLAY_MODE` to `operator`, reload
+the user service, and restart it:
 
 ```sh
 systemctl --user daemon-reload

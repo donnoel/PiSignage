@@ -5,7 +5,7 @@ Wants=pisignage-player.service
 
 [Service]
 Type=simple
-Environment=PISIGNAGE_DISPLAY_MODE=operator
+Environment=PISIGNAGE_DISPLAY_MODE=kiosk
 ExecStart=%h/.local/bin/pisignage-start-display.sh
 Restart=always
 RestartSec=5

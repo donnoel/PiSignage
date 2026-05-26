@@ -65,6 +65,8 @@ body {
 
 body.is-fullscreen .status-bar,
 body.is-fullscreen .fullscreen-button,
+body.signage-display .status-bar,
+body.signage-display .fullscreen-button,
 :fullscreen .status-bar,
 :fullscreen .fullscreen-button {
   display: none;

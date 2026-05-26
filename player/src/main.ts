@@ -22,6 +22,7 @@ const preloadVideo = document.querySelector<HTMLVideoElement>("#video-preload");
 const playlistName = document.querySelector<HTMLSpanElement>("#playlist-name");
 const assetStatus = document.querySelector<HTMLSpanElement>("#asset-status");
 const fullscreenButton = document.querySelector<HTMLButtonElement>("#fullscreen-button");
+const locationParameters = new URLSearchParams(window.location.search);
 
 let currentIndex = 0;
 let playbackTimer: number | undefined;
@@ -57,7 +58,7 @@ const assetStatusLabel = requireElement(assetStatus, "asset-status");
 const fullscreenControl = requireElement(fullscreenButton, "fullscreen-button");
 
 function playlistUrlFromLocation(): URL {
-  const requestedPlaylist = new URLSearchParams(window.location.search).get("playlist");
+  const requestedPlaylist = locationParameters.get("playlist");
   const playlistUrl = new URL(requestedPlaylist ?? defaultPlaylistUrl, window.location.href);
 
   if (playlistUrl.origin !== window.location.origin) {
@@ -65,6 +66,10 @@ function playlistUrlFromLocation(): URL {
   }
 
   return playlistUrl;
+}
+
+function applyDisplayMode(): void {
+  document.body.classList.toggle("signage-display", locationParameters.get("display") === "signage");
 }
 
 function parsePlaylist(value: unknown, source: string): Playlist {
@@ -438,6 +443,7 @@ document.addEventListener("fullscreenchange", () => {
 });
 
 async function startPlayback(): Promise<void> {
+  applyDisplayMode();
   const playlistUrl = playlistUrlFromLocation();
   playlistNameLabel.textContent = "Loading playlist";
   assetStatusLabel.textContent = playlistUrl.pathname;
