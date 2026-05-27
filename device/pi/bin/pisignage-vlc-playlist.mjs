@@ -24,6 +24,7 @@ const displayReadyTimeoutMs = Number.parseInt(
   process.env.PISIGNAGE_DISPLAY_READY_TIMEOUT_MS ?? "60000",
   10
 );
+const startupSettleMs = Number.parseInt(process.env.PISIGNAGE_STARTUP_SETTLE_MS ?? "8000", 10);
 const playlistPollIntervalMs = Number.parseInt(
   process.env.PISIGNAGE_PLAYLIST_POLL_INTERVAL_MS ?? "5000",
   10
@@ -255,6 +256,11 @@ async function run() {
 
   await writeStatus({ state: "starting" });
   await access(vlcBinary, fsConstants.X_OK);
+  if (startupSettleMs > 0) {
+    log(`waiting ${startupSettleMs}ms for the display session to settle`);
+    await writeStatus({ state: "waiting-for-display" });
+    await sleep(startupSettleMs);
+  }
   await waitForDisplay();
 
   while (!stopping) {

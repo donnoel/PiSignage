@@ -260,8 +260,8 @@ device/pi/systemd/user/pisignage-vlc.service
 The runner reads `sample-content/playlist.local.json`, resolves local video
 assets from `sample-content/assets/`, and plays the playlist with one continuous
 `cvlc` process in fullscreen mode. It keeps the display at
-`1920x1080@60.000000`, writes local playback status JSON, and restarts VLC when
-the playlist file changes.
+`1920x1080@60.000000`, waits briefly for the display session during boot, writes
+local playback status JSON, and restarts VLC when the playlist file changes.
 
 Validate the playlist without taking over the TV:
 
