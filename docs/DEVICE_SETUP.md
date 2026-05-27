@@ -246,6 +246,59 @@ The launcher also forces the primary HDMI output to `1920x1080@60.000000` with
 4K TV modes. Override `PISIGNAGE_DISPLAY_OUTPUT` or
 `PISIGNAGE_DISPLAY_RESOLUTION` only when a specific screen requires it.
 
+## Native VLC Video Player
+
+The Chromium kiosk path remains useful for the web player, operator views, and
+browser-based diagnostics. For video playback durability testing, the repo also
+includes a native VLC playlist runner:
+
+```text
+device/pi/bin/pisignage-vlc-playlist.mjs
+device/pi/systemd/user/pisignage-vlc.service
+```
+
+The runner reads `sample-content/playlist.local.json`, resolves local video
+assets from `sample-content/assets/`, and plays the playlist with one continuous
+`cvlc` process in fullscreen mode. It keeps the display at
+`1920x1080@60.000000`, writes local playback status JSON, and restarts VLC when
+the playlist file changes.
+
+Validate the playlist without taking over the TV:
+
+```sh
+node device/pi/bin/pisignage-vlc-playlist.mjs --dry-run
+```
+
+Install the tracked VLC service for the current user:
+
+```sh
+install -Dm755 device/pi/bin/pisignage-vlc-playlist.mjs ~/.local/bin/pisignage-vlc-playlist.mjs
+install -Dm644 device/pi/systemd/user/pisignage-vlc.service ~/.config/systemd/user/pisignage-vlc.service
+systemctl --user daemon-reload
+```
+
+Only one TV player should own the display during a field test. To compare VLC
+against Chromium, stop the kiosk service before starting VLC:
+
+```sh
+systemctl --user stop pisignage-kiosk.service
+systemctl --user start pisignage-vlc.service
+```
+
+If VLC becomes the preferred field player, enable it and disable the Chromium
+kiosk service:
+
+```sh
+systemctl --user disable --now pisignage-kiosk.service
+systemctl --user enable --now pisignage-vlc.service
+```
+
+Inspect the local playback status file:
+
+```sh
+cat ~/.local/state/pisignage/player-status.json
+```
+
 ## Reboot Recovery Plan
 
 Manual recovery expectations for tomorrow:

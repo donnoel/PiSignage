@@ -1,0 +1,15 @@
+[Unit]
+Description=PiSignage Native VLC Video Player
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donnoel/PiSignage
+Environment=PISIGNAGE_DISPLAY_OUTPUT=HDMI-A-1
+Environment=PISIGNAGE_DISPLAY_RESOLUTION=1920x1080@60.000000
+Environment=PISIGNAGE_STATUS_PATH=%h/.local/state/pisignage/player-status.json
+ExecStart=/usr/bin/node %h/.local/bin/pisignage-vlc-playlist.mjs
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
