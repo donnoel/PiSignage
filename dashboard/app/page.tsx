@@ -656,9 +656,9 @@ export default async function DashboardPage() {
                 <dd className="mt-2 text-lg font-semibold">{serviceLabel(pi.serviceActiveState, pi.serviceSubState)}</dd>
               </div>
               <div className="rounded-md bg-zinc-50 p-4">
-                <dt className="text-xs font-semibold uppercase text-zinc-500">Service restarts</dt>
+                <dt className="text-xs font-semibold uppercase text-zinc-500">Auto restarts</dt>
                 <dd className="mt-2 text-lg font-semibold">{pi.serviceRestartCount ?? "Unknown"}</dd>
-                <dd className="mt-1 text-sm text-zinc-600">Current boot</dd>
+                <dd className="mt-1 text-sm text-zinc-600">Crash recovery this boot</dd>
               </div>
               <div className="rounded-md bg-zinc-50 p-4">
                 <dt className="text-xs font-semibold uppercase text-zinc-500">Status age</dt>
