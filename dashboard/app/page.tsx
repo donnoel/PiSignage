@@ -63,6 +63,7 @@ type PiProbe = {
   vlcMemoryMb: string | null;
   vlcCpuPercent: string | null;
   uptime: string | null;
+  bootId: string | null;
   displayMode: string | null;
 };
 
@@ -241,6 +242,19 @@ function serviceTone(activeState: string | null): "good" | "warn" | "muted" {
   return activeState === "active" ? "good" : "warn";
 }
 
+function bootRecoveryLabel(pi: PiProbe, isPlaying: boolean): string {
+  if (!pi.reachable) {
+    return "Unknown";
+  }
+
+  return isPlaying ? "Recovered" : "Check";
+}
+
+function bootRecoveryDetail(pi: PiProbe): string {
+  const bootLabel = pi.bootId ? `boot ${pi.bootId.slice(0, 8)}` : "boot not reported";
+  return pi.uptime ? `${pi.uptime} · ${bootLabel}` : bootLabel;
+}
+
 function parseServiceStatus(rawValue: string): Pick<
   PiProbe,
   "serviceActiveState" | "serviceSubState" | "serviceRestartCount"
@@ -344,6 +358,7 @@ async function loadPiProbe(): Promise<PiProbe> {
       serviceSubState: null,
       serviceRestartCount: null,
       uptime: null,
+      bootId: null,
       displayMode: null
     };
   }
@@ -361,6 +376,8 @@ async function loadPiProbe(): Promise<PiProbe> {
     "systemctl --user show pisignage-vlc.service --property=ActiveState --property=SubState --property=NRestarts 2>/dev/null || true",
     "printf '__UPTIME__\\n'",
     "uptime -p 2>/dev/null || uptime",
+    "printf '__BOOT__\\n'",
+    "cat /proc/sys/kernel/random/boot_id 2>/dev/null || true",
     "printf '__DISPLAY__\\n'",
     "kmsprint 2>/dev/null | sed -n '1,20p' || true"
   ].join("; ");
@@ -373,7 +390,8 @@ async function loadPiProbe(): Promise<PiProbe> {
     const throttled = textBetween(stdout, "__THROTTLE__", "__VLC__").trim() || null;
     const vlcStats = parseVlcStats(textBetween(stdout, "__VLC__", "__SERVICE__"));
     const serviceStatus = parseServiceStatus(textBetween(stdout, "__SERVICE__", "__UPTIME__"));
-    const uptime = textBetween(stdout, "__UPTIME__", "__DISPLAY__").trim() || null;
+    const uptime = textBetween(stdout, "__UPTIME__", "__BOOT__").trim() || null;
+    const bootId = textBetween(stdout, "__BOOT__", "__DISPLAY__").trim() || null;
     const displayMode = displayModeFromKmsprint(stdout);
     let playerStatus: PlayerStatus | null = null;
 
@@ -394,6 +412,7 @@ async function loadPiProbe(): Promise<PiProbe> {
       ...vlcStats,
       ...serviceStatus,
       uptime,
+      bootId,
       displayMode
     };
   } catch (error) {
@@ -418,6 +437,7 @@ async function loadPiProbe(): Promise<PiProbe> {
       serviceSubState: null,
       serviceRestartCount: null,
       uptime: null,
+      bootId: null,
       displayMode: null
     };
   }
@@ -617,7 +637,7 @@ export default async function DashboardPage() {
               <div>
                 <h2 id="recovery-heading" className="text-xl font-semibold">Recovery evidence</h2>
                 <p className="mt-1 text-sm text-zinc-600">
-                  Live local proof that the field player, display, and health checks are still reporting.
+                  Live local proof that boot recovery, the field player, display, and health checks are still reporting.
                 </p>
               </div>
               <StatusPill
@@ -625,14 +645,20 @@ export default async function DashboardPage() {
                 tone={serviceTone(pi.serviceActiveState)}
               />
             </div>
-            <dl className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <dl className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+              <div className="rounded-md bg-zinc-50 p-4">
+                <dt className="text-xs font-semibold uppercase text-zinc-500">Boot recovery</dt>
+                <dd className="mt-2 text-lg font-semibold">{bootRecoveryLabel(pi, isPlaying)}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">{bootRecoveryDetail(pi)}</dd>
+              </div>
               <div className="rounded-md bg-zinc-50 p-4">
                 <dt className="text-xs font-semibold uppercase text-zinc-500">VLC service</dt>
                 <dd className="mt-2 text-lg font-semibold">{serviceLabel(pi.serviceActiveState, pi.serviceSubState)}</dd>
               </div>
               <div className="rounded-md bg-zinc-50 p-4">
-                <dt className="text-xs font-semibold uppercase text-zinc-500">Restarts</dt>
+                <dt className="text-xs font-semibold uppercase text-zinc-500">Service restarts</dt>
                 <dd className="mt-2 text-lg font-semibold">{pi.serviceRestartCount ?? "Unknown"}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">Current boot</dd>
               </div>
               <div className="rounded-md bg-zinc-50 p-4">
                 <dt className="text-xs font-semibold uppercase text-zinc-500">Status age</dt>
