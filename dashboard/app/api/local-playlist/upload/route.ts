@@ -33,6 +33,8 @@ type PiPublishResult = {
   message: string;
 };
 
+type PublishAction = "upload";
+
 const defaultDurationSeconds = 30;
 const execFileAsync = promisify(execFile);
 
@@ -180,6 +182,31 @@ async function writeFileAtomic(filePath: string, value: Buffer | string): Promis
   }
 }
 
+async function writePublishStatus(
+  action: PublishAction,
+  playlist: Playlist,
+  piPublish: PiPublishResult
+): Promise<void> {
+  const statusPath = path.join(repoRoot(), "dashboard", "local-state", "publish-status.json");
+
+  await writeFileAtomic(
+    statusPath,
+    `${JSON.stringify(
+      {
+        action,
+        assetCount: playlist.assets.length,
+        message: piPublish.message,
+        ok: piPublish.ok,
+        piPublishEnabled: piPublish.enabled,
+        playlistVersion: playlist.version,
+        timestamp: new Date().toISOString()
+      },
+      null,
+      2
+    )}\n`
+  );
+}
+
 async function readPlaylist(playlistPath: string): Promise<Playlist> {
   const playlist = JSON.parse(await fs.readFile(playlistPath, "utf8")) as Partial<Playlist>;
 
@@ -309,6 +336,7 @@ export async function POST(request: Request) {
     await writeFileAtomic(savedFilePath, uploadedBytes);
     await writeFileAtomic(playlistPath, `${JSON.stringify(nextPlaylist, null, 2)}\n`);
     const piPublish = await publishToPi(savedFilePath, savedFileName, playlistPath, nextPlaylist);
+    await writePublishStatus("upload", nextPlaylist, piPublish);
 
     const appendedAsset = nextPlaylist.assets[nextPlaylist.assets.length - 1];
     return NextResponse.json({

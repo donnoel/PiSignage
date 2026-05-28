@@ -27,6 +27,12 @@ type PiPublishConfig = {
   password?: string;
 };
 
+type PiPublishResult = {
+  enabled: boolean;
+  ok: boolean;
+  message: string;
+};
+
 type PlaylistEditAction = "move-up" | "move-down" | "remove";
 
 const execFileAsync = promisify(execFile);
@@ -143,6 +149,31 @@ async function writeFileAtomic(filePath: string, value: string): Promise<void> {
   }
 }
 
+async function writePublishStatus(
+  action: PlaylistEditAction,
+  playlist: Playlist,
+  piPublish: PiPublishResult
+): Promise<void> {
+  const statusPath = path.join(repoRoot(), "dashboard", "local-state", "publish-status.json");
+
+  await writeFileAtomic(
+    statusPath,
+    `${JSON.stringify(
+      {
+        action,
+        assetCount: playlist.assets.length,
+        message: piPublish.message,
+        ok: piPublish.ok,
+        piPublishEnabled: piPublish.enabled,
+        playlistVersion: playlist.version,
+        timestamp: new Date().toISOString()
+      },
+      null,
+      2
+    )}\n`
+  );
+}
+
 async function readPlaylist(playlistPath: string): Promise<Playlist> {
   const playlist = JSON.parse(await fs.readFile(playlistPath, "utf8")) as Partial<Playlist>;
 
@@ -196,7 +227,7 @@ function updatePlaylist(playlist: Playlist, action: PlaylistEditAction, assetId:
   };
 }
 
-async function publishPlaylistToPi(playlistPath: string, playlist: Playlist) {
+async function publishPlaylistToPi(playlistPath: string, playlist: Playlist): Promise<PiPublishResult> {
   const config = readPiPublishConfig();
 
   if (!config) {
@@ -272,6 +303,7 @@ export async function POST(request: Request) {
 
     await writeFileAtomic(playlistPath, `${JSON.stringify(nextPlaylist, null, 2)}\n`);
     const piPublish = await publishPlaylistToPi(playlistPath, nextPlaylist);
+    await writePublishStatus(body.action, nextPlaylist, piPublish);
 
     return NextResponse.json({
       playlistVersion: nextPlaylist.version,

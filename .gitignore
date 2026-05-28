@@ -21,6 +21,7 @@ dist/
 *.tsbuildinfo
 
 # Local runtime state
+dashboard/local-state/
 device-agent/local-cache/
 device-agent/local-state/
 sample-content/assets/*.mp4

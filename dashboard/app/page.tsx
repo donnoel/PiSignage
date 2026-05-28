@@ -66,7 +66,18 @@ type PiProbe = {
 type DashboardState = {
   heartbeat: Heartbeat | null;
   playlist: Playlist;
+  publishStatus: PublishStatus | null;
   pi: PiProbe;
+};
+
+type PublishStatus = {
+  action: string;
+  assetCount: number;
+  message: string;
+  ok: boolean;
+  piPublishEnabled: boolean;
+  playlistVersion: number;
+  timestamp: string;
 };
 
 const fallbackDeviceId = "device-local-demo";
@@ -353,9 +364,11 @@ async function loadDashboardState(): Promise<DashboardState> {
   const root = repoRoot();
   const playlistPath = path.join(root, "sample-content", "playlist.local.json");
   const heartbeatPath = path.join(root, "device-agent", "local-state", "heartbeat.json");
-  const [playlist, heartbeat, pi] = await Promise.all([
+  const publishStatusPath = path.join(root, "dashboard", "local-state", "publish-status.json");
+  const [playlist, heartbeat, publishStatus, pi] = await Promise.all([
     readJsonFile<Playlist>(playlistPath),
     readJsonFile<Heartbeat>(heartbeatPath),
+    readJsonFile<PublishStatus>(publishStatusPath),
     loadPiProbe()
   ]);
 
@@ -363,7 +376,7 @@ async function loadDashboardState(): Promise<DashboardState> {
     throw new Error(`Missing local playlist: ${playlistPath}`);
   }
 
-  return { heartbeat, playlist, pi };
+  return { heartbeat, playlist, publishStatus, pi };
 }
 
 function StatusPill({ label, tone }: { label: string; tone: "good" | "warn" | "muted" }) {
@@ -386,8 +399,50 @@ function Metric({ label, value, detail }: { label: string; value: string; detail
   );
 }
 
+function syncState(localVersion: number, piVersion: number | undefined, piReachable: boolean) {
+  if (!piReachable || typeof piVersion !== "number") {
+    return {
+      detail: "Waiting for Pi playlist status.",
+      label: "Unknown",
+      tone: "warn" as const
+    };
+  }
+
+  if (piVersion === localVersion) {
+    return {
+      detail: "Pi and local playlist versions match.",
+      label: "In sync",
+      tone: "good" as const
+    };
+  }
+
+  if (piVersion < localVersion) {
+    return {
+      detail: "Pi has not reported the latest local playlist yet.",
+      label: "Pi behind",
+      tone: "warn" as const
+    };
+  }
+
+  return {
+    detail: "Pi is reporting a newer playlist than this dashboard has locally.",
+    label: "Mismatch",
+    tone: "warn" as const
+  };
+}
+
+function actionLabel(action: string | undefined): string {
+  return {
+    "move-down": "Move down",
+    "move-up": "Move up",
+    remove: "Remove",
+    "restore-baseline": "Restore baseline",
+    upload: "Upload"
+  }[action ?? ""] ?? "Not recorded";
+}
+
 export default async function DashboardPage() {
-  const { heartbeat, playlist, pi } = await loadDashboardState();
+  const { heartbeat, playlist, publishStatus, pi } = await loadDashboardState();
   const playerStatus = pi.playerStatus;
   const playbackState = playerStatus?.state ?? (pi.reachable ? "unknown" : "unreachable");
   const isPlaying = playbackState === "playing";
@@ -396,6 +451,11 @@ export default async function DashboardPage() {
   const heartbeatUpdatedAt = formatTimestamp(heartbeat?.timestamp);
   const totalDuration = formatDuration(playlist.assets);
   const activeAssetCount = playerStatus?.assetCount ?? playlist.assets.length;
+  const piPlaylistVersion = playerStatus?.playlistVersion;
+  const playlistSyncState = syncState(playlist.version, piPlaylistVersion, pi.reachable);
+  const lastPublishLabel = publishStatus
+    ? `${actionLabel(publishStatus.action)} · ${formatTimestamp(publishStatus.timestamp)}`
+    : "No publish recorded";
 
   return (
     <main className="min-h-screen bg-[#f4f6f8] text-zinc-950">
@@ -441,9 +501,40 @@ export default async function DashboardPage() {
           <section aria-labelledby="overview-heading" className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <h2 id="overview-heading" className="sr-only">Overview</h2>
             <Metric label="Playback" value={isPlaying ? "Live" : "Check"} detail={`Mode: ${playerStatus?.mode ?? "Local VLC"}`} />
-            <Metric label="Playlist" value={`v${playlist.version}`} detail={`${activeAssetCount} assets · ${totalDuration}`} />
+            <Metric label="Playlist" value={`Local v${playlist.version}`} detail={`Pi ${piPlaylistVersion ? `v${piPlaylistVersion}` : "unknown"} · ${activeAssetCount} assets`} />
             <Metric label="Display" value={formatDisplayMode(playerStatus?.displayMode) ?? pi.displayMode ?? "Unknown"} detail={playerStatus?.displayOutput ?? "HDMI status from local probe"} />
             <Metric label="VLC load" value={pi.vlcCpuPercent ?? "Unknown"} detail={pi.vlcMemoryMb ? `${pi.vlcMemoryMb} memory` : "Pi probe unavailable"} />
+          </section>
+
+          <section aria-labelledby="sync-heading" className="mt-6 rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 id="sync-heading" className="text-xl font-semibold">Publish sync</h2>
+                <p className="mt-1 text-sm text-zinc-600">{playlistSyncState.detail}</p>
+              </div>
+              <StatusPill label={playlistSyncState.label} tone={playlistSyncState.tone} />
+            </div>
+            <dl className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-md bg-zinc-50 p-4">
+                <dt className="text-xs font-semibold uppercase text-zinc-500">Local playlist</dt>
+                <dd className="mt-2 text-lg font-semibold">v{playlist.version}</dd>
+              </div>
+              <div className="rounded-md bg-zinc-50 p-4">
+                <dt className="text-xs font-semibold uppercase text-zinc-500">Pi playlist</dt>
+                <dd className="mt-2 text-lg font-semibold">{piPlaylistVersion ? `v${piPlaylistVersion}` : "Unknown"}</dd>
+              </div>
+              <div className="rounded-md bg-zinc-50 p-4">
+                <dt className="text-xs font-semibold uppercase text-zinc-500">Last publish</dt>
+                <dd className="mt-2 text-sm font-semibold text-zinc-950">{lastPublishLabel}</dd>
+              </div>
+              <div className="rounded-md bg-zinc-50 p-4">
+                <dt className="text-xs font-semibold uppercase text-zinc-500">Publish result</dt>
+                <dd className="mt-2 text-sm font-semibold text-zinc-950">
+                  {publishStatus ? (publishStatus.ok ? "Success" : "Needs attention") : "Not recorded"}
+                </dd>
+                {publishStatus ? <dd className="mt-1 text-sm text-zinc-600">{publishStatus.message}</dd> : null}
+              </div>
+            </dl>
           </section>
 
           <section id="locations" aria-labelledby="locations-heading" className="mt-6 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
