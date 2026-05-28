@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
+import { LocalPlaylistControls } from "./local-playlist-controls";
 import { LocalUploadForm } from "./local-upload-form";
 
 export const dynamic = "force-dynamic";
@@ -524,13 +525,20 @@ export default async function DashboardPage() {
               </div>
               <ul className="divide-y divide-zinc-200">
                 {playlist.assets.map((asset, index) => (
-                  <li key={asset.assetId} className="grid gap-3 px-5 py-4 text-sm md:grid-cols-[48px_1fr_auto] md:items-center">
+                  <li key={asset.assetId} className="grid gap-3 px-5 py-4 text-sm md:grid-cols-[48px_1fr_auto_auto] md:items-center">
                     <span className="flex h-10 w-10 items-center justify-center rounded-md bg-zinc-100 text-sm font-bold text-zinc-700">{index + 1}</span>
                     <div>
                       <p className="font-semibold text-zinc-950">{asset.altText ?? asset.assetId}</p>
                       <p className="mt-1 text-zinc-600">{asset.uri}</p>
                     </div>
                     <span className="text-zinc-600">{asset.type} · {asset.durationSeconds ?? 0}s</span>
+                    <LocalPlaylistControls
+                      assetId={asset.assetId}
+                      assetLabel={asset.altText ?? asset.assetId}
+                      isFirst={index === 0}
+                      isLast={index === playlist.assets.length - 1}
+                      isOnlyItem={playlist.assets.length === 1}
+                    />
                   </li>
                 ))}
               </ul>
