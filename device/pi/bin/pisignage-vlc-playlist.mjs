@@ -29,6 +29,10 @@ const playlistPollIntervalMs = Number.parseInt(
   process.env.PISIGNAGE_PLAYLIST_POLL_INTERVAL_MS ?? "5000",
   10
 );
+const statusHeartbeatIntervalMs = Number.parseInt(
+  process.env.PISIGNAGE_STATUS_HEARTBEAT_INTERVAL_MS ?? "15000",
+  10
+);
 const dryRun = process.argv.includes("--dry-run");
 
 let stopping = false;
@@ -183,6 +187,7 @@ function playPlaylist(playlist) {
   return new Promise((resolve, reject) => {
     const videoPaths = playlist.videos.map((video) => video.path);
     let playlistPollTimer;
+    let statusHeartbeatTimer;
     let reloadRequested = false;
     const args = [
       "--fullscreen",
@@ -218,14 +223,34 @@ function playPlaylist(playlist) {
       }
     }, playlistPollIntervalMs);
 
-    activePlayer.on("error", (error) => {
+    if (statusHeartbeatIntervalMs > 0) {
+      statusHeartbeatTimer = setInterval(() => {
+        writeStatus({
+          state: "playing",
+          playlistId: playlist.playlistId,
+          playlistVersion: playlist.version,
+          assetCount: playlist.videos.length,
+          assetIds: playlist.videos.map((video) => video.assetId),
+          lastError: null
+        }).catch((error) => {
+          log(`status heartbeat failed: ${error instanceof Error ? error.message : String(error)}`);
+        });
+      }, statusHeartbeatIntervalMs);
+    }
+
+    function clearTimers() {
       clearInterval(playlistPollTimer);
+      clearInterval(statusHeartbeatTimer);
+    }
+
+    activePlayer.on("error", (error) => {
+      clearTimers();
       activePlayer = undefined;
       reject(error);
     });
 
     activePlayer.on("exit", (code, signal) => {
-      clearInterval(playlistPollTimer);
+      clearTimers();
       activePlayer = undefined;
       if (stopping || reloadRequested || signal === "SIGTERM" || signal === "SIGINT") {
         resolve();
