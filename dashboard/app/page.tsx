@@ -55,6 +55,9 @@ type PiProbe = {
   host: string | null;
   message: string;
   playerStatus: PlayerStatus | null;
+  serviceActiveState: string | null;
+  serviceSubState: string | null;
+  serviceRestartCount: string | null;
   temp: string | null;
   throttled: string | null;
   vlcMemoryMb: string | null;
@@ -203,6 +206,67 @@ function formatThrottle(value: string | null): string {
   return value.replace("throttled=", "");
 }
 
+function formatStatusAge(timestamp: string | null | undefined): string {
+  if (!timestamp) {
+    return "Not reported";
+  }
+
+  const statusDate = new Date(timestamp);
+  if (Number.isNaN(statusDate.getTime())) {
+    return "Unknown";
+  }
+
+  const ageSeconds = Math.max(0, Math.round((Date.now() - statusDate.getTime()) / 1000));
+  if (ageSeconds < 60) {
+    return `${ageSeconds}s ago`;
+  }
+
+  const ageMinutes = Math.round(ageSeconds / 60);
+  if (ageMinutes < 60) {
+    return `${ageMinutes}m ago`;
+  }
+
+  return `${Math.round(ageMinutes / 60)}h ago`;
+}
+
+function serviceLabel(activeState: string | null, subState: string | null): string {
+  if (!activeState) {
+    return "Unknown";
+  }
+
+  return subState ? `${activeState} / ${subState}` : activeState;
+}
+
+function serviceTone(activeState: string | null): "good" | "warn" | "muted" {
+  return activeState === "active" ? "good" : "warn";
+}
+
+function parseServiceStatus(rawValue: string): Pick<
+  PiProbe,
+  "serviceActiveState" | "serviceSubState" | "serviceRestartCount"
+> {
+  const values = Object.fromEntries(
+    rawValue
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const separatorIndex = line.indexOf("=");
+        if (separatorIndex === -1) {
+          return [line, ""] as const;
+        }
+
+        return [line.slice(0, separatorIndex), line.slice(separatorIndex + 1)] as const;
+      })
+  );
+
+  return {
+    serviceActiveState: values.ActiveState || null,
+    serviceSubState: values.SubState || null,
+    serviceRestartCount: values.NRestarts || null
+  };
+}
+
 function quoteTclListValue(value: string): string {
   return `"${value
     .replace(/\\/g, "\\\\")
@@ -276,6 +340,9 @@ async function loadPiProbe(): Promise<PiProbe> {
       throttled: null,
       vlcMemoryMb: null,
       vlcCpuPercent: null,
+      serviceActiveState: null,
+      serviceSubState: null,
+      serviceRestartCount: null,
       uptime: null,
       displayMode: null
     };
@@ -290,6 +357,8 @@ async function loadPiProbe(): Promise<PiProbe> {
     "vcgencmd get_throttled 2>/dev/null || true",
     "printf '__VLC__\\n'",
     "ps -C vlc -o rss=,%cpu= | awk '{rss+=$1; cpu+=$2} END {if (NR > 0) printf \"%.0f %.1f\\n\", rss, cpu}'",
+    "printf '__SERVICE__\\n'",
+    "systemctl --user show pisignage-vlc.service --property=ActiveState --property=SubState --property=NRestarts 2>/dev/null || true",
     "printf '__UPTIME__\\n'",
     "uptime -p 2>/dev/null || uptime",
     "printf '__DISPLAY__\\n'",
@@ -302,7 +371,8 @@ async function loadPiProbe(): Promise<PiProbe> {
     const statusText = textBetween(stdout, "__STATUS__", "__TEMP__");
     const temp = textBetween(stdout, "__TEMP__", "__THROTTLE__").trim() || null;
     const throttled = textBetween(stdout, "__THROTTLE__", "__VLC__").trim() || null;
-    const vlcStats = parseVlcStats(textBetween(stdout, "__VLC__", "__UPTIME__"));
+    const vlcStats = parseVlcStats(textBetween(stdout, "__VLC__", "__SERVICE__"));
+    const serviceStatus = parseServiceStatus(textBetween(stdout, "__SERVICE__", "__UPTIME__"));
     const uptime = textBetween(stdout, "__UPTIME__", "__DISPLAY__").trim() || null;
     const displayMode = displayModeFromKmsprint(stdout);
     let playerStatus: PlayerStatus | null = null;
@@ -322,6 +392,7 @@ async function loadPiProbe(): Promise<PiProbe> {
       temp,
       throttled,
       ...vlcStats,
+      ...serviceStatus,
       uptime,
       displayMode
     };
@@ -343,6 +414,9 @@ async function loadPiProbe(): Promise<PiProbe> {
       throttled: null,
       vlcMemoryMb: null,
       vlcCpuPercent: null,
+      serviceActiveState: null,
+      serviceSubState: null,
+      serviceRestartCount: null,
       uptime: null,
       displayMode: null
     };
@@ -469,6 +543,7 @@ export default async function DashboardPage() {
               "Locations",
               "Screens",
               "Playlist",
+              "Recovery",
               "Media",
               "Device health"
             ].map((item) => (
@@ -533,6 +608,45 @@ export default async function DashboardPage() {
                   {publishStatus ? (publishStatus.ok ? "Success" : "Needs attention") : "Not recorded"}
                 </dd>
                 {publishStatus ? <dd className="mt-1 text-sm text-zinc-600">{publishStatus.message}</dd> : null}
+              </div>
+            </dl>
+          </section>
+
+          <section id="recovery" aria-labelledby="recovery-heading" className="mt-6 rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 id="recovery-heading" className="text-xl font-semibold">Recovery evidence</h2>
+                <p className="mt-1 text-sm text-zinc-600">
+                  Live local proof that the field player, display, and health checks are still reporting.
+                </p>
+              </div>
+              <StatusPill
+                label={serviceLabel(pi.serviceActiveState, pi.serviceSubState)}
+                tone={serviceTone(pi.serviceActiveState)}
+              />
+            </div>
+            <dl className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="rounded-md bg-zinc-50 p-4">
+                <dt className="text-xs font-semibold uppercase text-zinc-500">VLC service</dt>
+                <dd className="mt-2 text-lg font-semibold">{serviceLabel(pi.serviceActiveState, pi.serviceSubState)}</dd>
+              </div>
+              <div className="rounded-md bg-zinc-50 p-4">
+                <dt className="text-xs font-semibold uppercase text-zinc-500">Restarts</dt>
+                <dd className="mt-2 text-lg font-semibold">{pi.serviceRestartCount ?? "Unknown"}</dd>
+              </div>
+              <div className="rounded-md bg-zinc-50 p-4">
+                <dt className="text-xs font-semibold uppercase text-zinc-500">Status age</dt>
+                <dd className="mt-2 text-lg font-semibold">{formatStatusAge(playerStatus?.updatedAt)}</dd>
+              </div>
+              <div className="rounded-md bg-zinc-50 p-4">
+                <dt className="text-xs font-semibold uppercase text-zinc-500">Display</dt>
+                <dd className="mt-2 text-lg font-semibold">{formatDisplayMode(playerStatus?.displayMode) ?? pi.displayMode ?? "Unknown"}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">{playerStatus?.displayOutput ?? "No output reported"}</dd>
+              </div>
+              <div className="rounded-md bg-zinc-50 p-4">
+                <dt className="text-xs font-semibold uppercase text-zinc-500">Thermals</dt>
+                <dd className="mt-2 text-lg font-semibold">{formatTemperature(pi.temp)}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">Throttle {formatThrottle(pi.throttled)}</dd>
               </div>
             </dl>
           </section>
