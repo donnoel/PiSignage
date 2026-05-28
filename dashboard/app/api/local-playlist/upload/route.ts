@@ -84,6 +84,16 @@ function quoteRemoteShell(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
+function quoteTclListValue(value: string): string {
+  return `"${value
+    .replace(/\\/g, "\\\\")
+    .replace(/\$/g, "\\$")
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")}"`;
+}
+
 async function runSsh(config: PiPublishConfig, remoteCommand: string): Promise<void> {
   const args = [
     "-o",
@@ -118,14 +128,15 @@ async function runCommand(command: string, args: string[], password?: string): P
     return;
   }
 
+  const commandArgs = [command, ...args].map(quoteTclListValue).join(" ");
   const expectScript = `
 set timeout 120
-set password [lindex $argv 0]
-set commandArgs [lrange $argv 1 end]
+set password ${quoteTclListValue(password)}
+set commandArgs [list ${commandArgs}]
 spawn {*}$commandArgs
 expect {
-  -re "(?i)password:" { send -- "$password\\r"; exp_continue }
-  -re "(?i)permission denied" { exit 13 }
+  -nocase "*password:*" { send -- "$password\\r"; exp_continue }
+  -nocase "*permission denied*" { exit 13 }
   timeout { exit 124 }
   eof
 }
@@ -133,7 +144,7 @@ catch wait result
 exit [lindex $result 3]
 `;
 
-  await execFileAsync("expect", ["-c", expectScript, password, command, ...args], {
+  await execFileAsync("expect", ["-c", expectScript], {
     timeout: 130_000,
     maxBuffer: 1024 * 1024
   });

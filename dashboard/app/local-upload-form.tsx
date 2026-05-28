@@ -21,6 +21,7 @@ type UploadResponse = {
 export function LocalUploadForm() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedFileName, setSelectedFileName] = useState("No file selected");
   const [uploadState, setUploadState] = useState<UploadState>({
     message: "Select an MP4 file to append it to the local playlist.",
     kind: "idle"
@@ -56,6 +57,7 @@ export function LocalUploadForm() {
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
+      setSelectedFileName("No file selected");
       setUploadState({
         message: `Added ${result.assetId ?? file.name} to the local playlist.${publishMessage}`,
         kind: result.piPublish && !result.piPublish.ok ? "error" : "success"
@@ -81,15 +83,25 @@ export function LocalUploadForm() {
       <label htmlFor="local-video-upload" className="block text-sm font-medium text-zinc-700">
         Add local MP4
       </label>
-      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="mt-3 grid gap-3">
         <input
           ref={fileInputRef}
           id="local-video-upload"
           name="video"
           type="file"
           accept="video/mp4,.mp4"
-          className="block w-full text-sm text-zinc-700 file:mr-4 file:rounded-md file:border-0 file:bg-zinc-900 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
+          className="sr-only"
+          onChange={(event) => setSelectedFileName(event.currentTarget.files?.[0]?.name ?? "No file selected")}
         />
+        <div className="grid gap-2">
+          <label
+            htmlFor="local-video-upload"
+            className="inline-flex min-h-11 w-fit cursor-pointer items-center rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white focus-within:outline-none focus-within:ring-2 focus-within:ring-teal-600"
+          >
+            Choose File
+          </label>
+          <p className="min-w-0 break-words text-sm text-zinc-600">{selectedFileName}</p>
+        </div>
         <button
           type="submit"
           disabled={isPending}
@@ -98,7 +110,7 @@ export function LocalUploadForm() {
           {isPending ? "Refreshing" : "Upload and append"}
         </button>
       </div>
-      <p className={statusClassName} role="status" aria-live="polite">
+      <p className={`mt-3 ${statusClassName}`} role="status" aria-live="polite">
         {uploadState.message}
       </p>
     </form>
