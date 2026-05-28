@@ -93,6 +93,54 @@ const localScreenName = "Living Room TV";
 const execTimeoutMs = 4_000;
 const staleStatusThresholdMs = 45_000;
 
+type DashboardView = "dashboard" | "playlist" | "device-health" | "screens";
+
+type DashboardPageProps = {
+  searchParams?: Promise<{
+    view?: string | string[];
+  }>;
+};
+
+const navigationItems: Array<{ label: string; view: DashboardView }> = [
+  { label: "Dashboard", view: "dashboard" },
+  { label: "Playlist", view: "playlist" },
+  { label: "Device health", view: "device-health" },
+  { label: "Screens", view: "screens" }
+];
+
+const viewCopy: Record<DashboardView, { eyebrow: string; title: string; description: string }> = {
+  dashboard: {
+    eyebrow: "Local proof of concept",
+    title: "Operations Dashboard",
+    description:
+      "One local dashboard, one Raspberry Pi, one TV, and a VLC field player. Cloud services stay deferred until local playback and recovery are proven end to end."
+  },
+  playlist: {
+    eyebrow: "Content operations",
+    title: "Playlist Management",
+    description:
+      "Manage the local playlist, publish it to the Pi, and keep the field player aligned with the dashboard."
+  },
+  "device-health": {
+    eyebrow: "Foundation health",
+    title: "Device Health",
+    description:
+      "Watch recovery evidence, thermals, display state, and the VLC field player controls for the local Pi."
+  },
+  screens: {
+    eyebrow: "Local inventory",
+    title: "Screens",
+    description:
+      "Track the local screen assignment and current player state for this proof of concept."
+  }
+};
+
+function dashboardViewFrom(value: string | string[] | undefined): DashboardView {
+  const candidate = Array.isArray(value) ? value[0] : value;
+
+  return navigationItems.some((item) => item.view === candidate) ? (candidate as DashboardView) : "dashboard";
+}
+
 function repoRoot(): string {
   return path.resolve(process.cwd(), "..");
 }
@@ -533,7 +581,10 @@ function actionLabel(action: string | undefined): string {
   }[action ?? ""] ?? "Not recorded";
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: DashboardPageProps) {
+  const resolvedSearchParams = await searchParams;
+  const selectedView = dashboardViewFrom(resolvedSearchParams?.view);
+  const currentViewCopy = viewCopy[selectedView];
   const { heartbeat, playlist, publishStatus, pi } = await loadDashboardState();
   const playerStatus = pi.playerStatus;
   const playbackState = playerStatus?.state ?? (pi.reachable ? "unknown" : "unreachable");
@@ -560,34 +611,33 @@ export default async function DashboardPage() {
         <aside className="border-r border-zinc-200 bg-white px-5 py-6 lg:sticky lg:top-0 lg:h-screen">
           <div className="text-2xl font-black tracking-tight">PiSignage</div>
           <p className="mt-1 text-xs font-semibold uppercase text-teal-700">Local operations</p>
-          <nav aria-label="Dashboard sections" className="mt-8 space-y-1 text-sm font-medium text-zinc-700">
-            {[
-              "Dashboard",
-              "Locations",
-              "Screens",
-              "Playlist",
-              "Recovery",
-              "Media",
-              "Device health"
-            ].map((item) => (
+          <nav aria-label="Dashboard views" className="mt-8 space-y-1 text-sm font-medium text-zinc-700">
+            {navigationItems.map((item) => {
+              const selected = item.view === selectedView;
+
+              return (
               <a
-                key={item}
-                href={`#${item.toLowerCase().replace(/\s+/g, "-")}`}
-                className="block rounded-md px-3 py-2 hover:bg-zinc-100 focus:outline-none focus:ring-2 focus:ring-teal-600"
+                key={item.view}
+                href={item.view === "dashboard" ? "/" : `/?view=${item.view}`}
+                aria-current={selected ? "page" : undefined}
+                className={`block rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-600 ${
+                  selected ? "bg-teal-50 text-teal-800" : "hover:bg-zinc-100"
+                }`}
               >
-                {item}
+                {item.label}
               </a>
-            ))}
+              );
+            })}
           </nav>
         </aside>
 
         <div className="px-6 py-6 lg:px-8">
           <header id="dashboard" className="flex flex-col gap-4 border-b border-zinc-200 pb-5 xl:flex-row xl:items-center xl:justify-between">
             <div>
-              <p className="text-sm font-semibold uppercase text-teal-700">Local proof of concept</p>
-              <h1 className="mt-1 text-3xl font-bold tracking-tight">Operations Dashboard</h1>
+              <p className="text-sm font-semibold uppercase text-teal-700">{currentViewCopy.eyebrow}</p>
+              <h1 className="mt-1 text-3xl font-bold tracking-tight">{currentViewCopy.title}</h1>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600">
-                One local dashboard, one Raspberry Pi, one TV, and a VLC field player. Cloud services stay deferred until local playback and recovery are proven end to end.
+                {currentViewCopy.description}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -596,7 +646,10 @@ export default async function DashboardPage() {
             </div>
           </header>
 
-          <section aria-labelledby="overview-heading" className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <section
+            aria-labelledby="overview-heading"
+            className={selectedView === "dashboard" ? "mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4" : "hidden"}
+          >
             <h2 id="overview-heading" className="sr-only">Overview</h2>
             <Metric label="Playback" value={playbackMetric} detail={`Mode: ${playerStatus?.mode ?? "Local VLC"}`} />
             <Metric label="Playlist" value={`Local v${playlist.version}`} detail={`Pi ${piPlaylistVersion ? `v${piPlaylistVersion}` : "unknown"} · ${activeAssetCount} assets`} />
@@ -604,7 +657,10 @@ export default async function DashboardPage() {
             <Metric label="VLC load" value={pi.vlcCpuPercent ?? "Unknown"} detail={pi.vlcMemoryMb ? `${pi.vlcMemoryMb} memory` : "Pi probe unavailable"} />
           </section>
 
-          <section aria-labelledby="sync-heading" className="mt-6 rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+          <section
+            aria-labelledby="sync-heading"
+            className={selectedView === "playlist" ? "mt-6 rounded-lg border border-zinc-200 bg-white p-5 shadow-sm" : "hidden"}
+          >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h2 id="sync-heading" className="text-xl font-semibold">Publish sync</h2>
@@ -636,7 +692,11 @@ export default async function DashboardPage() {
             <LocalPublishForm />
           </section>
 
-          <section id="recovery" aria-labelledby="recovery-heading" className="mt-6 rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+          <section
+            id="recovery"
+            aria-labelledby="recovery-heading"
+            className={selectedView === "device-health" ? "mt-6 rounded-lg border border-zinc-200 bg-white p-5 shadow-sm" : "hidden"}
+          >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h2 id="recovery-heading" className="text-xl font-semibold">Recovery evidence</h2>
@@ -681,7 +741,11 @@ export default async function DashboardPage() {
             </dl>
           </section>
 
-          <section id="locations" aria-labelledby="locations-heading" className="mt-6 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+          <section
+            id="locations"
+            aria-labelledby="locations-heading"
+            className={selectedView === "device-health" ? "mt-6 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]" : "hidden"}
+          >
             <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
               <div className="border-b border-zinc-200 p-5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -717,12 +781,19 @@ export default async function DashboardPage() {
             </div>
           </section>
 
-          <section aria-labelledby="system-actions-heading" className="mt-6">
+          <section
+            aria-labelledby="system-actions-heading"
+            className={selectedView === "device-health" ? "mt-6" : "hidden"}
+          >
             <h2 id="system-actions-heading" className="sr-only">System actions</h2>
             <LocalSystemActions />
           </section>
 
-          <section id="screens" aria-labelledby="screens-heading" className="mt-6 rounded-lg border border-zinc-200 bg-white shadow-sm">
+          <section
+            id="screens"
+            aria-labelledby="screens-heading"
+            className={selectedView === "screens" ? "mt-6 rounded-lg border border-zinc-200 bg-white shadow-sm" : "hidden"}
+          >
             <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 id="screens-heading" className="text-xl font-semibold">Screens</h2>
@@ -754,7 +825,11 @@ export default async function DashboardPage() {
             </div>
           </section>
 
-          <section id="playlist" aria-labelledby="playlist-heading" className="mt-6 grid gap-4 xl:grid-cols-[1fr_360px]">
+          <section
+            id="playlist"
+            aria-labelledby="playlist-heading"
+            className={selectedView === "playlist" ? "mt-6 grid gap-4 xl:grid-cols-[1fr_360px]" : "hidden"}
+          >
             <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
               <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
                 <div>
@@ -793,7 +868,10 @@ export default async function DashboardPage() {
             </div>
           </section>
 
-          <section aria-labelledby="local-contract-heading" className="mt-6 rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+          <section
+            aria-labelledby="local-contract-heading"
+            className={selectedView === "dashboard" ? "mt-6 rounded-lg border border-zinc-200 bg-white p-5 shadow-sm" : "hidden"}
+          >
             <h2 id="local-contract-heading" className="text-xl font-semibold">Local contract</h2>
             <div className="mt-4 grid gap-4 text-sm text-zinc-700 md:grid-cols-3">
               <p className="rounded-md bg-zinc-50 p-4">No AWS resources. Playback and status stay local until the foundation is proven.</p>
