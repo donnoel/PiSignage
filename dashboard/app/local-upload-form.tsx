@@ -26,10 +26,16 @@ export function LocalUploadForm() {
     message: "Select an MP4 file to append it to the local playlist.",
     kind: "idle"
   });
+  const [isUploading, setIsUploading] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const isBusy = isUploading || isPending;
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (isBusy) {
+      return;
+    }
 
     const file = fileInputRef.current?.files?.[0];
     if (!file) {
@@ -40,6 +46,7 @@ export function LocalUploadForm() {
     const formData = new FormData();
     formData.append("video", file);
     setUploadState({ message: `Uploading ${file.name}...`, kind: "idle" });
+    setIsUploading(true);
 
     try {
       const response = await fetch("/api/local-playlist/upload", {
@@ -68,6 +75,8 @@ export function LocalUploadForm() {
         message: error instanceof Error ? error.message : "Upload failed",
         kind: "error"
       });
+    } finally {
+      setIsUploading(false);
     }
   }
 
@@ -91,6 +100,7 @@ export function LocalUploadForm() {
           type="file"
           accept="video/mp4,.mp4"
           className="sr-only"
+          disabled={isBusy}
           onChange={(event) => setSelectedFileName(event.currentTarget.files?.[0]?.name ?? "No file selected")}
         />
         <div className="grid gap-2">
@@ -104,10 +114,10 @@ export function LocalUploadForm() {
         </div>
         <button
           type="submit"
-          disabled={isPending}
+          disabled={isBusy}
           className="min-h-11 rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
         >
-          {isPending ? "Refreshing" : "Upload and append"}
+          {isBusy ? "Working..." : "Upload and append"}
         </button>
       </div>
       <p className={`mt-3 ${statusClassName}`} role="status" aria-live="polite">

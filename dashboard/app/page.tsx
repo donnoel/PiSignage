@@ -2,7 +2,10 @@ import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
+import { Metric, StatusPill } from "./dashboard-ui";
+import { LocalPublishForm } from "./local-publish-form";
 import { LocalPlaylistControls } from "./local-playlist-controls";
+import { LocalSystemActions } from "./local-system-actions";
 import { LocalUploadForm } from "./local-upload-form";
 
 export const dynamic = "force-dynamic";
@@ -88,6 +91,7 @@ const fallbackDeviceId = "device-local-demo";
 const localLocationName = "Home TV Field Test";
 const localScreenName = "Living Room TV";
 const execTimeoutMs = 4_000;
+const staleStatusThresholdMs = 45_000;
 
 function repoRoot(): string {
   return path.resolve(process.cwd(), "..");
@@ -230,6 +234,19 @@ function formatStatusAge(timestamp: string | null | undefined): string {
   return `${Math.round(ageMinutes / 60)}h ago`;
 }
 
+function statusAgeMs(timestamp: string | null | undefined): number | null {
+  if (!timestamp) {
+    return null;
+  }
+
+  const statusDate = new Date(timestamp);
+  if (Number.isNaN(statusDate.getTime())) {
+    return null;
+  }
+
+  return Math.max(0, Date.now() - statusDate.getTime());
+}
+
 function serviceLabel(activeState: string | null, subState: string | null): string {
   if (!activeState) {
     return "Unknown";
@@ -242,12 +259,12 @@ function serviceTone(activeState: string | null): "good" | "warn" | "muted" {
   return activeState === "active" ? "good" : "warn";
 }
 
-function bootRecoveryLabel(pi: PiProbe, isPlaying: boolean): string {
+function bootRecoveryLabel(pi: PiProbe, playbackHealthy: boolean): string {
   if (!pi.reachable) {
     return "Unknown";
   }
 
-  return isPlaying ? "Recovered" : "Check";
+  return playbackHealthy ? "Recovered" : "Check";
 }
 
 function bootRecoveryDetail(pi: PiProbe): string {
@@ -473,26 +490,6 @@ async function loadDashboardState(): Promise<DashboardState> {
   return { heartbeat, playlist, publishStatus, pi };
 }
 
-function StatusPill({ label, tone }: { label: string; tone: "good" | "warn" | "muted" }) {
-  const className = {
-    good: "bg-emerald-100 text-emerald-800 ring-emerald-200",
-    warn: "bg-amber-100 text-amber-900 ring-amber-200",
-    muted: "bg-zinc-100 text-zinc-700 ring-zinc-200"
-  }[tone];
-
-  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${className}`}>{label}</span>;
-}
-
-function Metric({ label, value, detail }: { label: string; value: string; detail?: string }) {
-  return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-      <p className="text-xs font-semibold uppercase text-zinc-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-zinc-950">{value}</p>
-      {detail ? <p className="mt-1 text-sm text-zinc-600">{detail}</p> : null}
-    </div>
-  );
-}
-
 function syncState(localVersion: number, piVersion: number | undefined, piReachable: boolean) {
   if (!piReachable || typeof piVersion !== "number") {
     return {
@@ -529,6 +526,7 @@ function actionLabel(action: string | undefined): string {
   return {
     "move-down": "Move down",
     "move-up": "Move up",
+    publish: "Publish now",
     remove: "Remove",
     "restore-baseline": "Restore baseline",
     upload: "Upload"
@@ -540,6 +538,11 @@ export default async function DashboardPage() {
   const playerStatus = pi.playerStatus;
   const playbackState = playerStatus?.state ?? (pi.reachable ? "unknown" : "unreachable");
   const isPlaying = playbackState === "playing";
+  const playerStatusAgeMs = statusAgeMs(playerStatus?.updatedAt);
+  const isPlayerStatusFresh = playerStatusAgeMs !== null && playerStatusAgeMs <= staleStatusThresholdMs;
+  const playbackHealthy = isPlaying && isPlayerStatusFresh;
+  const playbackLabel = playbackHealthy ? "Playing" : isPlaying ? "Stale" : playbackState;
+  const playbackMetric = playbackHealthy ? "Live" : isPlaying ? "Stale" : "Check";
   const currentAsset = assetLabel(playlist, heartbeat?.currentAssetId);
   const playerUpdatedAt = formatTimestamp(playerStatus?.updatedAt);
   const heartbeatUpdatedAt = formatTimestamp(heartbeat?.timestamp);
@@ -589,13 +592,13 @@ export default async function DashboardPage() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <StatusPill label={pi.reachable ? "Pi reachable" : "Pi unreachable"} tone={pi.reachable ? "good" : "warn"} />
-              <StatusPill label={isPlaying ? "Playing" : playbackState} tone={isPlaying ? "good" : "muted"} />
+              <StatusPill label={playbackLabel} tone={playbackHealthy ? "good" : "warn"} />
             </div>
           </header>
 
           <section aria-labelledby="overview-heading" className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <h2 id="overview-heading" className="sr-only">Overview</h2>
-            <Metric label="Playback" value={isPlaying ? "Live" : "Check"} detail={`Mode: ${playerStatus?.mode ?? "Local VLC"}`} />
+            <Metric label="Playback" value={playbackMetric} detail={`Mode: ${playerStatus?.mode ?? "Local VLC"}`} />
             <Metric label="Playlist" value={`Local v${playlist.version}`} detail={`Pi ${piPlaylistVersion ? `v${piPlaylistVersion}` : "unknown"} · ${activeAssetCount} assets`} />
             <Metric label="Display" value={formatDisplayMode(playerStatus?.displayMode) ?? pi.displayMode ?? "Unknown"} detail={playerStatus?.displayOutput ?? "HDMI status from local probe"} />
             <Metric label="VLC load" value={pi.vlcCpuPercent ?? "Unknown"} detail={pi.vlcMemoryMb ? `${pi.vlcMemoryMb} memory` : "Pi probe unavailable"} />
@@ -630,6 +633,7 @@ export default async function DashboardPage() {
                 {publishStatus ? <dd className="mt-1 text-sm text-zinc-600">{publishStatus.message}</dd> : null}
               </div>
             </dl>
+            <LocalPublishForm />
           </section>
 
           <section id="recovery" aria-labelledby="recovery-heading" className="mt-6 rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
@@ -648,7 +652,7 @@ export default async function DashboardPage() {
             <dl className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
               <div className="rounded-md bg-zinc-50 p-4">
                 <dt className="text-xs font-semibold uppercase text-zinc-500">Boot recovery</dt>
-                <dd className="mt-2 text-lg font-semibold">{bootRecoveryLabel(pi, isPlaying)}</dd>
+                <dd className="mt-2 text-lg font-semibold">{bootRecoveryLabel(pi, playbackHealthy)}</dd>
                 <dd className="mt-1 text-sm text-zinc-600">{bootRecoveryDetail(pi)}</dd>
               </div>
               <div className="rounded-md bg-zinc-50 p-4">
@@ -713,6 +717,11 @@ export default async function DashboardPage() {
             </div>
           </section>
 
+          <section aria-labelledby="system-actions-heading" className="mt-6">
+            <h2 id="system-actions-heading" className="sr-only">System actions</h2>
+            <LocalSystemActions />
+          </section>
+
           <section id="screens" aria-labelledby="screens-heading" className="mt-6 rounded-lg border border-zinc-200 bg-white shadow-sm">
             <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -735,7 +744,7 @@ export default async function DashboardPage() {
                 <tbody className="divide-y divide-zinc-200">
                   <tr>
                     <td className="px-5 py-4 font-semibold">{localScreenName}</td>
-                    <td className="px-5 py-4"><StatusPill label={isPlaying ? "Playing" : playbackState} tone={isPlaying ? "good" : "warn"} /></td>
+                    <td className="px-5 py-4"><StatusPill label={playbackLabel} tone={playbackHealthy ? "good" : "warn"} /></td>
                     <td className="px-5 py-4">VLC field player</td>
                     <td className="px-5 py-4">{playlist.name}</td>
                     <td className="px-5 py-4">{playerUpdatedAt}</td>

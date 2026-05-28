@@ -32,9 +32,15 @@ export function LocalPlaylistControls({
 }: PlaylistControlsProps) {
   const router = useRouter();
   const [message, setMessage] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const isBusy = isSaving || isPending;
 
   async function editPlaylist(action: PlaylistAction) {
+    if (isBusy) {
+      return;
+    }
+
     const actionText = {
       "move-up": "Moving up",
       "move-down": "Moving down",
@@ -42,6 +48,7 @@ export function LocalPlaylistControls({
     }[action];
 
     setMessage(`${actionText} ${assetLabel}...`);
+    setIsSaving(true);
 
     try {
       const response = await fetch("/api/local-playlist/items", {
@@ -62,6 +69,8 @@ export function LocalPlaylistControls({
       startTransition(() => router.refresh());
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Playlist edit failed.");
+    } finally {
+      setIsSaving(false);
     }
   }
 
@@ -69,7 +78,7 @@ export function LocalPlaylistControls({
     <div className="flex flex-wrap items-center gap-2 md:justify-end">
       <button
         type="button"
-        disabled={isPending || isFirst}
+        disabled={isBusy || isFirst}
         onClick={() => editPlaylist("move-up")}
         className="flex h-9 w-9 items-center justify-center rounded-md border border-zinc-200 text-sm font-semibold text-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
         aria-label={`Move ${assetLabel} up`}
@@ -79,7 +88,7 @@ export function LocalPlaylistControls({
       </button>
       <button
         type="button"
-        disabled={isPending || isLast}
+        disabled={isBusy || isLast}
         onClick={() => editPlaylist("move-down")}
         className="flex h-9 w-9 items-center justify-center rounded-md border border-zinc-200 text-sm font-semibold text-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
         aria-label={`Move ${assetLabel} down`}
@@ -89,7 +98,7 @@ export function LocalPlaylistControls({
       </button>
       <button
         type="button"
-        disabled={isPending || isOnlyItem}
+        disabled={isBusy || isOnlyItem}
         onClick={() => editPlaylist("remove")}
         className="min-h-9 rounded-md border border-red-200 px-3 py-1.5 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
         aria-label={`Remove ${assetLabel} from playlist`}
