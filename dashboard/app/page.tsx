@@ -94,30 +94,25 @@ const navigationItems: Array<{ label: string; view: DashboardView }> = [
   { label: "Screens", view: "screens" }
 ];
 
-const viewCopy: Record<DashboardView, { eyebrow: string; title: string; description: string }> = {
+const viewCopy: Record<DashboardView, { eyebrow: string; title: string; description?: string }> = {
   dashboard: {
-    eyebrow: "Local proof of concept",
-    title: "Operations Dashboard",
-    description:
-      "One local dashboard, one Raspberry Pi, one TV, and a VLC field player. Cloud services stay deferred until local playback and recovery are proven end to end."
+    eyebrow: "Alpha operations",
+    title: "Dashboard"
   },
   playlist: {
     eyebrow: "Content operations",
-    title: "Playlist Management",
-    description:
-      "Manage the local playlist, publish it to the Pi, and keep the field player aligned with the dashboard."
+    title: "Playlist",
+    description: "Content queue and publishing."
   },
   "device-health": {
-    eyebrow: "Foundation health",
+    eyebrow: "System health",
     title: "Device Health",
-    description:
-      "Watch recovery evidence, thermals, display state, and the VLC field player controls for the local Pi."
+    description: "Player and hardware diagnostics."
   },
   screens: {
-    eyebrow: "Local inventory",
+    eyebrow: "Screen inventory",
     title: "Screens",
-    description:
-      "Track the local screen assignment and current player state for this proof of concept."
+    description: "Screen status and assignments."
   }
 };
 
@@ -378,7 +373,7 @@ function statusAgeMs(timestamp: string | null | undefined): number | null {
 
 function currentAssetLabel(playlist: Playlist, heartbeat: Heartbeat | null, isHeartbeatFresh: boolean): string {
   if (!isHeartbeatFresh) {
-    return "Current item not reported live";
+    return "Current item unavailable";
   }
 
   return assetLabel(playlist, heartbeat?.currentAssetId);
@@ -390,10 +385,10 @@ function currentAssetDetail(heartbeat: Heartbeat | null, isHeartbeatFresh: boole
   }
 
   if (playbackHealthy) {
-    return "VLC is live, but the current item is not reported by the live Pi status yet.";
+    return "VLC is playing. Current-item reporting is not available yet.";
   }
 
-  return "Waiting for a fresh live playback report from the Pi.";
+  return "Waiting for a fresh playback report.";
 }
 
 function heartbeatDetail(heartbeat: Heartbeat | null, isHeartbeatFresh: boolean): string {
@@ -691,6 +686,16 @@ type EvidenceItem = {
   timestamp?: string | null;
 };
 
+type AttentionItem = {
+  detail: string;
+  label: string;
+  tone: "good" | "warn" | "muted";
+};
+
+function pluralize(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const resolvedSearchParams = await searchParams;
   const selectedView = dashboardViewFrom(resolvedSearchParams?.view);
@@ -743,6 +748,56 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const videoAssetCount = playlist.assets.filter((asset) => asset.type === "video").length;
   const imageAssetCount = playlist.assets.length - videoAssetCount;
   const piAssetIds = new Set(playerStatus?.assetIds ?? []);
+  const attentionItems: AttentionItem[] = [];
+
+  if (!pi.configured) {
+    attentionItems.push({
+      detail: "Add Pi SSH settings in dashboard/.env.local.",
+      label: "Pi not configured",
+      tone: "warn"
+    });
+  } else if (!pi.reachable) {
+    attentionItems.push({
+      detail: pi.message,
+      label: "Pi unreachable",
+      tone: "warn"
+    });
+  }
+
+  if (!playbackHealthy) {
+    attentionItems.push({
+      detail: playerFreshnessDetail,
+      label: isPlaying ? "Playback status stale" : "Playback not confirmed",
+      tone: "warn"
+    });
+  }
+
+  if (playlistSyncState.tone !== "good") {
+    attentionItems.push({
+      detail: playlistSyncState.detail,
+      label: "Playlist sync",
+      tone: playlistSyncState.tone
+    });
+  }
+
+  if (!location) {
+    attentionItems.push({
+      detail: "Capture real coordinates for this screen.",
+      label: "Location missing",
+      tone: "warn"
+    });
+  }
+
+  if (publishStatus && !publishStatus.ok) {
+    attentionItems.push({
+      detail: publishStatus.message,
+      label: "Publish failed",
+      tone: "warn"
+    });
+  }
+
+  const screenSummary = pi.reachable ? "1 online" : pi.configured ? "1 offline" : "0 configured";
+  const attentionSummary = attentionItems.length === 0 ? "Clear" : pluralize(attentionItems.length, "item");
   const recoveryEvidence: EvidenceItem[] = [
     {
       label: "Playback heartbeat",
@@ -801,7 +856,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <div className="text-2xl font-black tracking-tight">PiSignage</div>
               <p className="mt-1 text-xs font-semibold uppercase text-teal-700">Local operations</p>
             </div>
-            <StatusPill label="One Pi / one TV" tone="muted" />
+            <StatusPill label="Alpha" tone="muted" />
           </div>
           <nav aria-label="Dashboard views" className="mt-5 flex gap-2 overflow-x-auto pb-1 text-sm font-medium text-zinc-700 lg:mt-8 lg:block lg:space-y-1 lg:overflow-visible lg:pb-0">
             {navigationItems.map((item) => {
@@ -828,9 +883,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             <div>
               <p className="text-sm font-semibold uppercase text-teal-700">{currentViewCopy.eyebrow}</p>
               <h1 className="mt-1 text-3xl font-bold tracking-tight text-zinc-950 sm:text-4xl">{currentViewCopy.title}</h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600">
-                {currentViewCopy.description}
-              </p>
+              {currentViewCopy.description ? (
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600">
+                  {currentViewCopy.description}
+                </p>
+              ) : null}
             </div>
             <div className="grid gap-3 rounded-lg border border-zinc-200 bg-white p-3 text-sm shadow-sm sm:min-w-80">
               <div className="flex flex-wrap items-center gap-2">
@@ -844,84 +901,51 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </header>
 
           <section
-            aria-labelledby="overview-heading"
-            className={selectedView === "dashboard" ? "mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4" : "hidden"}
+            aria-labelledby="operations-heading"
+            className={selectedView === "dashboard" ? "mt-5" : "hidden"}
           >
-            <h2 id="overview-heading" className="sr-only">Overview</h2>
-            <Metric label="Playback" value={playbackMetric} detail={`Mode: ${playerStatus?.mode ?? "Local VLC"}`} />
-            <Metric label="Playlist" value={`Local v${playlist.version}`} detail={`Pi ${piPlaylistVersion ? `v${piPlaylistVersion}` : "unknown"} · ${activeAssetCount} assets`} />
-            <Metric label="Display" value={formatDisplayMode(playerStatus?.displayMode) ?? pi.displayMode ?? "Unknown"} detail={playerStatus?.displayOutput ?? "HDMI status from local probe"} />
-            <Metric label="VLC load" value={pi.vlcCpuPercent ?? "Unknown"} detail={pi.vlcMemoryMb ? `${pi.vlcMemoryMb} memory` : "Pi probe unavailable"} />
+            <h2 id="operations-heading" className="sr-only">Operational status</h2>
+            <dl className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+                <dt className="text-xs font-semibold uppercase text-zinc-500">Screens</dt>
+                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{screenSummary}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">{localScreenName}</dd>
+              </div>
+              <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+                <dt className="text-xs font-semibold uppercase text-zinc-500">Playback</dt>
+                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{playbackMetric}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">{formatStatusAge(playerStatus?.updatedAt)}</dd>
+              </div>
+              <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+                <dt className="text-xs font-semibold uppercase text-zinc-500">Playlist</dt>
+                <dd className="mt-2 text-2xl font-semibold text-zinc-950">v{playlist.version}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">{playlistSyncState.label}</dd>
+              </div>
+              <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+                <dt className="text-xs font-semibold uppercase text-zinc-500">Needs attention</dt>
+                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{attentionSummary}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">{attentionItems[0]?.label ?? "No action needed"}</dd>
+              </div>
+            </dl>
           </section>
 
           <section
-            aria-labelledby="now-playing-heading"
-            className={selectedView === "dashboard" ? "mt-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_460px]" : "hidden"}
+            aria-labelledby="dashboard-map-heading"
+            className={selectedView === "dashboard" ? "mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_420px]" : "hidden"}
           >
             <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
               <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <p className="text-sm font-semibold uppercase text-teal-700">Live screen</p>
-                  <h2 id="now-playing-heading" className="mt-1 text-2xl font-semibold">Now playing</h2>
-                  <p className="mt-1 text-sm leading-6 text-zinc-600">
-                    The currently reported local playback target, content, and recovery state.
-                  </p>
+                  <p className="text-sm font-semibold uppercase text-teal-700">Screens</p>
+                  <h2 id="dashboard-map-heading" className="mt-1 text-2xl font-semibold">Map</h2>
                 </div>
-                <StatusPill label={playbackLabel} tone={playbackHealthy ? "good" : "warn"} />
-              </div>
-              <div className="grid gap-0 divide-y divide-zinc-200 md:grid-cols-[1.1fr_0.9fr] md:divide-x md:divide-y-0">
-                <div className="p-5">
-                  <p className="text-xs font-semibold uppercase text-zinc-500">Content</p>
-                  <p className="mt-2 break-words text-3xl font-semibold leading-tight text-zinc-950">{currentAsset}</p>
-                  <p className="mt-2 text-sm leading-6 text-zinc-600">{currentAssetStatus}</p>
-                  <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
-                    <div className="rounded-md bg-zinc-50 p-3">
-                      <dt className="font-semibold text-zinc-500">Playlist</dt>
-                      <dd className="mt-1 text-zinc-950">{playlist.name} · v{playlist.version}</dd>
-                    </div>
-                    <div className="rounded-md bg-zinc-50 p-3">
-                      <dt className="font-semibold text-zinc-500">Loop</dt>
-                      <dd className="mt-1 text-zinc-950">{playlist.assets.length} items · {totalDuration}</dd>
-                    </div>
-                  </dl>
-                </div>
-                <div className="p-5">
-                  <p className="text-xs font-semibold uppercase text-zinc-500">Screen</p>
-                  <p className="mt-2 text-2xl font-semibold text-zinc-950">{localScreenName}</p>
-                  <dl className="mt-5 grid gap-3 text-sm">
-                    <div className="rounded-md bg-zinc-50 p-3">
-                      <dt className="font-semibold text-zinc-500">Location</dt>
-                      <dd className="mt-1 text-zinc-950">{localLocationName}</dd>
-                    </div>
-                    <div className="rounded-md bg-zinc-50 p-3">
-                      <dt className="font-semibold text-zinc-500">Pi</dt>
-                      <dd className="mt-1 text-zinc-950">{pi.host ?? "Not configured"} · {pi.reachable ? "reachable" : "not reachable"}</dd>
-                    </div>
-                    <div className="rounded-md bg-zinc-50 p-3">
-                      <dt className="font-semibold text-zinc-500">Freshness</dt>
-                      <dd className="mt-1 text-zinc-950">{playerFreshnessDetail}</dd>
-                    </div>
-                  </dl>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
-              <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <p className="text-sm font-semibold uppercase text-teal-700">Locations</p>
-                  <h2 className="mt-1 text-2xl font-semibold">Pi map</h2>
-                  <p className="mt-1 text-sm leading-6 text-zinc-600">
-                    Zoomable live device map. Select a Pi pin for playback and health details.
-                  </p>
-                </div>
-                <StatusPill label={mapUrl ? "Real coordinates" : "Coordinates needed"} tone={mapUrl ? "good" : "warn"} />
+                <StatusPill label={mapUrl ? "Located" : "Location needed"} tone={mapUrl ? "good" : "warn"} />
               </div>
               <div className="p-5">
                 {mapUrl ? (
                   <LocalDeviceMap devices={mapDevices} mapSrc={mapUrl} />
                 ) : (
-                  <div className="flex min-h-80 flex-col justify-center rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-5 text-sm">
+                  <div className="flex min-h-96 flex-col justify-center rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-5 text-sm">
                     <p className="text-lg font-semibold text-zinc-950">Coordinates not captured</p>
                     <p className="mt-2 leading-6 text-zinc-600">
                       Capture browser geolocation from the physical setup location before this panel shows a map.
@@ -938,21 +962,69 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     </dl>
                   </div>
                 )}
-                <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-                  <div className="rounded-md bg-zinc-50 p-3">
-                    <dt className="font-semibold text-zinc-500">Coordinates</dt>
-                    <dd className="mt-1 text-zinc-950">{coordinateLabel(location)}</dd>
-                  </div>
-                  <div className="rounded-md bg-zinc-50 p-3">
-                    <dt className="font-semibold text-zinc-500">Captured</dt>
-                    <dd className="mt-1 text-zinc-950">{location ? formatTimestamp(location.capturedAt) : "Not reported"}</dd>
-                    <dd className="mt-1 text-zinc-600">{locationAccuracyLabel(location)}</dd>
-                  </div>
-                </dl>
                 <LocalDeviceLocationCapture hasLocation={Boolean(location)} />
-                <p className="mt-3 text-xs leading-5 text-zinc-500">
-                  Map data is loaded only after real coordinates are captured from browser geolocation.
-                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+                <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold uppercase text-teal-700">Live screen</p>
+                    <h2 id="now-playing-heading" className="mt-1 text-2xl font-semibold">Now playing</h2>
+                  </div>
+                  <StatusPill label={playbackLabel} tone={playbackHealthy ? "good" : "warn"} />
+                </div>
+                <div className="p-5">
+                  <p className="break-words text-3xl font-semibold leading-tight text-zinc-950">{currentAsset}</p>
+                  <p className="mt-2 text-sm leading-6 text-zinc-600">{currentAssetStatus}</p>
+                  <dl className="mt-5 grid gap-3 text-sm">
+                    <div className="rounded-md bg-zinc-50 p-3">
+                      <dt className="font-semibold text-zinc-500">Screen</dt>
+                      <dd className="mt-1 text-zinc-950">{localScreenName}</dd>
+                    </div>
+                    <div className="rounded-md bg-zinc-50 p-3">
+                      <dt className="font-semibold text-zinc-500">Playlist</dt>
+                      <dd className="mt-1 text-zinc-950">{playlist.name} · v{playlist.version}</dd>
+                    </div>
+                    <div className="rounded-md bg-zinc-50 p-3">
+                      <dt className="font-semibold text-zinc-500">Loop</dt>
+                      <dd className="mt-1 text-zinc-950">{playlist.assets.length} items · {totalDuration}</dd>
+                    </div>
+                    <div className="rounded-md bg-zinc-50 p-3">
+                      <dt className="font-semibold text-zinc-500">Last report</dt>
+                      <dd className="mt-1 text-zinc-950">{formatStatusAge(playerStatus?.updatedAt)}</dd>
+                    </div>
+                  </dl>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+                <div className="flex items-start justify-between gap-3 border-b border-zinc-200 p-5">
+                  <div>
+                    <p className="text-sm font-semibold uppercase text-teal-700">Attention</p>
+                    <h2 className="mt-1 text-2xl font-semibold">Needs attention</h2>
+                  </div>
+                  <StatusPill label={attentionSummary} tone={attentionItems.length === 0 ? "good" : "warn"} />
+                </div>
+                {attentionItems.length > 0 ? (
+                  <ol className="divide-y divide-zinc-200">
+                    {attentionItems.map((item) => (
+                      <li key={`${item.label}-${item.detail}`} className="grid gap-2 p-5 text-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="font-semibold text-zinc-950">{item.label}</p>
+                          <StatusPill label="Check" tone={item.tone} />
+                        </div>
+                        <p className="leading-6 text-zinc-600">{item.detail}</p>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <div className="p-5 text-sm">
+                    <p className="font-semibold text-zinc-950">All clear</p>
+                    <p className="mt-1 text-zinc-600">Playback, status, and playlist sync are healthy.</p>
+                  </div>
+                )}
               </div>
             </div>
           </section>
@@ -1052,7 +1124,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   Latest local evidence the Pi reported for playback, service recovery, publish state, display, and health.
                 </p>
               </div>
-              <StatusPill label={playbackHealthy && playlistSyncState.tone === "good" ? "Demo ready" : "Review"} tone={playbackHealthy && playlistSyncState.tone === "good" ? "good" : "warn"} />
+              <StatusPill label={playbackHealthy && playlistSyncState.tone === "good" ? "Ready" : "Review"} tone={playbackHealthy && playlistSyncState.tone === "good" ? "good" : "warn"} />
             </div>
             <ol className="divide-y divide-zinc-200">
               {recoveryEvidence.map((item) => (
@@ -1129,7 +1201,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 id="screens-heading" className="text-xl font-semibold">Screens</h2>
-                <p className="mt-1 text-sm text-zinc-600">Local-only screen inventory for the proof of concept.</p>
+                <p className="mt-1 text-sm text-zinc-600">Screen inventory and playback assignment.</p>
               </div>
               <StatusPill label="Local only" tone="muted" />
             </div>
@@ -1268,32 +1340,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             </div>
           </section>
 
-          <section
-            aria-labelledby="local-contract-heading"
-            className={selectedView === "dashboard" ? "mt-6 rounded-lg border border-zinc-200 bg-white shadow-sm" : "hidden"}
-          >
-            <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h2 id="local-contract-heading" className="text-xl font-semibold">Local contract</h2>
-                <p className="mt-1 text-sm text-zinc-600">The demo stays grounded in local playback, local state, and one field player.</p>
-              </div>
-              <StatusPill label="AWS deferred" tone="muted" />
-            </div>
-            <dl className="grid gap-0 divide-y divide-zinc-200 text-sm md:grid-cols-3 md:divide-x md:divide-y-0">
-              <div className="p-5">
-                <dt className="font-semibold text-zinc-950">Cloud posture</dt>
-                <dd className="mt-2 leading-6 text-zinc-600">No AWS resources. Playback and status stay local until the foundation is proven.</dd>
-              </div>
-              <div className="p-5">
-                <dt className="font-semibold text-zinc-950">Heartbeat</dt>
-                <dd className="mt-2 leading-6 text-zinc-600">{heartbeatDetail(heartbeat, isHeartbeatFresh)}</dd>
-              </div>
-              <div className="p-5">
-                <dt className="font-semibold text-zinc-950">Current asset</dt>
-                <dd className="mt-2 leading-6 text-zinc-600">{currentAsset}. {currentAssetStatus}</dd>
-              </div>
-            </dl>
-          </section>
         </div>
       </div>
     </main>

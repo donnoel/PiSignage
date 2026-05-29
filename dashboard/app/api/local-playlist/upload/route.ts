@@ -72,7 +72,7 @@ function mediaTypeFromFileName(fileName: string): "image" | "video" {
   }
 
   throw new UploadRequestError(
-    "This local demo accepts MP4 videos plus JPEG and PNG still images.",
+    "This install accepts MP4 videos plus JPEG and PNG still images.",
     400
   );
 }
@@ -322,7 +322,7 @@ export async function POST(request: Request) {
 
     if (file.size > maxUploadBytes) {
       return NextResponse.json(
-        { error: `Media uploads are limited to ${formatUploadLimit(maxUploadBytes)} for the local demo.` },
+        { error: `Media uploads are limited to ${formatUploadLimit(maxUploadBytes)}.` },
         { status: 413 }
       );
     }

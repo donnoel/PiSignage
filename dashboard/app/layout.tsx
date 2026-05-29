@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "PiSignage Dashboard",
-  description: "Local operations dashboard for the PiSignage proof of concept"
+  description: "PiSignage alpha operations console"
 };
 
 export default function RootLayout({
