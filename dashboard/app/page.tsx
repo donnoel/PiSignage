@@ -1,7 +1,12 @@
 import { promises as fs } from "node:fs";
 import { Metric, StatusPill } from "./dashboard-ui";
+import { readDeviceLocation } from "./lib/local-device-location";
+import type { DeviceLocation } from "./lib/local-device-location";
 import { publishStatusPath, readLivePlaylist, repoRoot } from "./lib/local-playlist";
 import type { Playlist, PlaylistAsset } from "./lib/local-playlist";
+import { LocalDeviceLocationCapture } from "./local-device-location-capture";
+import { LocalDeviceMap } from "./local-device-map";
+import type { LocalMapDevice } from "./local-device-map";
 import { readPiConfig, runSsh } from "./lib/pi-local";
 import { LocalPublishForm } from "./local-publish-form";
 import { LocalPlaylistControls } from "./local-playlist-controls";
@@ -54,6 +59,7 @@ type PiProbe = {
 
 type DashboardState = {
   heartbeat: Heartbeat | null;
+  location: DeviceLocation | null;
   playlist: Playlist;
   publishStatus: PublishStatus | null;
   pi: PiProbe;
@@ -69,11 +75,9 @@ type PublishStatus = {
   timestamp: string;
 };
 
-const fallbackDeviceId = "device-local-demo";
-const localLocationName = "Home TV Field Test";
-const localScreenName = "Living Room TV";
 const execTimeoutMs = 4_000;
 const staleStatusThresholdMs = 45_000;
+const staleHeartbeatThresholdMs = 120_000;
 
 type DashboardView = "dashboard" | "playlist" | "device-health" | "screens";
 
@@ -292,6 +296,73 @@ function formatStatusAge(timestamp: string | null | undefined): string {
   return `${Math.round(ageMinutes / 60)}h ago`;
 }
 
+function localConfigLabel(name: string): string | null {
+  const value = process.env[name]?.trim();
+  return value ? value : null;
+}
+
+type MapBounds = {
+  maxLatitude: number;
+  maxLongitude: number;
+  minLatitude: number;
+  minLongitude: number;
+};
+
+function mapBounds(location: DeviceLocation): MapBounds {
+  const latitudePadding = 0.012;
+  const longitudePadding = 0.018;
+
+  return {
+    maxLatitude: location.latitude + latitudePadding,
+    maxLongitude: location.longitude + longitudePadding,
+    minLatitude: location.latitude - latitudePadding,
+    minLongitude: location.longitude - longitudePadding
+  };
+}
+
+function embeddedMapUrl(bounds: MapBounds): string {
+  const url = new URL("https://www.openstreetmap.org/export/embed.html");
+
+  url.searchParams.set(
+    "bbox",
+    [
+      bounds.minLongitude,
+      bounds.minLatitude,
+      bounds.maxLongitude,
+      bounds.maxLatitude
+    ].join(",")
+  );
+  url.searchParams.set("layer", "mapnik");
+
+  return url.toString();
+}
+
+function mapPoint(location: DeviceLocation, bounds: MapBounds): { xPercent: number; yPercent: number } {
+  const xPercent = ((location.longitude - bounds.minLongitude) / (bounds.maxLongitude - bounds.minLongitude)) * 100;
+  const yPercent = ((bounds.maxLatitude - location.latitude) / (bounds.maxLatitude - bounds.minLatitude)) * 100;
+
+  return {
+    xPercent: Math.min(92, Math.max(8, xPercent)),
+    yPercent: Math.min(92, Math.max(12, yPercent))
+  };
+}
+
+function coordinateLabel(location: DeviceLocation | null): string {
+  if (!location) {
+    return "Coordinates not captured";
+  }
+
+  return `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`;
+}
+
+function locationAccuracyLabel(location: DeviceLocation | null): string {
+  if (!location?.accuracyMeters) {
+    return "Accuracy not reported";
+  }
+
+  return `Accuracy about ${Math.round(location.accuracyMeters)} m`;
+}
+
 function statusAgeMs(timestamp: string | null | undefined): number | null {
   if (!timestamp) {
     return null;
@@ -303,6 +374,67 @@ function statusAgeMs(timestamp: string | null | undefined): number | null {
   }
 
   return Math.max(0, Date.now() - statusDate.getTime());
+}
+
+function currentAssetLabel(playlist: Playlist, heartbeat: Heartbeat | null, isHeartbeatFresh: boolean): string {
+  if (!isHeartbeatFresh) {
+    return "Current item not reported live";
+  }
+
+  return assetLabel(playlist, heartbeat?.currentAssetId);
+}
+
+function currentAssetDetail(heartbeat: Heartbeat | null, isHeartbeatFresh: boolean, playbackHealthy: boolean): string {
+  if (isHeartbeatFresh) {
+    return `Device agent updated ${formatStatusAge(heartbeat?.timestamp)}.`;
+  }
+
+  if (playbackHealthy) {
+    return "VLC is live, but the current item is not reported by the live Pi status yet.";
+  }
+
+  return "Waiting for a fresh live playback report from the Pi.";
+}
+
+function heartbeatDetail(heartbeat: Heartbeat | null, isHeartbeatFresh: boolean): string {
+  if (!heartbeat?.timestamp) {
+    return "Device-agent heartbeat has not reported yet.";
+  }
+
+  if (!isHeartbeatFresh) {
+    return `Last device-agent heartbeat was ${formatStatusAge(heartbeat.timestamp)}, so device-agent-only fields are treated as stale.`;
+  }
+
+  return `Updated ${formatStatusAge(heartbeat.timestamp)}. Network flag: ${heartbeat.networkOnline ? "online" : "offline"}.`;
+}
+
+function screenLabel(pi: PiProbe, heartbeat: Heartbeat | null, isHeartbeatFresh: boolean): string {
+  const configuredScreenName = localConfigLabel("PISIGNAGE_SCREEN_NAME");
+  if (configuredScreenName) {
+    return configuredScreenName;
+  }
+
+  if (isHeartbeatFresh && heartbeat?.deviceId) {
+    return heartbeat.deviceId;
+  }
+
+  if (pi.host) {
+    return `Pi ${pi.host}`;
+  }
+
+  return "Screen not configured";
+}
+
+function locationLabel(): string {
+  return localConfigLabel("PISIGNAGE_LOCATION_NAME") ?? "Location not configured";
+}
+
+function deviceIdentifier(pi: PiProbe, heartbeat: Heartbeat | null, isHeartbeatFresh: boolean): string {
+  if (isHeartbeatFresh && heartbeat?.deviceId) {
+    return heartbeat.deviceId;
+  }
+
+  return pi.host ?? "Device not configured";
 }
 
 function statusFreshnessDetail(
@@ -497,14 +629,15 @@ function textBetween(value: string, start: string, end: string): string {
 async function loadDashboardState(): Promise<DashboardState> {
   const root = repoRoot();
   const heartbeatPath = `${root}/device-agent/local-state/heartbeat.json`;
-  const [playlist, heartbeat, publishStatus, pi] = await Promise.all([
+  const [playlist, heartbeat, location, publishStatus, pi] = await Promise.all([
     readLivePlaylist(),
     readJsonFile<Heartbeat>(heartbeatPath),
+    readDeviceLocation(),
     readJsonFile<PublishStatus>(publishStatusPath()),
     loadPiProbe()
   ]);
 
-  return { heartbeat, playlist, publishStatus, pi };
+  return { heartbeat, location, playlist, publishStatus, pi };
 }
 
 function syncState(localVersion: number, piVersion: number | undefined, piReachable: boolean) {
@@ -562,19 +695,44 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const resolvedSearchParams = await searchParams;
   const selectedView = dashboardViewFrom(resolvedSearchParams?.view);
   const currentViewCopy = viewCopy[selectedView];
-  const { heartbeat, playlist, publishStatus, pi } = await loadDashboardState();
+  const { heartbeat, location, playlist, publishStatus, pi } = await loadDashboardState();
   const playerStatus = pi.playerStatus;
   const playbackState = playerStatus?.state ?? (pi.reachable ? "unknown" : "unreachable");
   const isPlaying = playbackState === "playing";
   const playerStatusAgeMs = statusAgeMs(playerStatus?.updatedAt);
   const isPlayerStatusFresh = playerStatusAgeMs !== null && playerStatusAgeMs <= staleStatusThresholdMs;
+  const heartbeatAgeMs = statusAgeMs(heartbeat?.timestamp);
+  const isHeartbeatFresh = heartbeatAgeMs !== null && heartbeatAgeMs <= staleHeartbeatThresholdMs;
   const playbackHealthy = isPlaying && isPlayerStatusFresh;
   const playbackLabel = playbackHealthy ? "Playing" : isPlaying ? "Stale" : playbackState;
   const playbackMetric = playbackHealthy ? "Live" : isPlaying ? "Stale" : "Check";
   const playerFreshnessDetail = statusFreshnessDetail(pi, playerStatus, isPlayerStatusFresh);
-  const currentAsset = assetLabel(playlist, heartbeat?.currentAssetId);
+  const currentAsset = currentAssetLabel(playlist, heartbeat, isHeartbeatFresh);
+  const currentAssetStatus = currentAssetDetail(heartbeat, isHeartbeatFresh, playbackHealthy);
+  const localScreenName = screenLabel(pi, heartbeat, isHeartbeatFresh);
+  const localLocationName = locationLabel();
+  const localDeviceIdentifier = deviceIdentifier(pi, heartbeat, isHeartbeatFresh);
+  const bounds = location ? mapBounds(location) : null;
+  const mapUrl = bounds ? embeddedMapUrl(bounds) : null;
+  const mapDevices: LocalMapDevice[] = location && bounds
+    ? [
+        {
+          accuracy: locationAccuracyLabel(location),
+          capturedAt: formatTimestamp(location.capturedAt),
+          coordinates: coordinateLabel(location),
+          currentAsset,
+          host: localDeviceIdentifier,
+          id: localDeviceIdentifier,
+          label: localScreenName,
+          location: localLocationName,
+          playlist: `${playlist.name} · v${playlist.version}`,
+          status: playbackLabel,
+          statusTone: playbackHealthy ? "good" : "warn",
+          ...mapPoint(location, bounds)
+        }
+      ]
+    : [];
   const playerUpdatedAt = formatTimestamp(playerStatus?.updatedAt);
-  const heartbeatUpdatedAt = formatTimestamp(heartbeat?.timestamp);
   const totalDuration = formatDuration(playlist.assets);
   const activeAssetCount = playerStatus?.assetCount ?? playlist.assets.length;
   const piPlaylistVersion = playerStatus?.playlistVersion;
@@ -694,6 +852,109 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             <Metric label="Playlist" value={`Local v${playlist.version}`} detail={`Pi ${piPlaylistVersion ? `v${piPlaylistVersion}` : "unknown"} · ${activeAssetCount} assets`} />
             <Metric label="Display" value={formatDisplayMode(playerStatus?.displayMode) ?? pi.displayMode ?? "Unknown"} detail={playerStatus?.displayOutput ?? "HDMI status from local probe"} />
             <Metric label="VLC load" value={pi.vlcCpuPercent ?? "Unknown"} detail={pi.vlcMemoryMb ? `${pi.vlcMemoryMb} memory` : "Pi probe unavailable"} />
+          </section>
+
+          <section
+            aria-labelledby="now-playing-heading"
+            className={selectedView === "dashboard" ? "mt-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_460px]" : "hidden"}
+          >
+            <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+              <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold uppercase text-teal-700">Live screen</p>
+                  <h2 id="now-playing-heading" className="mt-1 text-2xl font-semibold">Now playing</h2>
+                  <p className="mt-1 text-sm leading-6 text-zinc-600">
+                    The currently reported local playback target, content, and recovery state.
+                  </p>
+                </div>
+                <StatusPill label={playbackLabel} tone={playbackHealthy ? "good" : "warn"} />
+              </div>
+              <div className="grid gap-0 divide-y divide-zinc-200 md:grid-cols-[1.1fr_0.9fr] md:divide-x md:divide-y-0">
+                <div className="p-5">
+                  <p className="text-xs font-semibold uppercase text-zinc-500">Content</p>
+                  <p className="mt-2 break-words text-3xl font-semibold leading-tight text-zinc-950">{currentAsset}</p>
+                  <p className="mt-2 text-sm leading-6 text-zinc-600">{currentAssetStatus}</p>
+                  <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
+                    <div className="rounded-md bg-zinc-50 p-3">
+                      <dt className="font-semibold text-zinc-500">Playlist</dt>
+                      <dd className="mt-1 text-zinc-950">{playlist.name} · v{playlist.version}</dd>
+                    </div>
+                    <div className="rounded-md bg-zinc-50 p-3">
+                      <dt className="font-semibold text-zinc-500">Loop</dt>
+                      <dd className="mt-1 text-zinc-950">{playlist.assets.length} items · {totalDuration}</dd>
+                    </div>
+                  </dl>
+                </div>
+                <div className="p-5">
+                  <p className="text-xs font-semibold uppercase text-zinc-500">Screen</p>
+                  <p className="mt-2 text-2xl font-semibold text-zinc-950">{localScreenName}</p>
+                  <dl className="mt-5 grid gap-3 text-sm">
+                    <div className="rounded-md bg-zinc-50 p-3">
+                      <dt className="font-semibold text-zinc-500">Location</dt>
+                      <dd className="mt-1 text-zinc-950">{localLocationName}</dd>
+                    </div>
+                    <div className="rounded-md bg-zinc-50 p-3">
+                      <dt className="font-semibold text-zinc-500">Pi</dt>
+                      <dd className="mt-1 text-zinc-950">{pi.host ?? "Not configured"} · {pi.reachable ? "reachable" : "not reachable"}</dd>
+                    </div>
+                    <div className="rounded-md bg-zinc-50 p-3">
+                      <dt className="font-semibold text-zinc-500">Freshness</dt>
+                      <dd className="mt-1 text-zinc-950">{playerFreshnessDetail}</dd>
+                    </div>
+                  </dl>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+              <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold uppercase text-teal-700">Locations</p>
+                  <h2 className="mt-1 text-2xl font-semibold">Pi map</h2>
+                  <p className="mt-1 text-sm leading-6 text-zinc-600">
+                    Zoomable live device map. Select a Pi pin for playback and health details.
+                  </p>
+                </div>
+                <StatusPill label={mapUrl ? "Real coordinates" : "Coordinates needed"} tone={mapUrl ? "good" : "warn"} />
+              </div>
+              <div className="p-5">
+                {mapUrl ? (
+                  <LocalDeviceMap devices={mapDevices} mapSrc={mapUrl} />
+                ) : (
+                  <div className="flex min-h-80 flex-col justify-center rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-5 text-sm">
+                    <p className="text-lg font-semibold text-zinc-950">Coordinates not captured</p>
+                    <p className="mt-2 leading-6 text-zinc-600">
+                      Capture browser geolocation from the physical setup location before this panel shows a map.
+                    </p>
+                    <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-md bg-white p-3">
+                        <dt className="font-semibold text-zinc-500">Screen</dt>
+                        <dd className="mt-1 text-zinc-950">{localScreenName}</dd>
+                      </div>
+                      <div className="rounded-md bg-white p-3">
+                        <dt className="font-semibold text-zinc-500">Device</dt>
+                        <dd className="mt-1 text-zinc-950">{localDeviceIdentifier}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                )}
+                <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                  <div className="rounded-md bg-zinc-50 p-3">
+                    <dt className="font-semibold text-zinc-500">Coordinates</dt>
+                    <dd className="mt-1 text-zinc-950">{coordinateLabel(location)}</dd>
+                  </div>
+                  <div className="rounded-md bg-zinc-50 p-3">
+                    <dt className="font-semibold text-zinc-500">Captured</dt>
+                    <dd className="mt-1 text-zinc-950">{location ? formatTimestamp(location.capturedAt) : "Not reported"}</dd>
+                    <dd className="mt-1 text-zinc-600">{locationAccuracyLabel(location)}</dd>
+                  </div>
+                </dl>
+                <LocalDeviceLocationCapture hasLocation={Boolean(location)} />
+                <p className="mt-3 text-xs leading-5 text-zinc-500">
+                  Map data is loaded only after real coordinates are captured from browser geolocation.
+                </p>
+              </div>
+            </div>
           </section>
 
           <section
@@ -822,7 +1083,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <h2 id="locations-heading" className="text-xl font-semibold">{localLocationName}</h2>
-                    <p className="mt-1 text-sm text-zinc-600">Local field setup at the house</p>
+                    <p className="mt-1 text-sm text-zinc-600">Local field setup from live configuration and Pi status.</p>
                   </div>
                   <StatusPill label={pi.reachable ? "Online" : "Offline"} tone={pi.reachable ? "good" : "warn"} />
                 </div>
@@ -831,7 +1092,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 <div className="p-5">
                   <dt className="font-semibold text-zinc-500">Screen</dt>
                   <dd className="mt-2 text-lg font-semibold">{localScreenName}</dd>
-                  <dd className="mt-1 text-zinc-600">Device ID: {heartbeat?.deviceId ?? fallbackDeviceId}</dd>
+                  <dd className="mt-1 text-zinc-600">Device ID: {localDeviceIdentifier}</dd>
                 </div>
                 <div className="p-5">
                   <dt className="font-semibold text-zinc-500">Last local status</dt>
@@ -847,7 +1108,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 <Metric label="Temperature" value={formatTemperature(pi.temp)} />
                 <Metric label="Throttle" value={formatThrottle(pi.throttled)} />
                 <Metric label="Uptime" value={pi.uptime ?? "Unknown"} />
-                <Metric label="Disk free" value={formatBytes(heartbeat?.diskFreeBytes)} />
+                <Metric label="Disk free" value={isHeartbeatFresh ? formatBytes(heartbeat?.diskFreeBytes) : "Not reported"} />
               </dl>
             </div>
           </section>
@@ -1025,13 +1286,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               </div>
               <div className="p-5">
                 <dt className="font-semibold text-zinc-950">Heartbeat</dt>
-                <dd className="mt-2 leading-6 text-zinc-600">
-                  Updated {heartbeatUpdatedAt}. Network flag: {heartbeat?.networkOnline ? "online" : "offline or not reported"}.
-                </dd>
+                <dd className="mt-2 leading-6 text-zinc-600">{heartbeatDetail(heartbeat, isHeartbeatFresh)}</dd>
               </div>
               <div className="p-5">
                 <dt className="font-semibold text-zinc-950">Current asset</dt>
-                <dd className="mt-2 leading-6 text-zinc-600">{currentAsset}</dd>
+                <dd className="mt-2 leading-6 text-zinc-600">{currentAsset}. {currentAssetStatus}</dd>
               </div>
             </dl>
           </section>

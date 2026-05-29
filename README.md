@@ -10,7 +10,7 @@ The current repository provides a local-only foundation. It does not deploy AWS 
 - `player/`: TypeScript fullscreen image playback proof of concept.
 - `device-agent/`: Node.js + TypeScript local device agent that reads a playlist and writes heartbeat JSON.
 - `docs/`: architecture, phases, API contract, AWS design, security notes, and device setup.
-- `sample-content/`: local playlist and mock media fixture.
+- `sample-content/`: tracked seed playlist and local media fixtures.
 - `infra/`: future AWS IaC placeholder only.
 
 The original Apple/Xcode starter scaffold is still present as legacy starter material. The active signage POC foundation is the Node/TypeScript workspace described above.
@@ -30,7 +30,7 @@ npm run typecheck
 npm run build
 ```
 
-Run the mocked dashboard:
+Run the local operations dashboard:
 
 ```sh
 npm run dev:dashboard
@@ -52,6 +52,16 @@ npm run dev:dashboard
 Dashboard uploads still save to the local checkout first, then copy the uploaded
 MP4 and playlist JSON to the Pi with `scp`/`ssh`. If Pi publishing is not
 configured, the dashboard will show that the upload was saved locally only.
+
+Optional dashboard labels can also live in `dashboard/.env.local`. Leave them
+unset if they are not known yet; the dashboard will say they are not configured
+instead of inventing values. Real map coordinates are captured from browser
+geolocation in the dashboard and saved to ignored local state.
+
+```sh
+PISIGNAGE_SCREEN_NAME='<real-screen-name>'
+PISIGNAGE_LOCATION_NAME='<real-location-name>'
+```
 
 Run the local player:
 

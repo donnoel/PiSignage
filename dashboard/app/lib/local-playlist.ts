@@ -47,6 +47,10 @@ export function publishStatusPath(): string {
   return path.join(localStateDirectory(), "publish-status.json");
 }
 
+export function deviceLocationPath(): string {
+  return path.join(localStateDirectory(), "device-location.json");
+}
+
 async function fileExists(filePath: string): Promise<boolean> {
   try {
     await fs.access(filePath);
