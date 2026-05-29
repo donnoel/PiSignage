@@ -75,7 +75,7 @@ export function LocalPlaylistControls({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+    <div className="flex flex-wrap items-center gap-2">
       <div className="inline-flex rounded-md border border-zinc-200 bg-white p-1">
         <button
           type="button"
@@ -108,7 +108,7 @@ export function LocalPlaylistControls({
         Remove
       </button>
       {message ? (
-        <p className="basis-full text-xs font-medium text-zinc-600 lg:text-right" role="status" aria-live="polite">
+        <p className="basis-full text-xs font-medium text-zinc-600" role="status" aria-live="polite">
           {message}
         </p>
       ) : null}

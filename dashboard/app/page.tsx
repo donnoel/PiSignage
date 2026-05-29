@@ -610,12 +610,17 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   ];
 
   return (
-    <main className="min-h-screen bg-[#f4f6f8] text-zinc-950">
+    <main className="min-h-screen bg-[#f6f7f9] text-zinc-950">
       <div className="grid min-h-screen lg:grid-cols-[220px_1fr]">
-        <aside className="border-r border-zinc-200 bg-white px-5 py-6 lg:sticky lg:top-0 lg:h-screen">
-          <div className="text-2xl font-black tracking-tight">PiSignage</div>
-          <p className="mt-1 text-xs font-semibold uppercase text-teal-700">Local operations</p>
-          <nav aria-label="Dashboard views" className="mt-8 space-y-1 text-sm font-medium text-zinc-700">
+        <aside className="border-b border-zinc-200 bg-white px-5 py-5 lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r lg:py-6">
+          <div className="flex flex-wrap items-end justify-between gap-2 lg:block">
+            <div>
+              <div className="text-2xl font-black tracking-tight">PiSignage</div>
+              <p className="mt-1 text-xs font-semibold uppercase text-teal-700">Local operations</p>
+            </div>
+            <StatusPill label="One Pi / one TV" tone="muted" />
+          </div>
+          <nav aria-label="Dashboard views" className="mt-5 flex gap-2 overflow-x-auto pb-1 text-sm font-medium text-zinc-700 lg:mt-8 lg:block lg:space-y-1 lg:overflow-visible lg:pb-0">
             {navigationItems.map((item) => {
               const selected = item.view === selectedView;
 
@@ -624,8 +629,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 key={item.view}
                 href={item.view === "dashboard" ? "/" : `/?view=${item.view}`}
                 aria-current={selected ? "page" : undefined}
-                className={`block rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-600 ${
-                  selected ? "bg-teal-50 text-teal-800" : "hover:bg-zinc-100"
+                className={`block whitespace-nowrap rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-600 ${
+                  selected ? "bg-teal-50 text-teal-800 ring-1 ring-teal-100" : "hover:bg-zinc-100"
                 }`}
               >
                 {item.label}
@@ -635,18 +640,23 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </nav>
         </aside>
 
-        <div className="px-6 py-6 lg:px-8">
+        <div className="mx-auto w-full max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8">
           <header id="dashboard" className="flex flex-col gap-4 border-b border-zinc-200 pb-5 xl:flex-row xl:items-center xl:justify-between">
             <div>
               <p className="text-sm font-semibold uppercase text-teal-700">{currentViewCopy.eyebrow}</p>
-              <h1 className="mt-1 text-3xl font-bold tracking-tight">{currentViewCopy.title}</h1>
+              <h1 className="mt-1 text-3xl font-bold tracking-tight text-zinc-950 sm:text-4xl">{currentViewCopy.title}</h1>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600">
                 {currentViewCopy.description}
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusPill label={pi.reachable ? "Pi reachable" : "Pi unreachable"} tone={pi.reachable ? "good" : "warn"} />
-              <StatusPill label={playbackLabel} tone={playbackHealthy ? "good" : "warn"} />
+            <div className="grid gap-3 rounded-lg border border-zinc-200 bg-white p-3 text-sm shadow-sm sm:min-w-80">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusPill label={pi.reachable ? "Pi reachable" : "Pi unreachable"} tone={pi.reachable ? "good" : "warn"} />
+                <StatusPill label={playbackLabel} tone={playbackHealthy ? "good" : "warn"} />
+              </div>
+              <p className="text-zinc-600">
+                {pi.host ? `${pi.host} · ` : ""}Status {formatStatusAge(playerStatus?.updatedAt)} · Playlist v{playlist.version}
+              </p>
             </div>
           </header>
 
@@ -906,11 +916,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   return (
                   <li
                     key={asset.assetId}
-                    className={`grid gap-4 px-5 py-4 text-sm lg:grid-cols-[56px_minmax(0,1fr)_minmax(180px,auto)_auto] lg:items-center ${
+                    className={`grid gap-4 px-5 py-5 text-sm lg:grid-cols-[56px_minmax(0,1fr)] ${
                       piAssetIds.has(asset.assetId) ? "bg-emerald-50/35" : ""
                     }`}
                   >
-                    <div className="flex items-center gap-3 lg:block">
+                    <div className="flex items-start gap-3 lg:block">
                       <span className="flex h-11 w-11 items-center justify-center rounded-md bg-zinc-100 text-sm font-bold text-zinc-700">
                         {index + 1}
                       </span>
@@ -918,53 +928,52 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                         <StatusPill label={assetTypeLabel(asset)} tone={assetTypeTone(asset)} />
                       </div>
                     </div>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="min-w-0 break-words font-semibold text-zinc-950">{assetName}</p>
-                        <span className="hidden lg:inline-flex">
-                          <StatusPill label={assetTypeLabel(asset)} tone={assetTypeTone(asset)} />
-                        </span>
-                        {piPlaybackLabel ? <StatusPill label={piPlaybackLabel} tone="good" /> : null}
-                      </div>
-                      <dl className="mt-2 grid gap-x-4 gap-y-1 text-xs text-zinc-600 sm:grid-cols-2 xl:grid-cols-3">
+                    <div className="min-w-0 space-y-3">
+                      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
                         <div className="min-w-0">
-                          <dt className="font-semibold uppercase text-zinc-500">File</dt>
-                          <dd className="mt-0.5 break-words">{fileName}</dd>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="min-w-0 break-words text-base font-semibold leading-6 text-zinc-950">{assetName}</p>
+                            <span className="hidden lg:inline-flex">
+                              <StatusPill label={assetTypeLabel(asset)} tone={assetTypeTone(asset)} />
+                            </span>
+                            {piPlaybackLabel ? <StatusPill label={piPlaybackLabel} tone="good" /> : null}
+                          </div>
+                          <p className="mt-2 break-words text-sm leading-6 text-zinc-600">{fileName}</p>
                         </div>
-                        <div>
+                        <div className="flex flex-wrap gap-2 xl:justify-end">
+                          <span className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-950 ring-1 ring-zinc-200">
+                            {formatSeconds(asset.durationSeconds ?? 0)}
+                          </span>
+                          <span className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-950 ring-1 ring-zinc-200">
+                            {piAssetIds.has(asset.assetId) ? "Reported" : "Pending"}
+                          </span>
+                          <LocalPlaylistControls
+                            assetId={asset.assetId}
+                            assetLabel={assetName}
+                            isFirst={index === 0}
+                            isLast={index === playlist.assets.length - 1}
+                            isOnlyItem={playlist.assets.length === 1}
+                          />
+                        </div>
+                      </div>
+                      <dl className="grid gap-3 rounded-md bg-white/70 p-3 text-xs text-zinc-600 ring-1 ring-zinc-200 sm:grid-cols-2">
+                        <div className="min-w-0">
                           <dt className="font-semibold uppercase text-zinc-500">Asset ID</dt>
-                          <dd className="mt-0.5 break-all">{asset.assetId}</dd>
+                          <dd className="mt-1 break-all">{asset.assetId}</dd>
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <dt className="font-semibold uppercase text-zinc-500">Path</dt>
-                          <dd className="mt-0.5 break-words">{asset.uri}</dd>
+                          <dd className="mt-1 break-words">{asset.uri}</dd>
                         </div>
                       </dl>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 text-sm sm:flex sm:flex-wrap sm:justify-start lg:justify-end">
-                      <div className="rounded-md bg-zinc-50 px-3 py-2 ring-1 ring-zinc-200">
-                        <p className="text-xs font-semibold uppercase text-zinc-500">Duration</p>
-                        <p className="mt-1 font-semibold text-zinc-950">{formatSeconds(asset.durationSeconds ?? 0)}</p>
-                      </div>
-                      <div className="rounded-md bg-zinc-50 px-3 py-2 ring-1 ring-zinc-200">
-                        <p className="text-xs font-semibold uppercase text-zinc-500">Sync</p>
-                        <p className="mt-1 font-semibold text-zinc-950">{piAssetIds.has(asset.assetId) ? "Reported" : "Pending"}</p>
-                      </div>
-                    </div>
-                    <LocalPlaylistControls
-                      assetId={asset.assetId}
-                      assetLabel={assetName}
-                      isFirst={index === 0}
-                      isLast={index === playlist.assets.length - 1}
-                      isOnlyItem={playlist.assets.length === 1}
-                    />
                   </li>
                   );
                 })}
               </ul>
             </div>
 
-            <div id="media" className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+            <div id="media" className="self-start rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
               <h2 className="text-xl font-semibold">Upload media</h2>
               <p className="mt-1 text-sm leading-6 text-zinc-600">
                 Append a local MP4, JPEG, or PNG to the playlist. JPEG and PNG uploads are converted to Pi-safe MP4 still clips before VLC sees them.
@@ -975,14 +984,31 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
           <section
             aria-labelledby="local-contract-heading"
-            className={selectedView === "dashboard" ? "mt-6 rounded-lg border border-zinc-200 bg-white p-5 shadow-sm" : "hidden"}
+            className={selectedView === "dashboard" ? "mt-6 rounded-lg border border-zinc-200 bg-white shadow-sm" : "hidden"}
           >
-            <h2 id="local-contract-heading" className="text-xl font-semibold">Local contract</h2>
-            <div className="mt-4 grid gap-4 text-sm text-zinc-700 md:grid-cols-3">
-              <p className="rounded-md bg-zinc-50 p-4">No AWS resources. Playback and status stay local until the foundation is proven.</p>
-              <p className="rounded-md bg-zinc-50 p-4">Heartbeat updated {heartbeatUpdatedAt}. Network flag: {heartbeat?.networkOnline ? "online" : "offline or not reported"}.</p>
-              <p className="rounded-md bg-zinc-50 p-4">Current heartbeat asset: {currentAsset}.</p>
+            <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 id="local-contract-heading" className="text-xl font-semibold">Local contract</h2>
+                <p className="mt-1 text-sm text-zinc-600">The demo stays grounded in local playback, local state, and one field player.</p>
+              </div>
+              <StatusPill label="AWS deferred" tone="muted" />
             </div>
+            <dl className="grid gap-0 divide-y divide-zinc-200 text-sm md:grid-cols-3 md:divide-x md:divide-y-0">
+              <div className="p-5">
+                <dt className="font-semibold text-zinc-950">Cloud posture</dt>
+                <dd className="mt-2 leading-6 text-zinc-600">No AWS resources. Playback and status stay local until the foundation is proven.</dd>
+              </div>
+              <div className="p-5">
+                <dt className="font-semibold text-zinc-950">Heartbeat</dt>
+                <dd className="mt-2 leading-6 text-zinc-600">
+                  Updated {heartbeatUpdatedAt}. Network flag: {heartbeat?.networkOnline ? "online" : "offline or not reported"}.
+                </dd>
+              </div>
+              <div className="p-5">
+                <dt className="font-semibold text-zinc-950">Current asset</dt>
+                <dd className="mt-2 leading-6 text-zinc-600">{currentAsset}</dd>
+              </div>
+            </dl>
           </section>
         </div>
       </div>
