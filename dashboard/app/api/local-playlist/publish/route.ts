@@ -10,7 +10,7 @@ export async function POST() {
     const playlist = await readPlaylist(playlistPath);
     const piPublish = await publishPlaylistToPi(playlistPath, playlist, {
       notConfigured: "Pi publish is not configured; playlist stayed local.",
-      failure: "Manual publish failed. Check Pi connectivity and required media files."
+      failure: "Manual publish needs attention."
     });
     await writePublishStatus("publish", playlist, piPublish);
 

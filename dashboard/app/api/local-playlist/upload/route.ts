@@ -14,6 +14,7 @@ import {
 } from "../../../lib/local-playlist";
 import type { Playlist } from "../../../lib/local-playlist";
 import {
+  describePiPublishFailure,
   publishPlaylistToPi,
   quoteRemoteShell,
   readPiConfig,
@@ -40,6 +41,16 @@ const execFileAsync = promisify(execFile);
 
 export const runtime = "nodejs";
 
+class UploadRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message);
+    this.name = "UploadRequestError";
+  }
+}
+
 function slugify(value: string): string {
   return value
     .toLowerCase()
@@ -60,11 +71,18 @@ function mediaTypeFromFileName(fileName: string): "image" | "video" {
     return "image";
   }
 
-  throw new Error("Only .mp4, .jpg, .jpeg, and .png uploads are recognized.");
+  throw new UploadRequestError(
+    "This local demo accepts MP4 videos plus JPEG and PNG still images.",
+    400
+  );
 }
 
 function sanitizeMediaFileName(fileName: string): string {
   const baseName = path.basename(fileName).replace(/[^a-zA-Z0-9._-]/g, "-");
+
+  if (!baseName || baseName === "." || baseName === "..") {
+    throw new UploadRequestError("Choose a media file with a usable file name.", 400);
+  }
 
   mediaTypeFromFileName(baseName);
 
@@ -173,8 +191,33 @@ async function createStillVideoClip(
     await fs.rename(temporaryOutputPath, outputVideoPath);
   } catch (error) {
     await fs.rm(temporaryOutputPath, { force: true });
-    const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`Image upload could not be converted to the Pi-safe still-video preset. ${detail}`);
+    const nodeError = error as NodeJS.ErrnoException & {
+      killed?: boolean;
+      signal?: NodeJS.Signals;
+      stderr?: string;
+    };
+
+    if (nodeError.code === "ENOENT") {
+      throw new UploadRequestError(
+        `JPEG/PNG uploads need ffmpeg before they can become Pi-safe MP4 still clips. Install ffmpeg locally or set PISIGNAGE_FFMPEG_BIN, then try again.`,
+        503
+      );
+    }
+
+    if (nodeError.killed || nodeError.signal === "SIGTERM") {
+      throw new UploadRequestError(
+        "The image conversion timed out before ffmpeg finished. Try a smaller image or a shorter still duration.",
+        504
+      );
+    }
+
+    const detail = typeof nodeError.stderr === "string" && nodeError.stderr.trim()
+      ? ` ffmpeg said: ${nodeError.stderr.trim().split("\n").at(-1)}`
+      : "";
+    throw new UploadRequestError(
+      `That image could not be converted into a Pi-safe MP4 still clip.${detail}`,
+      422
+    );
   }
 }
 
@@ -241,7 +284,7 @@ async function publishUploadToPi(
     );
     return publishPlaylistToPi(playlistPath, playlist, {
       notConfigured: "Pi publish is not configured; upload was saved locally only.",
-      failure: "Upload was saved locally, but Pi publish failed. Check Pi connectivity and required media files.",
+      failure: "Upload was saved locally, but Pi publish needs attention.",
       success: `Published to Pi at ${config.host}.`
     });
   } catch (error) {
@@ -249,8 +292,7 @@ async function publishUploadToPi(
     return {
       enabled: true,
       ok: false,
-      message:
-        "Upload was saved locally, but Pi publish failed. Check Pi connectivity and required media files."
+      message: `Upload was saved locally, but Pi publish needs attention. ${describePiPublishFailure(error)}`
     };
   }
 }
@@ -331,9 +373,14 @@ export async function POST(request: Request) {
       piPublish
     });
   } catch (error) {
-    console.error("local playlist upload failed", error);
     const message = error instanceof Error ? error.message : "Upload failed.";
-    const status = message.startsWith("Only .mp4") ? 400 : 500;
+    const status = error instanceof UploadRequestError ? error.status : 500;
+
+    if (error instanceof UploadRequestError) {
+      console.warn("local playlist upload rejected", message);
+    } else {
+      console.error("local playlist upload failed", error);
+    }
 
     return NextResponse.json(
       { error: message },

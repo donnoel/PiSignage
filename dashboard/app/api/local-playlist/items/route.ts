@@ -72,7 +72,7 @@ export async function POST(request: Request) {
     await writePlaylist(playlistPath, nextPlaylist);
     const piPublish = await publishPlaylistToPi(playlistPath, nextPlaylist, {
       notConfigured: "Pi publish is not configured; playlist was updated locally only.",
-      failure: "Playlist was updated locally, but Pi publish failed. Check Pi connectivity."
+      failure: "Playlist was updated locally, but Pi publish needs attention."
     });
     await writePublishStatus(body.action, nextPlaylist, piPublish);
 

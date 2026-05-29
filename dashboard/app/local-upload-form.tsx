@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 type UploadState = {
   message: string;
-  kind: "idle" | "success" | "error";
+  kind: "idle" | "success" | "warning" | "error";
 };
 
 type UploadResponse = {
@@ -33,6 +33,20 @@ export function LocalUploadForm() {
   const isBusy = isUploading || isPending;
   const isStillImage = selectedFileKind === "image";
 
+  function fileKindFrom(file: File): "image" | "video" | "unknown" {
+    const fileName = file.name.toLowerCase();
+
+    if (file.type.startsWith("image/") || fileName.endsWith(".jpg") || fileName.endsWith(".jpeg") || fileName.endsWith(".png")) {
+      return "image";
+    }
+
+    if (file.type === "video/mp4" || fileName.endsWith(".mp4")) {
+      return "video";
+    }
+
+    return "unknown";
+  }
+
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0];
 
@@ -43,7 +57,7 @@ export function LocalUploadForm() {
     }
 
     setSelectedFileName(file.name);
-    setSelectedFileKind(file.type.startsWith("image/") ? "image" : file.name.toLowerCase().endsWith(".mp4") ? "video" : "unknown");
+    setSelectedFileKind(fileKindFrom(file));
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -56,6 +70,14 @@ export function LocalUploadForm() {
     const file = fileInputRef.current?.files?.[0];
     if (!file) {
       setUploadState({ message: "Choose an MP4, JPEG, or PNG file first.", kind: "error" });
+      return;
+    }
+
+    if (fileKindFrom(file) === "unknown") {
+      setUploadState({
+        message: "That file type is not supported here. Choose an MP4 video, JPEG image, or PNG image.",
+        kind: "error"
+      });
       return;
     }
 
@@ -77,6 +99,7 @@ export function LocalUploadForm() {
       }
 
       const publishMessage = result.piPublish?.message ? ` ${result.piPublish.message}` : "";
+      const publishNeedsAttention = result.piPublish && !result.piPublish.ok;
 
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
@@ -85,7 +108,7 @@ export function LocalUploadForm() {
       setSelectedFileKind("unknown");
       setUploadState({
         message: `Added ${result.assetId ?? file.name} to the local playlist.${publishMessage}`,
-        kind: result.piPublish && !result.piPublish.ok ? "error" : "success"
+        kind: publishNeedsAttention ? "warning" : "success"
       });
       startTransition(() => router.refresh());
     } catch (error) {
@@ -103,7 +126,9 @@ export function LocalUploadForm() {
       ? "text-sm font-medium text-red-700"
       : uploadState.kind === "success"
         ? "text-sm font-medium text-emerald-700"
-        : "text-sm text-zinc-600";
+        : uploadState.kind === "warning"
+          ? "text-sm font-medium text-amber-800"
+          : "text-sm text-zinc-600";
 
   return (
     <form onSubmit={handleSubmit} className="mt-5 rounded-md border border-zinc-200 bg-zinc-50 p-4">

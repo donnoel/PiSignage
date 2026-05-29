@@ -16,6 +16,7 @@ type PublishResponse = {
 export function LocalPublishForm() {
   const router = useRouter();
   const [message, setMessage] = useState("");
+  const [messageKind, setMessageKind] = useState<"idle" | "success" | "warning" | "error">("idle");
   const [isPublishing, setIsPublishing] = useState(false);
   const [isPending, startTransition] = useTransition();
   const isBusy = isPublishing || isPending;
@@ -26,6 +27,7 @@ export function LocalPublishForm() {
     }
 
     setMessage("Publishing playlist to Pi...");
+    setMessageKind("idle");
     setIsPublishing(true);
 
     try {
@@ -40,13 +42,24 @@ export function LocalPublishForm() {
 
       const publishMessage = result.piPublish?.message ? ` ${result.piPublish.message}` : "";
       setMessage(`Playlist v${result.playlistVersion} publish recorded.${publishMessage}`);
+      setMessageKind(result.piPublish && !result.piPublish.ok ? "warning" : "success");
       startTransition(() => router.refresh());
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Publish failed.");
+      setMessageKind("error");
     } finally {
       setIsPublishing(false);
     }
   }
+
+  const messageClassName =
+    messageKind === "error"
+      ? "mt-2 text-xs font-medium text-red-700"
+      : messageKind === "warning"
+        ? "mt-2 text-xs font-medium text-amber-800"
+        : messageKind === "success"
+          ? "mt-2 text-xs font-medium text-emerald-700"
+          : "mt-2 text-xs font-medium text-zinc-600";
 
   return (
     <div className="mt-5 flex flex-col gap-3 rounded-md border border-zinc-200 bg-zinc-50 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -54,7 +67,7 @@ export function LocalPublishForm() {
         <h3 className="text-sm font-semibold text-zinc-950">Manual publish</h3>
         <p className="mt-1 text-sm text-zinc-600">Copy the current local playlist to the Pi and let VLC reload it.</p>
         {message ? (
-          <p className="mt-2 text-xs font-medium text-zinc-600" role="status" aria-live="polite">
+          <p className={messageClassName} role="status" aria-live="polite">
             {message}
           </p>
         ) : null}

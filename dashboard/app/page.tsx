@@ -305,6 +305,30 @@ function statusAgeMs(timestamp: string | null | undefined): number | null {
   return Math.max(0, Date.now() - statusDate.getTime());
 }
 
+function statusFreshnessDetail(
+  pi: PiProbe,
+  playerStatus: PlayerStatus | null | undefined,
+  isPlayerStatusFresh: boolean
+): string {
+  if (!pi.configured) {
+    return "Pi SSH is not configured yet.";
+  }
+
+  if (!pi.reachable) {
+    return "Pi status is unavailable from this dashboard.";
+  }
+
+  if (!playerStatus?.updatedAt) {
+    return "Pi is reachable, but VLC has not written a status heartbeat yet.";
+  }
+
+  if (!isPlayerStatusFresh) {
+    return `Last VLC heartbeat was ${formatStatusAge(playerStatus.updatedAt)}. Playback may still be running locally on the Pi.`;
+  }
+
+  return `Last VLC heartbeat was ${formatStatusAge(playerStatus.updatedAt)}.`;
+}
+
 function serviceLabel(activeState: string | null, subState: string | null): string {
   if (!activeState) {
     return "Unknown";
@@ -547,6 +571,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const playbackHealthy = isPlaying && isPlayerStatusFresh;
   const playbackLabel = playbackHealthy ? "Playing" : isPlaying ? "Stale" : playbackState;
   const playbackMetric = playbackHealthy ? "Live" : isPlaying ? "Stale" : "Check";
+  const playerFreshnessDetail = statusFreshnessDetail(pi, playerStatus, isPlayerStatusFresh);
   const currentAsset = assetLabel(playlist, heartbeat?.currentAssetId);
   const playerUpdatedAt = formatTimestamp(playerStatus?.updatedAt);
   const heartbeatUpdatedAt = formatTimestamp(heartbeat?.timestamp);
@@ -564,7 +589,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     {
       label: "Playback heartbeat",
       value: playbackHealthy ? "Fresh and playing" : isPlaying ? "Playing but stale" : "Needs attention",
-      detail: `Last VLC status ${formatStatusAge(playerStatus?.updatedAt)}. ${playerStatus?.lastError ? `Last error: ${playerStatus.lastError}` : "No VLC error reported."}`,
+      detail: `${playerFreshnessDetail} ${playerStatus?.lastError ? `Last error: ${playerStatus.lastError}` : "No VLC error reported."}`,
       tone: playbackHealthy ? "good" : "warn",
       timestamp: playerStatus?.updatedAt
     },
@@ -655,7 +680,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 <StatusPill label={playbackLabel} tone={playbackHealthy ? "good" : "warn"} />
               </div>
               <p className="text-zinc-600">
-                {pi.host ? `${pi.host} · ` : ""}Status {formatStatusAge(playerStatus?.updatedAt)} · Playlist v{playlist.version}
+                {pi.host ? `${pi.host} · ` : ""}{playerFreshnessDetail} · Playlist v{playlist.version}
               </p>
             </div>
           </header>

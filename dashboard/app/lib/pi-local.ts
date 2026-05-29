@@ -17,6 +17,24 @@ type CommandOptions = {
 
 const execFileAsync = promisify(execFile);
 
+export function describePiPublishFailure(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (message.includes("Permission denied")) {
+    return "Pi publish could not sign in over SSH. Check the local Pi user, password, or SSH key in dashboard/.env.local.";
+  }
+
+  if (message.includes("timed out") || message.includes("ETIMEDOUT") || message.includes("ENETUNREACH")) {
+    return "Pi publish timed out on the local network. The playlist stayed saved locally; check that the Pi is awake and reachable.";
+  }
+
+  if (message.includes("No such file") || message.includes("test -f")) {
+    return "Pi publish could not verify every media file on the Pi. The playlist stayed saved locally; publish again after the missing media is available.";
+  }
+
+  return "Pi publish did not complete. The playlist stayed saved locally; check Pi connectivity and try publish again.";
+}
+
 export function readPiConfig(): PiConfig | null {
   const host = process.env.PISIGNAGE_PI_HOST?.trim();
 
@@ -188,7 +206,7 @@ export async function publishPlaylistToPi(
     return {
       enabled: true,
       ok: false,
-      message: messages.failure
+      message: `${messages.failure} ${describePiPublishFailure(error)}`
     };
   }
 }
