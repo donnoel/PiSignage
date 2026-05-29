@@ -1,48 +1,36 @@
 import { promises as fs } from "node:fs";
-import { execFile } from "node:child_process";
 import path from "node:path";
-import { promisify } from "node:util";
 import { NextResponse } from "next/server";
-
-type PlaylistAsset = {
-  assetId: string;
-  type: "image" | "video";
-  uri: string;
-  durationSeconds?: number;
-  altText?: string;
-};
-
-type Playlist = {
-  playlistId: string;
-  name: string;
-  version: number;
-  updatedAt: string;
-  assets: PlaylistAsset[];
-};
-
-type PiPublishConfig = {
-  host: string;
-  user: string;
-  root: string;
-  password?: string;
-};
-
-type PiPublishResult = {
-  enabled: boolean;
-  ok: boolean;
-  message: string;
-};
-
-type PublishAction = "upload";
+import {
+  ensureLivePlaylistPath,
+  readPlaylist,
+  sampleAssetsDirectory,
+  writeFileAtomic,
+  writePlaylist,
+  writePublishStatus
+} from "../../../lib/local-playlist";
+import type { Playlist } from "../../../lib/local-playlist";
+import {
+  publishPlaylistToPi,
+  quoteRemoteShell,
+  readPiConfig,
+  requiredRemoteAssetPaths,
+  runScp,
+  runSsh
+} from "../../../lib/pi-local";
+import type { PiPublishResult } from "../../../lib/local-playlist";
 
 const defaultDurationSeconds = 30;
-const execFileAsync = promisify(execFile);
+const defaultMaxUploadBytes = 1024 * 1024 * 1024;
+const configuredMaxUploadBytes = Number.parseInt(
+  process.env.PISIGNAGE_MAX_UPLOAD_BYTES ?? "",
+  10
+);
+const maxUploadBytes = Number.isFinite(configuredMaxUploadBytes)
+  ? configuredMaxUploadBytes
+  : defaultMaxUploadBytes;
 
 export const runtime = "nodejs";
-
-function repoRoot(): string {
-  return path.resolve(process.cwd(), "..");
-}
 
 function slugify(value: string): string {
   return value
@@ -63,95 +51,6 @@ function sanitizeMp4FileName(fileName: string): string {
   return baseName;
 }
 
-function readPiPublishConfig(): PiPublishConfig | null {
-  const host = process.env.PISIGNAGE_PI_HOST?.trim();
-
-  if (!host) {
-    return null;
-  }
-
-  return {
-    host,
-    user: process.env.PISIGNAGE_PI_USER?.trim() || "donnoel",
-    root: process.env.PISIGNAGE_PI_ROOT?.trim() || "/home/donnoel/PiSignage",
-    password: process.env.PISIGNAGE_PI_PASSWORD
-  };
-}
-
-function remoteLogin(config: PiPublishConfig): string {
-  return `${config.user}@${config.host}`;
-}
-
-function quoteRemoteShell(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
-function quoteTclListValue(value: string): string {
-  return `"${value
-    .replace(/\\/g, "\\\\")
-    .replace(/\$/g, "\\$")
-    .replace(/\[/g, "\\[")
-    .replace(/\]/g, "\\]")
-    .replace(/"/g, '\\"')
-    .replace(/\n/g, "\\n")}"`;
-}
-
-async function runSsh(config: PiPublishConfig, remoteCommand: string): Promise<void> {
-  const args = [
-    "-o",
-    "StrictHostKeyChecking=accept-new",
-    "-o",
-    "ConnectTimeout=8",
-    ...(config.password ? [] : ["-o", "BatchMode=yes"]),
-    remoteLogin(config),
-    remoteCommand
-  ];
-
-  await runCommand("ssh", args, config.password);
-}
-
-async function runScp(config: PiPublishConfig, sourcePath: string, targetPath: string): Promise<void> {
-  const args = [
-    "-o",
-    "StrictHostKeyChecking=accept-new",
-    "-o",
-    "ConnectTimeout=8",
-    ...(config.password ? [] : ["-o", "BatchMode=yes"]),
-    sourcePath,
-    `${remoteLogin(config)}:${targetPath}`
-  ];
-
-  await runCommand("scp", args, config.password);
-}
-
-async function runCommand(command: string, args: string[], password?: string): Promise<void> {
-  if (!password) {
-    await execFileAsync(command, args, { timeout: 120_000, maxBuffer: 1024 * 1024 });
-    return;
-  }
-
-  const commandArgs = [command, ...args].map(quoteTclListValue).join(" ");
-  const expectScript = `
-set timeout 120
-set password ${quoteTclListValue(password)}
-set commandArgs [list ${commandArgs}]
-spawn {*}$commandArgs
-expect {
-  -nocase "*password:*" { send -- "$password\\r"; exp_continue }
-  -nocase "*permission denied*" { exit 13 }
-  timeout { exit 124 }
-  eof
-}
-catch wait result
-exit [lindex $result 3]
-`;
-
-  await execFileAsync("expect", ["-c", expectScript], {
-    timeout: 130_000,
-    maxBuffer: 1024 * 1024
-  });
-}
-
 async function uniqueFileName(assetsDirectory: string, fileName: string): Promise<string> {
   const extension = path.extname(fileName);
   const baseName = path.basename(fileName, extension);
@@ -167,60 +66,6 @@ async function uniqueFileName(assetsDirectory: string, fileName: string): Promis
       return candidate;
     }
   }
-}
-
-async function writeFileAtomic(filePath: string, value: Buffer | string): Promise<void> {
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  const temporaryPath = `${filePath}.${process.pid}.tmp`;
-
-  try {
-    await fs.writeFile(temporaryPath, value);
-    await fs.rename(temporaryPath, filePath);
-  } catch (error) {
-    await fs.rm(temporaryPath, { force: true });
-    throw error;
-  }
-}
-
-async function writePublishStatus(
-  action: PublishAction,
-  playlist: Playlist,
-  piPublish: PiPublishResult
-): Promise<void> {
-  const statusPath = path.join(repoRoot(), "dashboard", "local-state", "publish-status.json");
-
-  await writeFileAtomic(
-    statusPath,
-    `${JSON.stringify(
-      {
-        action,
-        assetCount: playlist.assets.length,
-        message: piPublish.message,
-        ok: piPublish.ok,
-        piPublishEnabled: piPublish.enabled,
-        playlistVersion: playlist.version,
-        timestamp: new Date().toISOString()
-      },
-      null,
-      2
-    )}\n`
-  );
-}
-
-async function readPlaylist(playlistPath: string): Promise<Playlist> {
-  const playlist = JSON.parse(await fs.readFile(playlistPath, "utf8")) as Partial<Playlist>;
-
-  if (
-    typeof playlist.playlistId !== "string" ||
-    typeof playlist.name !== "string" ||
-    typeof playlist.version !== "number" ||
-    typeof playlist.updatedAt !== "string" ||
-    !Array.isArray(playlist.assets)
-  ) {
-    throw new Error("Local playlist is malformed.");
-  }
-
-  return playlist as Playlist;
 }
 
 function appendAsset(playlist: Playlist, savedFileName: string): Playlist {
@@ -251,13 +96,13 @@ function appendAsset(playlist: Playlist, savedFileName: string): Playlist {
   };
 }
 
-async function publishToPi(
+async function publishUploadToPi(
   savedFilePath: string,
   savedFileName: string,
   playlistPath: string,
   playlist: Playlist
 ): Promise<PiPublishResult> {
-  const config = readPiPublishConfig();
+  const config = readPiConfig();
 
   if (!config) {
     return {
@@ -268,41 +113,21 @@ async function publishToPi(
   }
 
   const remoteAssetsDirectory = path.posix.join(config.root, "sample-content", "assets");
-  const remotePlaylistPath = path.posix.join(config.root, "sample-content", "playlist.local.json");
-  const temporaryPlaylistPath = `${remotePlaylistPath}.${Date.now()}.tmp`;
-  const requiredRemoteAssets = playlist.assets.map((asset) => {
-    const normalizedUri = path.posix.normalize(asset.uri);
-    if (
-      path.posix.isAbsolute(normalizedUri) ||
-      normalizedUri === ".." ||
-      normalizedUri.startsWith("../")
-    ) {
-      throw new Error(`Playlist asset path is not local: ${asset.assetId}`);
-    }
-
-    return path.posix.join(config.root, "sample-content", normalizedUri);
-  });
 
   try {
     await runSsh(config, `mkdir -p ${quoteRemoteShell(remoteAssetsDirectory)}`);
     await runScp(config, savedFilePath, path.posix.join(remoteAssetsDirectory, savedFileName));
     await runSsh(
       config,
-      requiredRemoteAssets
+      requiredRemoteAssetPaths(config, playlist)
         .map((assetPath) => `test -f ${quoteRemoteShell(assetPath)}`)
         .join(" && ")
     );
-    await runScp(config, playlistPath, temporaryPlaylistPath);
-    await runSsh(
-      config,
-      `mv ${quoteRemoteShell(temporaryPlaylistPath)} ${quoteRemoteShell(remotePlaylistPath)}`
-    );
-
-    return {
-      enabled: true,
-      ok: true,
-      message: `Published to Pi at ${config.host}.`
-    };
+    return publishPlaylistToPi(playlistPath, playlist, {
+      notConfigured: "Pi publish is not configured; upload was saved locally only.",
+      failure: "Upload was saved locally, but Pi publish failed. Check Pi connectivity and required media files.",
+      success: `Published to Pi at ${config.host}.`
+    });
   } catch (error) {
     console.error("local Pi publish failed", error);
     return {
@@ -314,19 +139,39 @@ async function publishToPi(
   }
 }
 
+function formatUploadLimit(bytes: number): string {
+  return `${Math.floor(bytes / (1024 * 1024))} MB`;
+}
+
 export async function POST(request: Request) {
   try {
-    const formData = await request.formData();
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch {
+      return NextResponse.json({ error: "Upload must be sent as multipart form data." }, { status: 400 });
+    }
+
     const file = formData.get("video");
 
     if (!(file instanceof File)) {
       return NextResponse.json({ error: "Missing video file." }, { status: 400 });
     }
 
+    if (file.size <= 0) {
+      return NextResponse.json({ error: "The selected MP4 is empty." }, { status: 400 });
+    }
+
+    if (file.size > maxUploadBytes) {
+      return NextResponse.json(
+        { error: `MP4 uploads are limited to ${formatUploadLimit(maxUploadBytes)} for the local demo.` },
+        { status: 413 }
+      );
+    }
+
     const safeFileName = sanitizeMp4FileName(file.name);
-    const root = repoRoot();
-    const assetsDirectory = path.join(root, "sample-content", "assets");
-    const playlistPath = path.join(root, "sample-content", "playlist.local.json");
+    const assetsDirectory = sampleAssetsDirectory();
+    const playlistPath = await ensureLivePlaylistPath();
     const savedFileName = await uniqueFileName(assetsDirectory, safeFileName);
     const savedFilePath = path.join(assetsDirectory, savedFileName);
     const uploadedBytes = Buffer.from(await file.arrayBuffer());
@@ -334,8 +179,8 @@ export async function POST(request: Request) {
     const nextPlaylist = appendAsset(playlist, savedFileName);
 
     await writeFileAtomic(savedFilePath, uploadedBytes);
-    await writeFileAtomic(playlistPath, `${JSON.stringify(nextPlaylist, null, 2)}\n`);
-    const piPublish = await publishToPi(savedFilePath, savedFileName, playlistPath, nextPlaylist);
+    await writePlaylist(playlistPath, nextPlaylist);
+    const piPublish = await publishUploadToPi(savedFilePath, savedFileName, playlistPath, nextPlaylist);
     await writePublishStatus("upload", nextPlaylist, piPublish);
 
     const appendedAsset = nextPlaylist.assets[nextPlaylist.assets.length - 1];

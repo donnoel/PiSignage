@@ -1,32 +1,14 @@
-import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
-import path from "node:path";
-import { promisify } from "node:util";
 import { Metric, StatusPill } from "./dashboard-ui";
+import { publishStatusPath, readLivePlaylist, repoRoot } from "./lib/local-playlist";
+import type { Playlist, PlaylistAsset } from "./lib/local-playlist";
+import { readPiConfig, runSsh } from "./lib/pi-local";
 import { LocalPublishForm } from "./local-publish-form";
 import { LocalPlaylistControls } from "./local-playlist-controls";
 import { LocalSystemActions } from "./local-system-actions";
 import { LocalUploadForm } from "./local-upload-form";
 
 export const dynamic = "force-dynamic";
-
-const execFileAsync = promisify(execFile);
-
-type PlaylistAsset = {
-  assetId: string;
-  type: "image" | "video";
-  uri: string;
-  durationSeconds?: number;
-  altText?: string;
-};
-
-type Playlist = {
-  playlistId: string;
-  name: string;
-  version: number;
-  updatedAt: string;
-  assets: PlaylistAsset[];
-};
 
 type Heartbeat = {
   deviceId: string;
@@ -139,10 +121,6 @@ function dashboardViewFrom(value: string | string[] | undefined): DashboardView 
   const candidate = Array.isArray(value) ? value[0] : value;
 
   return navigationItems.some((item) => item.view === candidate) ? (candidate as DashboardView) : "dashboard";
-}
-
-function repoRoot(): string {
-  return path.resolve(process.cwd(), "..");
 }
 
 async function readJsonFile<TValue>(filePath: string): Promise<TValue | null> {
@@ -346,73 +324,14 @@ function parseServiceStatus(rawValue: string): Pick<
   };
 }
 
-function quoteTclListValue(value: string): string {
-  return `"${value
-    .replace(/\\/g, "\\\\")
-    .replace(/\$/g, "\\$")
-    .replace(/\[/g, "\\[")
-    .replace(/\]/g, "\\]")
-    .replace(/"/g, '\\"')
-    .replace(/\n/g, "\\n")}"`;
-}
-
-async function runSshProbe(
-  user: string,
-  host: string,
-  remoteCommand: string,
-  password: string | undefined
-): Promise<string> {
-  const args = [
-    "-o",
-    "StrictHostKeyChecking=accept-new",
-    "-o",
-    "ConnectTimeout=2",
-    ...(password ? [] : ["-o", "BatchMode=yes"]),
-    `${user}@${host}`,
-    remoteCommand
-  ];
-
-  if (!password) {
-    const { stdout } = await execFileAsync("ssh", args, {
-      maxBuffer: 1024 * 1024,
-      timeout: execTimeoutMs
-    });
-    return stdout;
-  }
-
-  const commandArgs = ["ssh", ...args].map(quoteTclListValue).join(" ");
-  const expectScript = `
-set timeout 4
-set password ${quoteTclListValue(password)}
-set commandArgs [list ${commandArgs}]
-spawn {*}$commandArgs
-expect {
-  -nocase "*password:*" { send -- "$password\\r"; exp_continue }
-  -nocase "*permission denied*" { exit 13 }
-  timeout { exit 124 }
-  eof
-}
-catch wait result
-exit [lindex $result 3]
-`;
-
-  const { stdout } = await execFileAsync("expect", ["-c", expectScript], {
-    maxBuffer: 1024 * 1024,
-    timeout: execTimeoutMs + 1_000
-  });
-  return stdout;
-}
-
 async function loadPiProbe(): Promise<PiProbe> {
-  const host = process.env.PISIGNAGE_PI_HOST?.trim() || null;
-  const user = process.env.PISIGNAGE_PI_USER?.trim() || "donnoel";
-  const password = process.env.PISIGNAGE_PI_PASSWORD;
+  const config = readPiConfig();
 
-  if (!host) {
+  if (!config) {
     return {
       configured: false,
       reachable: false,
-      host,
+      host: null,
       message: "Pi SSH is not configured in dashboard/.env.local.",
       playerStatus: null,
       temp: null,
@@ -448,7 +367,7 @@ async function loadPiProbe(): Promise<PiProbe> {
   ].join("; ");
 
   try {
-    const stdout = cleanProbeOutput(await runSshProbe(user, host, remoteCommand, password));
+    const stdout = cleanProbeOutput(await runSsh(config, remoteCommand, { timeoutMs: execTimeoutMs }));
 
     const statusText = textBetween(stdout, "__STATUS__", "__TEMP__");
     const temp = textBetween(stdout, "__TEMP__", "__THROTTLE__").trim() || null;
@@ -469,8 +388,8 @@ async function loadPiProbe(): Promise<PiProbe> {
     return {
       configured: true,
       reachable: true,
-      host,
-      message: `Connected to ${host} over local SSH.`,
+      host: config.host,
+      message: `Connected to ${config.host} over local SSH.`,
       playerStatus,
       temp,
       throttled,
@@ -483,15 +402,15 @@ async function loadPiProbe(): Promise<PiProbe> {
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     const friendlyMessage = message.includes("Permission denied")
-      ? `Pi SSH rejected the local probe for ${user}@${host}. Update SSH key access or local credentials for this network.`
+      ? `Pi SSH rejected the local probe for ${config.user}@${config.host}. Update SSH key access or local credentials for this network.`
       : message.includes("timed out") || message.includes("ETIMEDOUT")
-        ? `Pi probe timed out for ${host}. Confirm the Pi is on this network and SSH is reachable.`
-        : `Pi probe could not read local playback status from ${host}.`;
+        ? `Pi probe timed out for ${config.host}. Confirm the Pi is on this network and SSH is reachable.`
+        : `Pi probe could not read local playback status from ${config.host}.`;
 
     return {
       configured: true,
       reachable: false,
-      host,
+      host: config.host,
       message: friendlyMessage,
       playerStatus: null,
       temp: null,
@@ -521,19 +440,13 @@ function textBetween(value: string, start: string, end: string): string {
 
 async function loadDashboardState(): Promise<DashboardState> {
   const root = repoRoot();
-  const playlistPath = path.join(root, "sample-content", "playlist.local.json");
-  const heartbeatPath = path.join(root, "device-agent", "local-state", "heartbeat.json");
-  const publishStatusPath = path.join(root, "dashboard", "local-state", "publish-status.json");
+  const heartbeatPath = `${root}/device-agent/local-state/heartbeat.json`;
   const [playlist, heartbeat, publishStatus, pi] = await Promise.all([
-    readJsonFile<Playlist>(playlistPath),
+    readLivePlaylist(),
     readJsonFile<Heartbeat>(heartbeatPath),
-    readJsonFile<PublishStatus>(publishStatusPath),
+    readJsonFile<PublishStatus>(publishStatusPath()),
     loadPiProbe()
   ]);
-
-  if (!playlist) {
-    throw new Error(`Missing local playlist: ${playlistPath}`);
-  }
 
   return { heartbeat, playlist, publishStatus, pi };
 }
@@ -834,7 +747,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <h2 id="playlist-heading" className="text-xl font-semibold">{playlist.name}</h2>
-                  <p className="mt-1 text-sm text-zinc-600">Playlist ID: {playlist.playlistId} · Version {playlist.version}</p>
+                  <p className="mt-1 text-sm text-zinc-600">
+                    Playlist ID: {playlist.playlistId} · Version {playlist.version} · Live local state
+                  </p>
                 </div>
                 <p className="text-sm font-semibold text-zinc-700">Total duration {totalDuration}</p>
               </div>

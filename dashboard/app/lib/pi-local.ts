@@ -1,0 +1,194 @@
+import { execFile } from "node:child_process";
+import path from "node:path";
+import { promisify } from "node:util";
+import type { Playlist } from "./local-playlist";
+import type { PiPublishResult } from "./local-playlist";
+
+export type PiConfig = {
+  host: string;
+  user: string;
+  root: string;
+  password?: string;
+};
+
+type CommandOptions = {
+  timeoutMs?: number;
+};
+
+const execFileAsync = promisify(execFile);
+
+export function readPiConfig(): PiConfig | null {
+  const host = process.env.PISIGNAGE_PI_HOST?.trim();
+
+  if (!host) {
+    return null;
+  }
+
+  return {
+    host,
+    user: process.env.PISIGNAGE_PI_USER?.trim() || "donnoel",
+    root: process.env.PISIGNAGE_PI_ROOT?.trim() || "/home/donnoel/PiSignage",
+    password: process.env.PISIGNAGE_PI_PASSWORD
+  };
+}
+
+export function quoteRemoteShell(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function remoteLogin(config: PiConfig): string {
+  return `${config.user}@${config.host}`;
+}
+
+function quoteTclListValue(value: string): string {
+  return `"${value
+    .replace(/\\/g, "\\\\")
+    .replace(/\$/g, "\\$")
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")}"`;
+}
+
+async function runCommand(
+  command: string,
+  args: string[],
+  password: string | undefined,
+  options: CommandOptions = {}
+): Promise<string> {
+  const timeoutMs = options.timeoutMs ?? 120_000;
+
+  if (!password) {
+    const { stdout } = await execFileAsync(command, args, {
+      timeout: timeoutMs,
+      maxBuffer: 1024 * 1024
+    });
+    return stdout;
+  }
+
+  const commandArgs = [command, ...args].map(quoteTclListValue).join(" ");
+  const expectScript = `
+set timeout ${Math.ceil(timeoutMs / 1000)}
+set password ${quoteTclListValue(password)}
+set commandArgs [list ${commandArgs}]
+spawn {*}$commandArgs
+expect {
+  -nocase "*password:*" { send -- "$password\\r"; exp_continue }
+  -nocase "*permission denied*" { exit 13 }
+  timeout { exit 124 }
+  eof
+}
+catch wait result
+exit [lindex $result 3]
+`;
+
+  const { stdout } = await execFileAsync("expect", ["-c", expectScript], {
+    timeout: timeoutMs + 5_000,
+    maxBuffer: 1024 * 1024
+  });
+  return stdout;
+}
+
+export async function runSsh(
+  config: PiConfig,
+  remoteCommand: string,
+  options: CommandOptions = {}
+): Promise<string> {
+  return runCommand(
+    "ssh",
+    [
+      "-o",
+      "StrictHostKeyChecking=accept-new",
+      "-o",
+      "ConnectTimeout=8",
+      ...(config.password ? [] : ["-o", "BatchMode=yes"]),
+      remoteLogin(config),
+      remoteCommand
+    ],
+    config.password,
+    options
+  );
+}
+
+export async function runScp(
+  config: PiConfig,
+  sourcePath: string,
+  targetPath: string,
+  options: CommandOptions = {}
+): Promise<void> {
+  await runCommand(
+    "scp",
+    [
+      "-o",
+      "StrictHostKeyChecking=accept-new",
+      "-o",
+      "ConnectTimeout=8",
+      ...(config.password ? [] : ["-o", "BatchMode=yes"]),
+      sourcePath,
+      `${remoteLogin(config)}:${targetPath}`
+    ],
+    config.password,
+    options
+  );
+}
+
+export function requiredRemoteAssetPaths(config: PiConfig, playlist: Playlist): string[] {
+  return playlist.assets.map((asset) => {
+    const normalizedUri = path.posix.normalize(asset.uri);
+    if (
+      path.posix.isAbsolute(normalizedUri) ||
+      normalizedUri === ".." ||
+      normalizedUri.startsWith("../")
+    ) {
+      throw new Error(`Playlist asset path is not local: ${asset.assetId}`);
+    }
+
+    return path.posix.join(config.root, "sample-content", normalizedUri);
+  });
+}
+
+export async function publishPlaylistToPi(
+  playlistPath: string,
+  playlist: Playlist,
+  messages: { notConfigured: string; failure: string; success?: string }
+): Promise<PiPublishResult> {
+  const config = readPiConfig();
+
+  if (!config) {
+    return {
+      enabled: false,
+      ok: false,
+      message: messages.notConfigured
+    };
+  }
+
+  const remotePlaylistPath = path.posix.join(config.root, "sample-content", "playlist.local.json");
+  const temporaryPlaylistPath = `${remotePlaylistPath}.${Date.now()}.tmp`;
+
+  try {
+    await runSsh(
+      config,
+      requiredRemoteAssetPaths(config, playlist)
+        .map((assetPath) => `test -f ${quoteRemoteShell(assetPath)}`)
+        .join(" && ")
+    );
+    await runScp(config, playlistPath, temporaryPlaylistPath);
+    await runSsh(
+      config,
+      `mv ${quoteRemoteShell(temporaryPlaylistPath)} ${quoteRemoteShell(remotePlaylistPath)}`
+    );
+
+    return {
+      enabled: true,
+      ok: true,
+      message: messages.success ?? `Published playlist to Pi at ${config.host}.`
+    };
+  } catch (error) {
+    console.error("local playlist publish failed", error);
+    return {
+      enabled: true,
+      ok: false,
+      message: messages.failure
+    };
+  }
+}

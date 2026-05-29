@@ -1,93 +1,102 @@
-This repo is an Apple-platform app codebase. You are an engineering agent collaborating with the human. Make small, correct, testable changes with a clean build at every step.
+This repo is a local-first Raspberry Pi digital signage proof of concept. You are an engineering agent collaborating with the human. Make small, correct, testable changes that strengthen reliable playback, local control, and dashboard clarity.
 
-## Hard requirements
+## Hard Requirements
 
-- **No build warnings.** Treat warnings as errors.
-- **No large rewrites.** Prefer small, surgical diffs.
-- **Apple-native only.** No third-party libraries unless explicitly requested.
-- **SwiftUI + MVVM.** Keep UI declarative; isolate logic in view models and services.
-- **Concurrency correctness.** Do not silence warnings with broad `@MainActor`. Use actors/services for non-UI mutable state.
-- **Safe persistence.** Use atomic writes where appropriate.
-- **Privacy-first.** No unexpected network calls or data collection.
-- **Preserve behavior.** Do not regress user-visible flows without calling it out.
-- **Accessibility matters.** Treat accessibility as part of the feature, not polish.
+- Read `AGENTS.md` first. Read `AGENTS.project.md` when touching product behavior, architecture, persistence, device setup, playback, publishing, recovery, or project constraints.
+- Keep changes small and focused. No broad rewrites unless explicitly requested.
+- Preserve the local-first contract. Do not introduce AWS/cloud work unless the user explicitly asks for it.
+- Keep playback and recovery first-class. Do not regress fullscreen playback, reboot recovery, power-loss recovery, network-loss tolerance, or local playlist behavior.
+- Keep dashboard, player, and Pi/device scripts clearly separated.
+- No real secrets in git. Keep `.env.local`, local state, credentials, generated output, and uploaded media out of source control.
+- Use atomic writes for local JSON state where practical.
+- Treat accessibility as part of dashboard quality: semantic controls, useful labels, readable contrast, keyboard access, and text status that does not rely on color alone.
+- Keep validation clean. Treat TypeScript/build errors as blocking.
+
+## Product Priorities
+
+1. Rock-solid local playback on the Pi/TV.
+2. Recovery without user interaction after service restart, software reboot, network loss, and power loss.
+3. Clear local dashboard controls for one Pi, one TV, one playlist.
+4. Useful local health/status evidence: playback state, playlist sync, service state, display mode, temperature, throttle, uptime, and publish results.
+5. UI polish that makes the local operations console feel trustworthy and demo-ready.
+6. AWS/cloud only after the local end-to-end foundation is proven.
+
+## Repository Shape
+
+- `dashboard/`: Next.js + TypeScript local operations dashboard.
+- `player/`: browser playback app retained for local/player experiments.
+- `device-agent/`: local heartbeat and future Pi agent work.
+- `device/pi/`: Pi scripts and systemd units for static serving, kiosk, and VLC playback.
+- `sample-content/`: tracked seed playlist and fixture metadata. Uploaded MP4s are intentionally ignored.
+- `dashboard/local-state/`: ignored runtime dashboard state, including the live editable playlist and publish status.
+- `docs/`: architecture, setup, device, security, and phase notes.
+
+## Local State And Playlist Rules
+
+- Treat `sample-content/playlist.local.json` as the tracked seed/baseline playlist.
+- Treat `dashboard/local-state/playlist.local.json` as the live dashboard-editable playlist.
+- Normal dashboard operations must not dirty tracked source files.
+- Playlist edits, uploads, removes, and reorders should update live local state and attempt to publish to the Pi when configured.
+- The manual publish button is for resync/recovery, not the normal next step after every successful edit.
+- Preserve local playback when the network is unavailable. A missing network must not stop cached/local playback.
+
+## Pi And Playback Rules
+
+- VLC is the preferred field playback path for appliance mode unless the user explicitly asks to test another player.
+- Keep Chromium/browser playback available as a fallback/experimental path when already present.
+- Pi changes should be reproducible through repo scripts, docs, or systemd units rather than only manual shell history.
+- Prefer practical, production-safe fixes: display readiness checks, clear status JSON, playlist reload behavior, encoding guidance, and narrow service improvements.
+- Avoid remote reboot, OTA update systems, screenshot capture, fleet management, analytics, or multi-tenant behavior until explicitly approved.
+
+## Dashboard Rules
+
+- Build the actual usable operations experience, not a marketing page.
+- Keep the main dashboard focused on the most important state; put deeper controls in focused views.
+- Use clear status text for online/offline, playing/stale, sync/behind, publish success/failure, and recovery evidence.
+- Keep UI dense enough for operations but polished enough for demos.
+- Do not add decorative complexity that hides the local proof signals.
+- For user-facing UI changes, check responsive layout so text does not overlap or get clipped.
+
+## Engineering Guidance
+
+- Prefer existing Node/Next/TypeScript patterns in this repo.
+- Use structured JSON reads/writes instead of ad hoc text manipulation for playlist/status data.
+- Keep side effects behind narrow route handlers or helpers.
+- Avoid duplicated SSH/SCP/process helpers; centralize local Pi command behavior.
+- Sanitize file names and paths crossing upload, playlist, or remote shell boundaries.
+- Add abstractions only when they remove real duplication or clarify ownership.
+- Do not introduce third-party dependencies without approval.
 
 ## Workflow
 
-1. Read only the files needed for the task.
-2. Read `AGENTS.project.md` only when the change touches app-specific behavior, architecture, persistence, release behavior, or known project constraints.
-3. Make a brief plan only when the task is non-trivial.
-4. Implement the smallest viable patch.
-5. Run the narrowest useful validation.
-6. Report what changed, files touched, validation performed, and anything skipped.
+1. Inspect the relevant files before editing.
+2. Make a brief plan for non-trivial work.
+3. Implement the smallest safe patch.
+4. Run the narrowest useful validation.
+5. Report files changed, validation performed, and anything intentionally deferred.
+6. Commit and push when the user asks.
 
-## Code guidance
+## Validation
 
-- Keep types small and focused.
-- Avoid invasive refactors unless the current structure blocks the requested change.
-- Prefer `OSLog` or structured status over ad-hoc prints.
-- Keep mutable state ownership explicit.
-- Prefer derived state over duplicated stored state where practical.
-- Keep side effects behind narrow boundaries.
-- Add abstractions only when they improve clarity, reduce coupling, or enable testing.
-- Treat performance, memory use, energy use, and UI smoothness as architectural concerns.
-- Avoid unbounded caches without a clear eviction strategy.
-- Avoid expensive work in SwiftUI render paths.
+Use the smallest validation that proves the changed contract:
 
-## Accessibility baseline
+- Dashboard/type changes: `npm --workspace dashboard run typecheck`
+- Cross-workspace type changes: `npm run typecheck`
+- Build-sensitive changes: `npm run build`
+- Player changes: `npm --workspace player run build` or a focused browser/player smoke
+- Device-agent changes: `npm --workspace device-agent run typecheck`
+- Pi service/script changes: dry-run where available, then deploy/test on the Pi when appropriate
+- Dashboard UI changes: browser/manual smoke of the affected view
 
-For user-facing UI changes, check the relevant basics:
+If validation cannot run, state the exact reason.
 
-- clear labels, values, hints, traits, and reading order
-- semantic SwiftUI / Apple-native controls
-- Dynamic Type or scalable text where appropriate
-- contrast and legibility in light/dark mode
-- hit target size and interaction affordance
-- Reduce Motion / Reduce Transparency where motion, blur, or translucency are used
-- clear state communication for selections, progress, timers, alerts, and errors
-- focus, keyboard, or tvOS behavior where relevant
+## Do Not
 
-Do not claim accessibility support exists unless there is concrete code evidence. Report what was improved, verified, missing, or not applicable.
+- Do not create AWS resources or require AWS credentials unless explicitly requested.
+- Do not commit `.env.local`, local state, uploaded media, build output, or generated caches.
+- Do not rewrite working systems for style.
+- Do not hide failures or call manual-only behavior fully automated.
+- Do not make dashboard operations depend on internet access.
+- Do not regress playback recovery while polishing the UI.
 
-## Quota Discipline / Quota-Smart Codex Mode
-
-Use the smallest amount of work necessary to complete the task correctly.
-
-### Before editing
-
-- Do not scan the whole repository unless the task truly requires it.
-- Do not run broad audits unless explicitly asked.
-- Prefer targeted searches by filename, symbol name, failing test output, or known feature area.
-- Ask for clarification only if the request is unsafe or ambiguous enough to risk breaking behavior.
-- If the likely fix is unclear, investigate first and do not edit until the smallest safe change is identified.
-
-### While editing
-
-- Make the smallest safe diff.
-- Do not rewrite working code for style.
-- Do not touch unrelated files.
-- Do not expand scope beyond the requested task.
-- Stop after the requested change is complete.
-
-### Validation
-
-Use the narrowest useful validation first:
-
-1. Syntax or build check for the touched target.
-2. Targeted unit test if logic changed.
-3. Targeted UI test if navigation or user flow changed.
-4. Full test suite only for shared architecture, persistence, app startup, CI, release behavior, or broad refactors.
-
-No app build is required for documentation-only changes unless requested.
-
-## Do not
-
-- Do not introduce dependencies without approval.
-- Do not disable concurrency checks to fix warnings.
-- Do not add broad `@MainActor` to silence warnings.
-- Do not change public behavior without stating it.
-- Do not hide failures.
-- Do not replace plain-language setup guidance with jargon.
-- Do not produce long explanations, broad recommendations, or extra cleanup unless requested.
-
-If something is ambiguous, default to the simplest solution that preserves correctness and forward progress.
+When something is ambiguous, choose the simplest local-first path that preserves playback, recovery, and source-control cleanliness.
