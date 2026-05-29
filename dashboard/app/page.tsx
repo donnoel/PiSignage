@@ -112,7 +112,7 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
   screens: {
     eyebrow: "Screen inventory",
     title: "Screens",
-    description: "Screen status and assignments."
+    description: "Map, status, and assignments."
   }
 };
 
@@ -389,18 +389,6 @@ function currentAssetDetail(heartbeat: Heartbeat | null, isHeartbeatFresh: boole
   }
 
   return "Waiting for a fresh playback report.";
-}
-
-function heartbeatDetail(heartbeat: Heartbeat | null, isHeartbeatFresh: boolean): string {
-  if (!heartbeat?.timestamp) {
-    return "Device-agent heartbeat has not reported yet.";
-  }
-
-  if (!isHeartbeatFresh) {
-    return `Last device-agent heartbeat was ${formatStatusAge(heartbeat.timestamp)}, so device-agent-only fields are treated as stale.`;
-  }
-
-  return `Updated ${formatStatusAge(heartbeat.timestamp)}. Network flag: ${heartbeat.networkOnline ? "online" : "offline"}.`;
 }
 
 function screenLabel(pi: PiProbe, heartbeat: Heartbeat | null, isHeartbeatFresh: boolean): string {
@@ -739,7 +727,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     : [];
   const playerUpdatedAt = formatTimestamp(playerStatus?.updatedAt);
   const totalDuration = formatDuration(playlist.assets);
-  const activeAssetCount = playerStatus?.assetCount ?? playlist.assets.length;
   const piPlaylistVersion = playerStatus?.playlistVersion;
   const playlistSyncState = syncState(playlist.version, piPlaylistVersion, pi.reachable);
   const lastPublishLabel = publishStatus
@@ -930,59 +917,22 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </section>
 
           <section
-            aria-labelledby="dashboard-map-heading"
-            className={selectedView === "dashboard" ? "mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_420px]" : "hidden"}
+            aria-labelledby="now-playing-heading"
+            className={selectedView === "dashboard" ? "mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]" : "hidden"}
           >
             <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
               <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <p className="text-sm font-semibold uppercase text-teal-700">Screens</p>
-                  <h2 id="dashboard-map-heading" className="mt-1 text-2xl font-semibold">Map</h2>
+                  <p className="text-sm font-semibold uppercase text-teal-700">Live screen</p>
+                  <h2 id="now-playing-heading" className="mt-1 text-2xl font-semibold">Now playing</h2>
                 </div>
-                <StatusPill label={mapUrl ? "Located" : "Location needed"} tone={mapUrl ? "good" : "warn"} />
+                <StatusPill label={playbackLabel} tone={playbackHealthy ? "good" : "warn"} />
               </div>
-              <div className="p-5">
-                {mapUrl ? (
-                  <LocalDeviceMap devices={mapDevices} mapSrc={mapUrl} />
-                ) : (
-                  <div className="flex min-h-96 flex-col justify-center rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-5 text-sm">
-                    <p className="text-lg font-semibold text-zinc-950">Coordinates not captured</p>
-                    <p className="mt-2 leading-6 text-zinc-600">
-                      Capture browser geolocation from the physical setup location before this panel shows a map.
-                    </p>
-                    <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-md bg-white p-3">
-                        <dt className="font-semibold text-zinc-500">Screen</dt>
-                        <dd className="mt-1 text-zinc-950">{localScreenName}</dd>
-                      </div>
-                      <div className="rounded-md bg-white p-3">
-                        <dt className="font-semibold text-zinc-500">Device</dt>
-                        <dd className="mt-1 text-zinc-950">{localDeviceIdentifier}</dd>
-                      </div>
-                    </dl>
-                  </div>
-                )}
-                <LocalDeviceLocationCapture hasLocation={Boolean(location)} />
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
-                <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-sm font-semibold uppercase text-teal-700">Live screen</p>
-                    <h2 id="now-playing-heading" className="mt-1 text-2xl font-semibold">Now playing</h2>
-                  </div>
-                  <StatusPill label={playbackLabel} tone={playbackHealthy ? "good" : "warn"} />
-                </div>
-                <div className="p-5">
-                  <p className="break-words text-3xl font-semibold leading-tight text-zinc-950">{currentAsset}</p>
-                  <p className="mt-2 text-sm leading-6 text-zinc-600">{currentAssetStatus}</p>
-                  <dl className="mt-5 grid gap-3 text-sm">
-                    <div className="rounded-md bg-zinc-50 p-3">
-                      <dt className="font-semibold text-zinc-500">Screen</dt>
-                      <dd className="mt-1 text-zinc-950">{localScreenName}</dd>
-                    </div>
+              <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+                <div className="min-w-0">
+                  <p className="break-words text-3xl font-semibold leading-tight text-zinc-950 sm:text-4xl">{currentAsset}</p>
+                  <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-600">{currentAssetStatus}</p>
+                  <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-3">
                     <div className="rounded-md bg-zinc-50 p-3">
                       <dt className="font-semibold text-zinc-500">Playlist</dt>
                       <dd className="mt-1 text-zinc-950">{playlist.name} · v{playlist.version}</dd>
@@ -997,8 +947,24 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     </div>
                   </dl>
                 </div>
+                <dl className="grid content-start gap-3 text-sm">
+                  <div className="rounded-md bg-zinc-50 p-3">
+                    <dt className="font-semibold text-zinc-500">Screen</dt>
+                    <dd className="mt-1 text-zinc-950">{localScreenName}</dd>
+                  </div>
+                  <div className="rounded-md bg-zinc-50 p-3">
+                    <dt className="font-semibold text-zinc-500">Device</dt>
+                    <dd className="mt-1 text-zinc-950">{localDeviceIdentifier}</dd>
+                  </div>
+                  <div className="rounded-md bg-zinc-50 p-3">
+                    <dt className="font-semibold text-zinc-500">Freshness</dt>
+                    <dd className="mt-1 text-zinc-950">{playerFreshnessDetail}</dd>
+                  </div>
+                </dl>
               </div>
+            </div>
 
+            <div className="space-y-4">
               <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
                 <div className="flex items-start justify-between gap-3 border-b border-zinc-200 p-5">
                   <div>
@@ -1025,6 +991,28 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     <p className="mt-1 text-zinc-600">Playback, status, and playlist sync are healthy.</p>
                   </div>
                 )}
+              </div>
+
+              <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+                <div className="flex items-start justify-between gap-3 border-b border-zinc-200 p-5">
+                  <div>
+                    <p className="text-sm font-semibold uppercase text-teal-700">Evidence</p>
+                    <h2 className="mt-1 text-2xl font-semibold">Recent activity</h2>
+                  </div>
+                  <StatusPill label={playbackHealthy && playlistSyncState.tone === "good" ? "OK" : "Review"} tone={playbackHealthy && playlistSyncState.tone === "good" ? "good" : "warn"} />
+                </div>
+                <ol className="divide-y divide-zinc-200">
+                  {recoveryEvidence.slice(0, 4).map((item) => (
+                    <li key={item.label} className="grid gap-2 p-4 text-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="font-semibold text-zinc-950">{item.label}</p>
+                        <StatusPill label={item.tone === "good" ? "OK" : item.tone === "warn" ? "Check" : "Info"} tone={item.tone} />
+                      </div>
+                      <p className="text-zinc-950">{item.value}</p>
+                      <p className="leading-6 text-zinc-600">{item.detail}</p>
+                    </li>
+                  ))}
+                </ol>
               </div>
             </div>
           </section>
@@ -1073,7 +1061,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <div>
                 <h2 id="recovery-heading" className="text-xl font-semibold">Recovery evidence</h2>
                 <p className="mt-1 text-sm text-zinc-600">
-                  Live local proof that boot recovery, the field player, display, and health checks are still reporting.
+                  Latest boot, player, display, and health reports.
                 </p>
               </div>
               <StatusPill
@@ -1191,6 +1179,39 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           >
             <h2 id="system-actions-heading" className="sr-only">System actions</h2>
             <LocalSystemActions />
+          </section>
+
+          <section
+            aria-labelledby="device-map-heading"
+            className={selectedView === "screens" ? "mt-6 rounded-lg border border-zinc-200 bg-white shadow-sm" : "hidden"}
+          >
+            <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 id="device-map-heading" className="text-xl font-semibold">Device map</h2>
+                <p className="mt-1 text-sm text-zinc-600">Select a Pi pin for playback and health details.</p>
+              </div>
+              <StatusPill label={mapUrl ? "Real coordinates" : "Location needed"} tone={mapUrl ? "good" : "warn"} />
+            </div>
+            <div className="p-5">
+              {mapUrl ? (
+                <LocalDeviceMap devices={mapDevices} mapSrc={mapUrl} />
+              ) : (
+                <div className="flex min-h-80 flex-col justify-center rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-5 text-sm">
+                  <p className="text-lg font-semibold text-zinc-950">Coordinates not captured</p>
+                  <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-md bg-white p-3">
+                      <dt className="font-semibold text-zinc-500">Screen</dt>
+                      <dd className="mt-1 text-zinc-950">{localScreenName}</dd>
+                    </div>
+                    <div className="rounded-md bg-white p-3">
+                      <dt className="font-semibold text-zinc-500">Device</dt>
+                      <dd className="mt-1 text-zinc-950">{localDeviceIdentifier}</dd>
+                    </div>
+                  </dl>
+                </div>
+              )}
+              <LocalDeviceLocationCapture hasLocation={Boolean(location)} />
+            </div>
           </section>
 
           <section
