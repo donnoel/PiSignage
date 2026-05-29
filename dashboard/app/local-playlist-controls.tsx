@@ -75,38 +75,40 @@ export function LocalPlaylistControls({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 md:justify-end">
-      <button
-        type="button"
-        disabled={isBusy || isFirst}
-        onClick={() => editPlaylist("move-up")}
-        className="flex h-9 w-9 items-center justify-center rounded-md border border-zinc-200 text-sm font-semibold text-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
-        aria-label={`Move ${assetLabel} up`}
-        title="Move up"
-      >
-        ↑
-      </button>
-      <button
-        type="button"
-        disabled={isBusy || isLast}
-        onClick={() => editPlaylist("move-down")}
-        className="flex h-9 w-9 items-center justify-center rounded-md border border-zinc-200 text-sm font-semibold text-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
-        aria-label={`Move ${assetLabel} down`}
-        title="Move down"
-      >
-        ↓
-      </button>
+    <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+      <div className="inline-flex rounded-md border border-zinc-200 bg-white p-1">
+        <button
+          type="button"
+          disabled={isBusy || isFirst}
+          onClick={() => editPlaylist("move-up")}
+          className="flex h-9 w-9 items-center justify-center rounded text-sm font-semibold text-zinc-700 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
+          aria-label={`Move ${assetLabel} up`}
+          title="Move up"
+        >
+          ↑
+        </button>
+        <button
+          type="button"
+          disabled={isBusy || isLast}
+          onClick={() => editPlaylist("move-down")}
+          className="flex h-9 w-9 items-center justify-center rounded text-sm font-semibold text-zinc-700 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
+          aria-label={`Move ${assetLabel} down`}
+          title="Move down"
+        >
+          ↓
+        </button>
+      </div>
       <button
         type="button"
         disabled={isBusy || isOnlyItem}
         onClick={() => editPlaylist("remove")}
-        className="min-h-9 rounded-md border border-red-200 px-3 py-1.5 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+        className="min-h-11 rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
         aria-label={`Remove ${assetLabel} from playlist`}
       >
         Remove
       </button>
       {message ? (
-        <p className="basis-full text-xs font-medium text-zinc-600" role="status" aria-live="polite">
+        <p className="basis-full text-xs font-medium text-zinc-600 lg:text-right" role="status" aria-live="polite">
           {message}
         </p>
       ) : null}

@@ -22,6 +22,7 @@ export function LocalUploadForm() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFileName, setSelectedFileName] = useState("No file selected");
+  const [selectedFileKind, setSelectedFileKind] = useState<"image" | "video" | "unknown">("unknown");
   const [imageDurationSeconds, setImageDurationSeconds] = useState("10");
   const [uploadState, setUploadState] = useState<UploadState>({
     message: "Select an MP4, JPEG, or PNG file to append it to the local playlist.",
@@ -30,6 +31,20 @@ export function LocalUploadForm() {
   const [isUploading, setIsUploading] = useState(false);
   const [isPending, startTransition] = useTransition();
   const isBusy = isUploading || isPending;
+  const isStillImage = selectedFileKind === "image";
+
+  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+
+    if (!file) {
+      setSelectedFileName("No file selected");
+      setSelectedFileKind("unknown");
+      return;
+    }
+
+    setSelectedFileName(file.name);
+    setSelectedFileKind(file.type.startsWith("image/") ? "image" : file.name.toLowerCase().endsWith(".mp4") ? "video" : "unknown");
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -67,6 +82,7 @@ export function LocalUploadForm() {
         fileInputRef.current.value = "";
       }
       setSelectedFileName("No file selected");
+      setSelectedFileKind("unknown");
       setUploadState({
         message: `Added ${result.assetId ?? file.name} to the local playlist.${publishMessage}`,
         kind: result.piPublish && !result.piPublish.ok ? "error" : "success"
@@ -91,10 +107,15 @@ export function LocalUploadForm() {
 
   return (
     <form onSubmit={handleSubmit} className="mt-5 rounded-md border border-zinc-200 bg-zinc-50 p-4">
-      <label htmlFor="local-media-upload" className="block text-sm font-medium text-zinc-700">
-        Add local media
-      </label>
-      <div className="mt-3 grid gap-3">
+      <div>
+        <label htmlFor="local-media-upload" className="block text-sm font-semibold text-zinc-950">
+          Add local media
+        </label>
+        <p className="mt-1 text-sm text-zinc-600">
+          MP4 files are added directly. JPEG and PNG files become 720p H.264 still clips for VLC.
+        </p>
+      </div>
+      <div className="mt-4 grid gap-4">
         <input
           ref={fileInputRef}
           id="local-media-upload"
@@ -103,7 +124,7 @@ export function LocalUploadForm() {
           accept="video/mp4,image/jpeg,image/png,.mp4,.jpg,.jpeg,.png"
           className="sr-only"
           disabled={isBusy}
-          onChange={(event) => setSelectedFileName(event.currentTarget.files?.[0]?.name ?? "No file selected")}
+          onChange={handleFileChange}
         />
         <div className="grid gap-2">
           <label
@@ -112,13 +133,22 @@ export function LocalUploadForm() {
           >
             Choose File
           </label>
-          <p className="min-w-0 break-words text-sm text-zinc-600">{selectedFileName}</p>
+          <div className="rounded-md border border-zinc-200 bg-white px-3 py-2">
+            <p className="min-w-0 break-words text-sm font-medium text-zinc-950">{selectedFileName}</p>
+            <p className="mt-1 text-xs text-zinc-600">
+              {selectedFileKind === "image"
+                ? "Will convert before adding to the playlist."
+                : selectedFileKind === "video"
+                  ? "Will add as a video asset."
+                  : "Accepted formats: .mp4, .jpg, .jpeg, .png."}
+            </p>
+          </div>
         </div>
         <div className="grid gap-2">
           <label htmlFor="image-duration-seconds" className="text-sm font-medium text-zinc-700">
             Still image duration
           </label>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <input
               id="image-duration-seconds"
               name="durationSeconds"
@@ -130,9 +160,11 @@ export function LocalUploadForm() {
               value={imageDurationSeconds}
               onChange={(event) => setImageDurationSeconds(event.currentTarget.value)}
               disabled={isBusy}
-              className="min-h-11 w-28 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-950"
+              className="min-h-11 w-28 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-950 disabled:bg-zinc-100"
             />
-            <span className="text-sm text-zinc-600">seconds for JPEG/PNG items</span>
+            <span className="text-sm text-zinc-600">
+              {isStillImage ? "This upload will use the selected duration." : "Used only for JPEG/PNG uploads."}
+            </span>
           </div>
         </div>
         <button
