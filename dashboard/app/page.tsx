@@ -777,7 +777,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             <div id="media" className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
               <h2 className="text-xl font-semibold">Upload media</h2>
               <p className="mt-1 text-sm leading-6 text-zinc-600">
-                Append a local MP4 to the playlist. If Pi publishing is configured and reachable, the upload is copied to the Pi and VLC reloads from the updated playlist.
+                Append a local MP4, JPEG, or PNG to the playlist. JPEG and PNG uploads are converted to Pi-safe MP4 still clips before VLC sees them.
               </p>
               <LocalUploadForm />
             </div>

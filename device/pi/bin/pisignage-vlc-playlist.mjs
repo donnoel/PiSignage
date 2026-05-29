@@ -97,37 +97,41 @@ function playlistAssetPath(asset) {
   return resolvedPath;
 }
 
-async function videoAssetsFromPlaylist() {
+async function playableAssetsFromPlaylist() {
   const rawPlaylist = await readFile(playlistPath, "utf8");
   const playlist = JSON.parse(rawPlaylist);
   const assets = Array.isArray(playlist.assets) ? playlist.assets : [];
-  const videos = [];
+  const playableAssets = [];
 
   for (const asset of assets) {
     if (asset?.type !== "video") {
+      if (asset?.type === "image") {
+        log(`skipping raw image asset ${asset?.assetId ?? "unknown asset"}; dashboard should publish still clips as MP4`);
+      }
       continue;
     }
 
     const assetPath = playlistAssetPath(asset);
     if (!assetPath) {
-      throw new Error(`Invalid video asset path for ${asset?.assetId ?? "unknown asset"}`);
+      throw new Error(`Invalid ${asset?.type ?? "media"} asset path for ${asset?.assetId ?? "unknown asset"}`);
     }
 
     await access(assetPath, fsConstants.R_OK);
-    videos.push({
+    playableAssets.push({
       assetId: asset.assetId ?? path.basename(assetPath),
-      path: assetPath
+      path: assetPath,
+      type: asset.type
     });
   }
 
-  if (videos.length === 0) {
-    throw new Error(`No playable video assets found in ${playlistPath}`);
+  if (playableAssets.length === 0) {
+    throw new Error(`No playable media assets found in ${playlistPath}`);
   }
 
   return {
     playlistId: playlist.playlistId ?? "local-playlist",
     version: playlist.version ?? "unknown",
-    videos,
+    assets: playableAssets,
     modifiedMs: (await stat(playlistPath)).mtimeMs
   };
 }
@@ -185,7 +189,7 @@ async function waitForDisplay() {
 
 function playPlaylist(playlist) {
   return new Promise((resolve, reject) => {
-    const videoPaths = playlist.videos.map((video) => video.path);
+    const mediaArgs = playlist.assets.map((asset) => asset.path);
     let playlistPollTimer;
     let statusHeartbeatTimer;
     let reloadRequested = false;
@@ -196,10 +200,10 @@ function playPlaylist(playlist) {
       "--quiet",
       "--drm-vout-display",
       displayOutput,
-      ...videoPaths
+      ...mediaArgs
     ];
 
-    log(`playing playlist with ${playlist.videos.length} video asset(s)`);
+    log(`playing playlist with ${playlist.assets.length} media asset(s)`);
     activePlayer = spawn(vlcBinary, args, {
       stdio: "inherit"
     });
@@ -229,8 +233,8 @@ function playPlaylist(playlist) {
           state: "playing",
           playlistId: playlist.playlistId,
           playlistVersion: playlist.version,
-          assetCount: playlist.videos.length,
-          assetIds: playlist.videos.map((video) => video.assetId),
+          assetCount: playlist.assets.length,
+          assetIds: playlist.assets.map((asset) => asset.assetId),
           lastError: null
         }).catch((error) => {
           log(`status heartbeat failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -269,12 +273,12 @@ function playPlaylist(playlist) {
 
 async function run() {
   if (dryRun) {
-    const playlist = await videoAssetsFromPlaylist();
+    const playlist = await playableAssetsFromPlaylist();
     log(
-      `loaded ${playlist.videos.length} video asset(s) from ${playlist.playlistId} version ${playlist.version}`
+      `loaded ${playlist.assets.length} media asset(s) from ${playlist.playlistId} version ${playlist.version}`
     );
-    for (const video of playlist.videos) {
-      log(`validated ${video.assetId} (${video.path})`);
+    for (const asset of playlist.assets) {
+      log(`validated ${asset.assetId} (${asset.type}, ${asset.path})`);
     }
     return;
   }
@@ -289,16 +293,16 @@ async function run() {
   await waitForDisplay();
 
   while (!stopping) {
-    const playlist = await videoAssetsFromPlaylist();
+    const playlist = await playableAssetsFromPlaylist();
     log(
-      `loaded ${playlist.videos.length} video asset(s) from ${playlist.playlistId} version ${playlist.version}`
+      `loaded ${playlist.assets.length} media asset(s) from ${playlist.playlistId} version ${playlist.version}`
     );
     await writeStatus({
       state: "playing",
       playlistId: playlist.playlistId,
       playlistVersion: playlist.version,
-      assetCount: playlist.videos.length,
-      assetIds: playlist.videos.map((video) => video.assetId),
+      assetCount: playlist.assets.length,
+      assetIds: playlist.assets.map((asset) => asset.assetId),
       lastError: null
     });
     await playPlaylist(playlist);

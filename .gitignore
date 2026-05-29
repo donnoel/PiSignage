@@ -25,6 +25,13 @@ dashboard/local-state/
 device-agent/local-cache/
 device-agent/local-state/
 sample-content/assets/*.mp4
+sample-content/assets/*.jpg
+sample-content/assets/*.jpeg
+sample-content/assets/*.png
+sample-content/assets/**/*.mp4
+sample-content/assets/**/*.jpg
+sample-content/assets/**/*.jpeg
+sample-content/assets/**/*.png
 
 # macOS
 .DS_Store

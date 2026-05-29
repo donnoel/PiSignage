@@ -15,7 +15,8 @@
     "dev:player": "npm --workspace player run dev",
     "serve:player": "node device/pi/bin/pisignage-serve-player.mjs",
     "agent:heartbeat": "npm --workspace device-agent run heartbeat",
-    "simulate:failures": "node scripts/local-failure-smoke.mjs"
+    "simulate:failures": "node scripts/local-failure-smoke.mjs",
+    "generate:still-presets": "node scripts/generate-still-video-presets.mjs"
   },
   "overrides": {
     "postcss": "^8.5.10"

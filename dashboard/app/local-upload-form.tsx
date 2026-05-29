@@ -22,8 +22,9 @@ export function LocalUploadForm() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFileName, setSelectedFileName] = useState("No file selected");
+  const [imageDurationSeconds, setImageDurationSeconds] = useState("10");
   const [uploadState, setUploadState] = useState<UploadState>({
-    message: "Select an MP4 file to append it to the local playlist.",
+    message: "Select an MP4, JPEG, or PNG file to append it to the local playlist.",
     kind: "idle"
   });
   const [isUploading, setIsUploading] = useState(false);
@@ -39,12 +40,13 @@ export function LocalUploadForm() {
 
     const file = fileInputRef.current?.files?.[0];
     if (!file) {
-      setUploadState({ message: "Choose an MP4 file first.", kind: "error" });
+      setUploadState({ message: "Choose an MP4, JPEG, or PNG file first.", kind: "error" });
       return;
     }
 
     const formData = new FormData();
-    formData.append("video", file);
+    formData.append("media", file);
+    formData.append("durationSeconds", imageDurationSeconds);
     setUploadState({ message: `Uploading ${file.name}...`, kind: "idle" });
     setIsUploading(true);
 
@@ -89,28 +91,49 @@ export function LocalUploadForm() {
 
   return (
     <form onSubmit={handleSubmit} className="mt-5 rounded-md border border-zinc-200 bg-zinc-50 p-4">
-      <label htmlFor="local-video-upload" className="block text-sm font-medium text-zinc-700">
-        Add local MP4
+      <label htmlFor="local-media-upload" className="block text-sm font-medium text-zinc-700">
+        Add local media
       </label>
       <div className="mt-3 grid gap-3">
         <input
           ref={fileInputRef}
-          id="local-video-upload"
-          name="video"
+          id="local-media-upload"
+          name="media"
           type="file"
-          accept="video/mp4,.mp4"
+          accept="video/mp4,image/jpeg,image/png,.mp4,.jpg,.jpeg,.png"
           className="sr-only"
           disabled={isBusy}
           onChange={(event) => setSelectedFileName(event.currentTarget.files?.[0]?.name ?? "No file selected")}
         />
         <div className="grid gap-2">
           <label
-            htmlFor="local-video-upload"
+            htmlFor="local-media-upload"
             className="inline-flex min-h-11 w-fit cursor-pointer items-center rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white focus-within:outline-none focus-within:ring-2 focus-within:ring-teal-600"
           >
             Choose File
           </label>
           <p className="min-w-0 break-words text-sm text-zinc-600">{selectedFileName}</p>
+        </div>
+        <div className="grid gap-2">
+          <label htmlFor="image-duration-seconds" className="text-sm font-medium text-zinc-700">
+            Still image duration
+          </label>
+          <div className="flex items-center gap-3">
+            <input
+              id="image-duration-seconds"
+              name="durationSeconds"
+              type="number"
+              min="1"
+              max="300"
+              step="1"
+              inputMode="numeric"
+              value={imageDurationSeconds}
+              onChange={(event) => setImageDurationSeconds(event.currentTarget.value)}
+              disabled={isBusy}
+              className="min-h-11 w-28 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-950"
+            />
+            <span className="text-sm text-zinc-600">seconds for JPEG/PNG items</span>
+          </div>
         </div>
         <button
           type="submit"
