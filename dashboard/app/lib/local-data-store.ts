@@ -107,10 +107,36 @@ export type SettingsRecord = {
   updatedAt: string;
 };
 
+export type RecoveryStep = {
+  detail: string;
+  finishedAt: string;
+  id: string;
+  startedAt: string;
+  status: "failed" | "succeeded";
+  title: string;
+};
+
+export type RecoveryRun = {
+  finishedAt: string;
+  id: string;
+  startedAt: string;
+  steps: RecoveryStep[];
+  summary: string;
+  triggeredBy: string;
+  ok: boolean;
+};
+
+export type RecoveryStore = {
+  runs: RecoveryRun[];
+  updatedAt: string;
+  version: number;
+};
+
 type JsonStorePaths = {
   activity: string;
   devices: string;
   media: string;
+  recovery: string;
   schedules: string;
   screens: string;
   settings: string;
@@ -126,6 +152,7 @@ function jsonStorePaths(): JsonStorePaths {
     activity: path.join(root, "activity.local.json"),
     devices: path.join(root, "devices.local.json"),
     media: path.join(root, "media.local.json"),
+    recovery: path.join(root, "recovery.local.json"),
     schedules: path.join(root, "schedules.local.json"),
     screens: path.join(root, "screens.local.json"),
     settings: path.join(root, "settings.local.json")
@@ -167,6 +194,14 @@ function defaultScheduleStore(): ScheduleStore {
 function defaultActivityStore(): ActivityStore {
   return {
     items: [],
+    updatedAt: isoNow(),
+    version: 1
+  };
+}
+
+function defaultRecoveryStore(): RecoveryStore {
+  return {
+    runs: [],
     updatedAt: isoNow(),
     version: 1
   };
@@ -226,6 +261,7 @@ export async function ensureLocalDataFoundation(): Promise<void> {
     ensureJsonFile(paths.devices, defaultDeviceStore()),
     ensureJsonFile(paths.schedules, defaultScheduleStore()),
     ensureJsonFile(paths.activity, defaultActivityStore()),
+    ensureJsonFile(paths.recovery, defaultRecoveryStore()),
     ensureJsonFile(paths.settings, defaultSettingsRecord())
   ]);
 }
@@ -278,6 +314,27 @@ export async function readActivityStore(): Promise<ActivityStore> {
 export async function writeActivityStore(value: ActivityStore): Promise<void> {
   const paths = jsonStorePaths();
   await writeJsonStore(paths.activity, value);
+}
+
+export async function readRecoveryStore(): Promise<RecoveryStore> {
+  const paths = jsonStorePaths();
+  return readJsonOrDefaults(paths.recovery, defaultRecoveryStore());
+}
+
+export async function writeRecoveryStore(value: RecoveryStore): Promise<void> {
+  const paths = jsonStorePaths();
+  await writeJsonStore(paths.recovery, value);
+}
+
+export async function appendRecoveryRun(run: RecoveryRun): Promise<void> {
+  const store = await readRecoveryStore();
+  const nextStore: RecoveryStore = {
+    ...store,
+    runs: [run, ...store.runs].slice(0, 200),
+    updatedAt: isoNow(),
+    version: store.version + 1
+  };
+  await writeRecoveryStore(nextStore);
 }
 
 export async function appendActivityRecord(record: ActivityRecord): Promise<void> {
