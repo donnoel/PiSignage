@@ -29,6 +29,9 @@ type FleetDeviceHealthPanelProps = {
   devices: DeviceRecord[];
   screens: ScreenRecord[];
   liveHost: string | null;
+  liveDisplayDetail: string;
+  liveDisplayLabel: string;
+  liveDisplayTone: Tone;
   livePlaybackHealthy: boolean;
   livePlaybackState: string;
   livePlaylistVersion: number | null;
@@ -40,10 +43,13 @@ type FleetDeviceHealthPanelProps = {
   statusTimestampLabel: string;
 };
 
-type FilterKey = "all" | "attention" | "offline" | "stale" | "sync" | "unknown";
+type FilterKey = "all" | "attention" | "display" | "offline" | "stale" | "sync" | "unknown";
 
 type RowState = {
   device: DeviceRecord;
+  displayDetail: string;
+  displayLabel: string;
+  displayTone: Tone;
   healthDetail: string;
   healthLabel: string;
   healthTone: Tone;
@@ -82,6 +88,9 @@ export function DeviceHealthFleetPanel({
   devices,
   screens,
   liveHost,
+  liveDisplayDetail,
+  liveDisplayLabel,
+  liveDisplayTone,
   livePlaybackHealthy,
   livePlaybackState,
   livePlaylistVersion,
@@ -143,6 +152,9 @@ export function DeviceHealthFleetPanel({
         }
 
         const playbackLabel = isLive ? livePlaybackState : "Unknown";
+        const displayLabel = isLive ? liveDisplayLabel : "Unknown";
+        const displayDetail = isLive ? liveDisplayDetail : "No display probe for this host";
+        const displayTone = isLive ? liveDisplayTone : "muted";
         let syncLabel = "Unknown";
         let syncDetail = "No playlist version has been reported for this device";
         let syncTone: Tone = "muted";
@@ -168,12 +180,16 @@ export function DeviceHealthFleetPanel({
         const needsAttention =
           !hostConfigured ||
           isOffline ||
+          displayTone === "warn" ||
           isStale ||
           syncTone === "warn" ||
           (isLive && !livePlaybackHealthy);
 
         return {
           device,
+          displayDetail,
+          displayLabel,
+          displayTone,
           healthDetail,
           healthLabel,
           healthTone,
@@ -190,6 +206,9 @@ export function DeviceHealthFleetPanel({
   }, [
     devices,
     liveHost,
+    liveDisplayDetail,
+    liveDisplayLabel,
+    liveDisplayTone,
     livePlaybackHealthy,
     livePlaybackState,
     livePlaylistVersion,
@@ -227,6 +246,9 @@ export function DeviceHealthFleetPanel({
     if (filter === "stale") {
       return row.isLive && liveStatusStale;
     }
+    if (filter === "display") {
+      return row.displayTone === "warn";
+    }
     if (filter === "sync") {
       return row.syncTone === "warn";
     }
@@ -242,6 +264,7 @@ export function DeviceHealthFleetPanel({
   const offlineCount = rows.filter((row) => row.healthLabel === "Offline").length;
   const staleCount = rows.filter((row) => row.isLive && liveStatusStale).length;
   const playingCount = rows.filter((row) => row.isLive && livePlaybackHealthy).length;
+  const displayIssueCount = rows.filter((row) => row.displayTone === "warn").length;
   const attentionCount = rows.filter((row) => row.needsAttention).length;
   const syncIssueCount = rows.filter((row) => row.syncTone === "warn").length;
   const unknownCount = rows.filter((row) => row.healthLabel === "Unknown").length;
@@ -280,6 +303,7 @@ export function DeviceHealthFleetPanel({
     { count: attentionCount, key: "attention", label: "Needs attention" },
     { count: offlineCount, key: "offline", label: "Offline" },
     { count: staleCount, key: "stale", label: "Stale" },
+    { count: displayIssueCount, key: "display", label: "Display" },
     { count: syncIssueCount, key: "sync", label: "Sync" },
     { count: unknownCount, key: "unknown", label: "Unknown" }
   ];
@@ -356,13 +380,14 @@ export function DeviceHealthFleetPanel({
         </div>
 
         <div className="max-w-full overflow-x-auto border-t border-zinc-200">
-          <table className="w-full min-w-[1180px] text-left text-sm">
+          <table className="w-full min-w-[1260px] text-left text-sm">
             <thead className="bg-zinc-50 text-xs uppercase text-zinc-500">
               <tr>
                 <th className="px-4 py-3">Device</th>
                 <th className="px-4 py-3">Location</th>
                 <th className="px-4 py-3">Group</th>
                 <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Display</th>
                 <th className="px-4 py-3">Playback</th>
                 <th className="px-4 py-3">Sync</th>
                 <th className="px-4 py-3">Last seen</th>
@@ -382,6 +407,10 @@ export function DeviceHealthFleetPanel({
                   <td className="px-4 py-3">
                     <StatusPill label={row.healthLabel} tone={row.healthTone} />
                     <p className="mt-1 text-xs text-zinc-600">{row.healthDetail}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusPill label={row.displayLabel} tone={row.displayTone} />
+                    <p className="mt-1 text-xs text-zinc-600">{row.displayDetail}</p>
                   </td>
                   <td className="px-4 py-3 text-zinc-700">{row.playbackLabel}</td>
                   <td className="px-4 py-3">
@@ -413,7 +442,7 @@ export function DeviceHealthFleetPanel({
               ))}
               {visibleRows.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-5 text-zinc-600" colSpan={9}>
+                  <td className="px-4 py-5 text-zinc-600" colSpan={10}>
                     No devices match this view.
                   </td>
                 </tr>
@@ -450,6 +479,11 @@ export function DeviceHealthFleetPanel({
               <dt className="text-xs font-semibold uppercase text-zinc-500">Playback</dt>
               <dd className="mt-2 font-semibold text-zinc-950">{selectedRow.playbackLabel}</dd>
               <dd className="mt-1 text-sm text-zinc-600">{selectedRow.isLive ? "Live player evidence" : "No live player evidence yet"}</dd>
+            </div>
+            <div className="rounded-md bg-zinc-50 p-4">
+              <dt className="text-xs font-semibold uppercase text-zinc-500">Display</dt>
+              <dd className="mt-2 font-semibold text-zinc-950">{selectedRow.displayLabel}</dd>
+              <dd className="mt-1 text-sm text-zinc-600">{selectedRow.displayDetail}</dd>
             </div>
             <div className="rounded-md bg-zinc-50 p-4">
               <dt className="text-xs font-semibold uppercase text-zinc-500">Sync</dt>
