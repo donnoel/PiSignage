@@ -1,166 +1,332 @@
 # Phases
 
-Each phase should stay small enough to validate locally or with clearly documented manual steps. Do not deploy real AWS resources before an explicit approval task.
+Each phase should stay small enough to validate locally or with clearly documented manual steps. Do not deploy real AWS resources before an explicit approval task. Playback reliability, local recovery, and source-control cleanliness are blocking concerns in every phase.
 
-## Phase 0: Architecture Skeleton And Docs
+The current product baseline lives in `docs/PRODUCT_REQUIREMENTS.md`.
 
-Goal: make the repository understandable and ready for incremental work.
+## Current Direction
+
+Beam is moving from a one-screen demo toward a local-first operations console with these locked dashboard sections:
+
+- Dashboard
+- Media Store
+- Playlists
+- Screens
+- Devices
+- Activity
+- Troubleshooting
+- Settings
+
+Map/location UI is deferred. Near-term screen organization should use clear tables, detail panels, and status summaries instead of a map.
+
+## Delivery Track
+
+- Team demo: Wednesday, June 3, 2026.
+- AWS buildout: after the team demo, with explicit approval before creating real AWS resources.
+- Five-system pilot: operate five real Raspberry Pi signage systems from the interface before production.
+- Production: only after pilot reliability, recovery, and control findings are resolved or explicitly accepted.
+
+## Phase 0: Existing Local Foundation
+
+Goal: preserve the working local proof while the product shape changes.
+
+Implementation status: existing local foundation is present.
 
 Acceptance:
 
-- Repo structure exists for `dashboard/`, `device-agent/`, `player/`, `infra/`, `docs/`, and `sample-content/`.
-- Required docs exist.
-- Local-only runnable foundation exists.
+- Repo structure exists for `dashboard/`, `device-agent/`, `player/`, `device/pi/`, `docs/`, `infra/`, and `sample-content/`.
+- Dashboard, player, device agent, and Pi scripts remain separated.
 - No AWS credentials are required.
+- Uploaded media, local state, credentials, generated output, and caches remain out of source control.
 
 Validation:
 
-- `npm install`
+- `npm install` or `npm ci`
 - `npm run typecheck`
 - `npm run build`
 
-## Phase 1: Local Playback Proof Of Concept
+## Real Implementation Rule
 
-Goal: prove local fullscreen image playback and local device status.
+All phases must build real local product behavior. Do not use placeholder code, mock data, fake devices, fake health, fake activity, or fake success states to complete a phase. Seed data is acceptable only as tracked examples or first-run defaults. Missing hardware or configuration must produce honest unavailable/error states, and validation reports must say exactly what was tested for real.
 
-Implementation status: local Phase 1 behavior exists. The player fetches the local playlist at runtime, and the device agent writes both heartbeat state and a last-known-good playlist cache.
+## Phase 1: Requirements And Information Architecture
 
-Acceptance:
-
-- Fullscreen image playback works locally.
-- Local playlist JSON works.
-- Device agent can read the playlist.
-- Device agent writes local heartbeat JSON.
-
-Validation:
-
-- `npm run dev:player`
-- `npm run agent:heartbeat`
-- Confirm `device-agent/local-state/heartbeat.json` exists.
-- Confirm `device-agent/local-cache/playlists/current.json` exists.
-
-## Phase 2: Mock Dashboard
-
-Goal: show the basic operator view without backend services.
-
-Implementation status: local Phase 2 behavior exists. The dashboard reads the sample playlist and optional local heartbeat file at request time.
+Goal: re-baseline product requirements and align the dashboard structure before deeper implementation.
 
 Acceptance:
 
-- Dashboard displays one mocked screen.
-- Dashboard displays one mocked playlist.
-- Dashboard displays mocked online/offline state.
+- `docs/PRODUCT_REQUIREMENTS.md` defines the product direction.
+- `docs/PHASES.md` reflects the new roadmap.
+- Dashboard sections are locked: Dashboard, Media Store, Playlists, Screens, Devices, Activity, Troubleshooting, Settings.
+- Map/location UI is marked removed/deferred.
+- Demo, AWS buildout, five-system pilot, and production gates are explicit.
 
 Validation:
 
-- `npm run dev:dashboard`
-- Manual browser smoke test.
-- Run `npm run agent:heartbeat`, refresh the dashboard, and confirm the heartbeat fields update.
+- Review `docs/PRODUCT_REQUIREMENTS.md`.
+- Review `docs/PHASES.md`.
+- Confirm no runtime behavior changed.
 
-## Phase 3: API Contract Definition
+## Phase 2: Team Demo Readiness
 
-Goal: document contracts before implementation.
+Goal: make the Wednesday, June 3, 2026 team demo honest and useful.
 
-Implementation status: initial API and MQTT contracts are documented. They are not implemented or deployed.
+Acceptance:
 
-Document but do not deploy:
-
-- Device pairing.
-- Heartbeat.
-- Playlist fetch.
-- Asset upload.
-- Screen assignment.
-
-Validation:
-
-- Review `docs/API_CONTRACT.md` for request/response examples and versioning notes.
-- Confirm the local playlist and heartbeat files map cleanly to the future playlist and heartbeat contracts.
-
-## Phase 4: AWS Design Documentation
-
-Goal: define AWS architecture before infrastructure exists.
-
-Implementation status: AWS design documentation is prepared. No infrastructure has been created.
-
-Document:
-
-- S3 strategy.
-- DynamoDB tables.
-- CloudFront signed URLs.
-- Cognito boundaries.
-- IoT topics.
-- IAM principles.
-
-Do not deploy.
+- Dashboard, Playlists, Screens, Devices, and Troubleshooting demo paths show real local behavior.
+- Media upload uses real files and produces playback-safe assets.
+- Playlist edits use live local state.
+- Publish/recovery paths either run against a real configured Pi or clearly report missing prerequisites.
+- The map is absent from the primary demo path.
+- No placeholder data is presented as product behavior.
 
 Validation:
 
-- Review `docs/AWS_DESIGN.md` for least-privilege boundaries and mockability.
-- Confirm no AWS credentials, deploy commands, or IaC resources are required.
+- `npm --workspace dashboard run typecheck`
+- Manual dashboard smoke of demo paths.
+- Real upload/edit/publish smoke when Pi is configured.
+- Honest unconfigured-state smoke when Pi is not configured.
+- Record exactly what was proven on hardware.
 
-## Phase 5: Future AWS Alpha Implementation
+## Phase 3: Dashboard And Screens Rework
 
-Goal: implement a minimal approved cloud alpha later.
+Goal: make the main dashboard and Screens section useful for operations without relying on a map.
 
-Document only for now:
+Acceptance:
 
-- IaC approach.
-- Environment naming.
-- Secret handling.
-- Deployment workflow.
-- Rollback strategy.
-
-Validation:
-
-- Not applicable until implementation is approved.
-
-## Phase 6: Raspberry Pi Appliance Mode
-
-Goal: make the Pi behave like a resilient signage appliance.
-
-Document and implement later:
-
-- Chromium kiosk mode.
-- `systemd` services.
-- Auto-recovery.
-- Watchdog strategy.
-- Local cache layout.
+- Dashboard shows online, offline, stale, and needs-attention counts.
+- Dashboard shows playback state, playlist sync, last publish, last heartbeat, and top recovery prompts.
+- Screens view is an operations table with screen name, location label, assigned device, assigned playlist, status, last seen, playback state, and sync state.
+- Existing map UI is removed from the active navigation and screen workflow.
+- Status is communicated in text, not color alone.
 
 Validation:
 
-- Reboot test.
-- Network-offline playback test.
-- Service restart test.
+- `npm --workspace dashboard run typecheck`
+- Manual dashboard smoke of the Dashboard and Screens sections.
+- Responsive check for affected views.
 
-## Phase 7: Monitoring
+## Phase 4: Local Data Stores
 
-Goal: start with heartbeat-only monitoring.
+Goal: establish local-first state files for the new app sections before adding complex workflows.
 
-Heartbeat fields:
+Acceptance:
 
-- `deviceId`
-- `timestamp`
-- `appVersion`
-- `currentPlaylistId`
-- `currentAssetId`
-- `diskFreeBytes`
-- `networkOnline`
+- Local JSON stores exist for media, screens, devices, activity, settings, and schedules.
+- Writes are atomic where practical.
+- Runtime state lives under ignored local-state paths.
+- Tracked seed/baseline data remains separate from live editable state.
+- Existing playlist behavior continues to use `dashboard/local-state/playlist.local.json` as the live editable source.
 
 Validation:
 
-- Device writes heartbeat locally.
-- Future API accepts heartbeat payload.
-- Dashboard renders heartbeat age and online/offline status.
+- `npm --workspace dashboard run typecheck`
+- Focused local-state read/write tests or script smoke where available.
+- Confirm `git status` does not show runtime JSON generated by normal dashboard operations.
 
-## Phase 8: Future Ideas Only
+## Phase 5: Media Store
 
-These are explicitly deferred:
+Goal: turn uploads into a reusable media library with verbose metadata and playback readiness.
 
-- Scheduling.
-- Video playback.
-- Screenshots.
-- Remote reboot.
-- Organizations.
-- OTA updates.
-- Analytics.
-- Billing.
+Acceptance:
+
+- Media Store lists uploaded media.
+- Operators can upload MP4, MOV, JPEG, and PNG.
+- JPEG and PNG uploads become Pi-safe MP4 still clips before playback.
+- MOV is converted or rejected with a clear readiness message until conversion is implemented.
+- MP3 remains deferred until audio-only behavior is explicitly designed.
+- Media details support long title/description/notes plus tags, original filename, generated playback file, duration, file size, MIME type, validation status, and readiness.
+- Unsafe or unsupported files cannot enter active playback.
+
+Validation:
+
+- `npm --workspace dashboard run typecheck`
+- Upload smoke for MP4 and JPEG/PNG conversion.
+- Conversion failure smoke when `ffmpeg` is missing or invalid input is supplied.
+- Confirm playlist/Pi publish still receives playback-safe MP4 assets.
+
+## Phase 6: Playlists
+
+Goal: make playlists consume Media Store assets and remain safe to publish.
+
+Acceptance:
+
+- Playlist items can be added from the Media Store.
+- Playlist items can be rearranged and removed.
+- Playlist item details show media metadata, duration, tags, readiness, local path, and Pi reporting/sync state.
+- Playlist edits update live local state and attempt publish to assigned devices when configured.
+- Manual publish remains a recovery/resync action.
+- At least one playable item remains for an assigned playlist unless the user explicitly unassigns it.
+
+Validation:
+
+- `npm --workspace dashboard run typecheck`
+- Reorder/remove/add smoke.
+- Publish failure smoke that proves local state remains intact and the failure is visible.
+
+## Phase 7: Devices
+
+Goal: support multiple local Raspberry Pi devices in a clear inventory.
+
+Acceptance:
+
+- Devices can be added and removed.
+- Device records include name, host, SSH user, root path, player type, notes, assigned screen, and status fields.
+- Secrets remain in environment variables or ignored local state.
+- Device status shows reachable, last seen, boot ID, uptime, display mode, service state, temperature, throttle state, disk free, current playlist, and current asset when available.
+- One device can be assigned to one screen initially.
+
+Validation:
+
+- `npm --workspace dashboard run typecheck`
+- Local device CRUD smoke.
+- SSH probe smoke when Pi config is available.
+- Confirm failed probes do not block playback.
+
+## Phase 8: Activity
+
+Goal: create a local audit trail for operations and recovery.
+
+Acceptance:
+
+- Activity log records uploads, metadata edits, playlist changes, publishes, screen changes, device changes, recovery actions, and important probe failures.
+- Each entry includes timestamp, actor when known, entity type, entity ID, action, result, and safe message.
+- Activity never stores secrets, passwords, signed URLs, or raw credentials.
+- Activity is readable from the dashboard.
+
+Validation:
+
+- `npm --workspace dashboard run typecheck`
+- Focused smoke that performs one upload/edit/publish/recovery action and confirms an activity entry.
+
+## Phase 9: Troubleshooting And Recovery
+
+Goal: give operators one clear place to diagnose and recover a screen.
+
+Acceptance:
+
+- Troubleshooting view shows player status, service state, display mode, publish status, temperature, throttle state, uptime, boot ID, and last errors.
+- One-click recovery runs a safe sequence: probe status, restart VLC, reload playlist, restart player service.
+- Reboot requires explicit approval and is not the default first action.
+- SSH guidance and a copyable SSH command are available.
+- Pi player/UI link or command is available when configured.
+- Every recovery action writes activity.
+
+Validation:
+
+- `npm --workspace dashboard run typecheck`
+- Recovery action smoke against configured Pi or dry-run command path.
+- `node scripts/local-failure-smoke.mjs`
+- `device/pi/bin/pisignage-vlc-playlist.mjs --dry-run` when applicable.
+
+## Phase 10: Scheduling
+
+Goal: support simple business-hours playback schedules.
+
+Acceptance:
+
+- Schedules have a name, timezone, on time, off time, active days, and assigned screens.
+- A screen can show its current schedule state.
+- The Pi can cache schedule state locally.
+- Network loss does not break already-cached schedule behavior.
+- Start with simple daily windows before exceptions or holidays.
+
+Validation:
+
+- `npm --workspace dashboard run typecheck`
+- Schedule CRUD smoke.
+- Local schedule evaluation tests around timezone and boundary times.
+- Pi/offline schedule smoke when device support exists.
+
+## Phase 11: Settings And Local Admin Login
+
+Goal: centralize local configuration and add a simple operator login.
+
+Acceptance:
+
+- Settings view manages local labels, defaults, upload limits, conversion settings, schedule timezone, and safe non-secret configuration.
+- Secrets stay in environment variables or ignored local state.
+- Single-admin login protects dashboard operations.
+- Activity entries include actor once login exists.
+- Advanced RBAC remains deferred.
+
+Validation:
+
+- `npm --workspace dashboard run typecheck`
+- Settings save/load smoke.
+- Login/logout smoke.
+- Confirm secrets are not written to tracked files.
+
+## Phase 12: AWS Buildout
+
+Goal: build the real cloud portion after the team demo, with explicit approval before creating resources.
+
+Acceptance:
+
+- AWS resources are created only after approval.
+- Device identity, dashboard auth, media storage, playlist assignment, heartbeat/status, and publish/sync contracts are real.
+- Private media uses least-privilege storage and delivery.
+- Cloud outage does not stop cached local playback.
+- Cloud status never reports success for operations that are not actually wired.
+
+Validation:
+
+- Infrastructure plan review before creation.
+- Least-privilege IAM review.
+- Real upload, publish, heartbeat, and playlist fetch smoke against the AWS environment.
+- Network-outage playback validation against a previously synced device.
+
+## Phase 13: Five-System Pilot
+
+Goal: operate five real Raspberry Pi signage systems from the interface before production.
+
+Acceptance:
+
+- Five real Devices and Screens are configured.
+- Each system can be assigned media, playlist, and schedule from the interface.
+- Dashboard shows online/offline/stale/playback/sync status for each system.
+- Recovery can be run for one system without disrupting healthy systems.
+- Pilot findings are tracked and resolved or explicitly accepted before production.
+
+Validation:
+
+- Five-device setup smoke.
+- Per-screen playlist publish smoke.
+- Network outage, power outage, service restart, and failed publish drills.
+- Recovery evidence review per system.
+
+## Phase 14: Playback Options And Transitions
+
+Goal: add playback polish only after operational safety is strong.
+
+Acceptance:
+
+- Playback options are represented explicitly and safely.
+- VLC remains the field default.
+- Browser playback remains available as fallback/experimental behavior.
+- Transitions are optional and do not regress Pi recovery, cached playback, or playlist reload behavior.
+- Reduced-motion and TV readability concerns are considered for dashboard/player UI.
+
+Validation:
+
+- `npm run typecheck`
+- Player build or focused player smoke.
+- Reboot, network-offline, and service-restart checks before calling transitions field-ready.
+
+## Phase 15: Production Readiness
+
+Goal: prepare for production only after the five-system pilot proves the operational model.
+
+Acceptance:
+
+- Pilot reliability findings are resolved or explicitly accepted.
+- Backup/restore expectations are documented.
+- Operational runbooks exist for setup, media upload, publish, outage recovery, and support.
+- Security review covers secrets, device identity, media access, and dashboard auth.
+- Production monitoring requirements are defined.
+
+Validation:
+
+- Production-readiness review.
+- End-to-end rehearsal with real devices and real media.
+- Recovery drill signoff.

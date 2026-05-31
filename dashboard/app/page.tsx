@@ -1,12 +1,7 @@
 import { promises as fs } from "node:fs";
 import { Metric, StatusPill } from "./dashboard-ui";
-import { readDeviceLocation } from "./lib/local-device-location";
-import type { DeviceLocation } from "./lib/local-device-location";
 import { publishStatusPath, readLivePlaylist, repoRoot } from "./lib/local-playlist";
 import type { Playlist, PlaylistAsset } from "./lib/local-playlist";
-import { LocalDeviceLocationCapture } from "./local-device-location-capture";
-import { LocalDeviceMap } from "./local-device-map";
-import type { LocalMapDevice } from "./local-device-map";
 import { readPiConfig, runSsh } from "./lib/pi-local";
 import { LocalPublishForm } from "./local-publish-form";
 import { LocalPlaylistControls } from "./local-playlist-controls";
@@ -59,7 +54,6 @@ type PiProbe = {
 
 type DashboardState = {
   heartbeat: Heartbeat | null;
-  location: DeviceLocation | null;
   playlist: Playlist;
   publishStatus: PublishStatus | null;
   pi: PiProbe;
@@ -96,7 +90,7 @@ const navigationItems: Array<{ label: string; view: DashboardView }> = [
 
 const viewCopy: Record<DashboardView, { eyebrow: string; title: string; description?: string }> = {
   dashboard: {
-    eyebrow: "Alpha operations",
+    eyebrow: "",
     title: "Dashboard"
   },
   playlist: {
@@ -112,7 +106,7 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
   screens: {
     eyebrow: "Screen inventory",
     title: "Screens",
-    description: "Map, status, and assignments."
+    description: "Status, assignments, and recovery signals."
   }
 };
 
@@ -296,68 +290,6 @@ function localConfigLabel(name: string): string | null {
   return value ? value : null;
 }
 
-type MapBounds = {
-  maxLatitude: number;
-  maxLongitude: number;
-  minLatitude: number;
-  minLongitude: number;
-};
-
-function mapBounds(location: DeviceLocation): MapBounds {
-  const latitudePadding = 0.012;
-  const longitudePadding = 0.018;
-
-  return {
-    maxLatitude: location.latitude + latitudePadding,
-    maxLongitude: location.longitude + longitudePadding,
-    minLatitude: location.latitude - latitudePadding,
-    minLongitude: location.longitude - longitudePadding
-  };
-}
-
-function embeddedMapUrl(bounds: MapBounds): string {
-  const url = new URL("https://www.openstreetmap.org/export/embed.html");
-
-  url.searchParams.set(
-    "bbox",
-    [
-      bounds.minLongitude,
-      bounds.minLatitude,
-      bounds.maxLongitude,
-      bounds.maxLatitude
-    ].join(",")
-  );
-  url.searchParams.set("layer", "mapnik");
-
-  return url.toString();
-}
-
-function mapPoint(location: DeviceLocation, bounds: MapBounds): { xPercent: number; yPercent: number } {
-  const xPercent = ((location.longitude - bounds.minLongitude) / (bounds.maxLongitude - bounds.minLongitude)) * 100;
-  const yPercent = ((bounds.maxLatitude - location.latitude) / (bounds.maxLatitude - bounds.minLatitude)) * 100;
-
-  return {
-    xPercent: Math.min(92, Math.max(8, xPercent)),
-    yPercent: Math.min(92, Math.max(12, yPercent))
-  };
-}
-
-function coordinateLabel(location: DeviceLocation | null): string {
-  if (!location) {
-    return "Coordinates not captured";
-  }
-
-  return `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`;
-}
-
-function locationAccuracyLabel(location: DeviceLocation | null): string {
-  if (!location?.accuracyMeters) {
-    return "Accuracy not reported";
-  }
-
-  return `Accuracy about ${Math.round(location.accuracyMeters)} m`;
-}
-
 function statusAgeMs(timestamp: string | null | undefined): number | null {
   if (!timestamp) {
     return null;
@@ -371,24 +303,38 @@ function statusAgeMs(timestamp: string | null | undefined): number | null {
   return Math.max(0, Date.now() - statusDate.getTime());
 }
 
-function currentAssetLabel(playlist: Playlist, heartbeat: Heartbeat | null, isHeartbeatFresh: boolean): string {
-  if (!isHeartbeatFresh) {
-    return "Current item unavailable";
+function currentPlaybackLabel(
+  playlist: Playlist,
+  heartbeat: Heartbeat | null,
+  isHeartbeatFresh: boolean,
+  playbackHealthy: boolean
+): string {
+  if (isHeartbeatFresh && heartbeat?.currentAssetId) {
+    return assetLabel(playlist, heartbeat.currentAssetId);
   }
 
-  return assetLabel(playlist, heartbeat?.currentAssetId);
+  if (playbackHealthy) {
+    return playlist.name;
+  }
+
+  return "Playback not confirmed";
 }
 
-function currentAssetDetail(heartbeat: Heartbeat | null, isHeartbeatFresh: boolean, playbackHealthy: boolean): string {
-  if (isHeartbeatFresh) {
+function currentPlaybackDetail(
+  playlist: Playlist,
+  heartbeat: Heartbeat | null,
+  isHeartbeatFresh: boolean,
+  playbackHealthy: boolean
+): string {
+  if (isHeartbeatFresh && heartbeat?.currentAssetId) {
     return `Device agent updated ${formatStatusAge(heartbeat?.timestamp)}.`;
   }
 
   if (playbackHealthy) {
-    return "VLC is playing. Current-item reporting is not available yet.";
+    return `VLC confirms this playlist is playing. Exact item position is not reported yet across the ${pluralize(playlist.assets.length, "item")} loop.`;
   }
 
-  return "Waiting for a fresh playback report.";
+  return "Waiting for a fresh VLC playback report.";
 }
 
 function screenLabel(pi: PiProbe, heartbeat: Heartbeat | null, isHeartbeatFresh: boolean): string {
@@ -612,15 +558,14 @@ function textBetween(value: string, start: string, end: string): string {
 async function loadDashboardState(): Promise<DashboardState> {
   const root = repoRoot();
   const heartbeatPath = `${root}/device-agent/local-state/heartbeat.json`;
-  const [playlist, heartbeat, location, publishStatus, pi] = await Promise.all([
+  const [playlist, heartbeat, publishStatus, pi] = await Promise.all([
     readLivePlaylist(),
     readJsonFile<Heartbeat>(heartbeatPath),
-    readDeviceLocation(),
     readJsonFile<PublishStatus>(publishStatusPath()),
     loadPiProbe()
   ]);
 
-  return { heartbeat, location, playlist, publishStatus, pi };
+  return { heartbeat, playlist, publishStatus, pi };
 }
 
 function syncState(localVersion: number, piVersion: number | undefined, piReachable: boolean) {
@@ -684,11 +629,27 @@ function pluralize(count: number, singular: string, plural = `${singular}s`): st
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
+function screenOnlineLabel(pi: PiProbe): string {
+  if (!pi.configured) {
+    return "Not configured";
+  }
+
+  return pi.reachable ? "Online" : "Offline";
+}
+
+function screenOnlineTone(pi: PiProbe): "good" | "warn" | "muted" {
+  if (!pi.configured) {
+    return "muted";
+  }
+
+  return pi.reachable ? "good" : "warn";
+}
+
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const resolvedSearchParams = await searchParams;
   const selectedView = dashboardViewFrom(resolvedSearchParams?.view);
   const currentViewCopy = viewCopy[selectedView];
-  const { heartbeat, location, playlist, publishStatus, pi } = await loadDashboardState();
+  const { heartbeat, playlist, publishStatus, pi } = await loadDashboardState();
   const playerStatus = pi.playerStatus;
   const playbackState = playerStatus?.state ?? (pi.reachable ? "unknown" : "unreachable");
   const isPlaying = playbackState === "playing";
@@ -698,34 +659,14 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const isHeartbeatFresh = heartbeatAgeMs !== null && heartbeatAgeMs <= staleHeartbeatThresholdMs;
   const playbackHealthy = isPlaying && isPlayerStatusFresh;
   const playbackLabel = playbackHealthy ? "Playing" : isPlaying ? "Stale" : playbackState;
-  const playbackMetric = playbackHealthy ? "Live" : isPlaying ? "Stale" : "Check";
   const playerFreshnessDetail = statusFreshnessDetail(pi, playerStatus, isPlayerStatusFresh);
-  const currentAsset = currentAssetLabel(playlist, heartbeat, isHeartbeatFresh);
-  const currentAssetStatus = currentAssetDetail(heartbeat, isHeartbeatFresh, playbackHealthy);
+  const currentPlayback = currentPlaybackLabel(playlist, heartbeat, isHeartbeatFresh, playbackHealthy);
+  const currentPlaybackStatus = currentPlaybackDetail(playlist, heartbeat, isHeartbeatFresh, playbackHealthy);
   const localScreenName = screenLabel(pi, heartbeat, isHeartbeatFresh);
   const localLocationName = locationLabel();
   const localDeviceIdentifier = deviceIdentifier(pi, heartbeat, isHeartbeatFresh);
-  const bounds = location ? mapBounds(location) : null;
-  const mapUrl = bounds ? embeddedMapUrl(bounds) : null;
-  const mapDevices: LocalMapDevice[] = location && bounds
-    ? [
-        {
-          accuracy: locationAccuracyLabel(location),
-          capturedAt: formatTimestamp(location.capturedAt),
-          coordinates: coordinateLabel(location),
-          currentAsset,
-          host: localDeviceIdentifier,
-          id: localDeviceIdentifier,
-          label: localScreenName,
-          location: localLocationName,
-          playlist: `${playlist.name} · v${playlist.version}`,
-          status: playbackLabel,
-          statusTone: playbackHealthy ? "good" : "warn",
-          ...mapPoint(location, bounds)
-        }
-      ]
-    : [];
   const playerUpdatedAt = formatTimestamp(playerStatus?.updatedAt);
+  const lastPlayerHeartbeatAge = formatStatusAge(playerStatus?.updatedAt);
   const totalDuration = formatDuration(playlist.assets);
   const piPlaylistVersion = playerStatus?.playlistVersion;
   const playlistSyncState = syncState(playlist.version, piPlaylistVersion, pi.reachable);
@@ -767,14 +708,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     });
   }
 
-  if (!location) {
-    attentionItems.push({
-      detail: "Capture real coordinates for this screen.",
-      label: "Location missing",
-      tone: "warn"
-    });
-  }
-
   if (publishStatus && !publishStatus.ok) {
     attentionItems.push({
       detail: publishStatus.message,
@@ -783,7 +716,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     });
   }
 
-  const screenSummary = pi.reachable ? "1 online" : pi.configured ? "1 offline" : "0 configured";
+  const onlineScreenCount = pi.reachable ? 1 : 0;
+  const offlineScreenCount = pi.configured && !pi.reachable ? 1 : 0;
+  const staleScreenCount = pi.configured && (isPlaying ? !isPlayerStatusFresh : false) ? 1 : 0;
+  const playingScreenCount = playbackHealthy ? 1 : 0;
   const attentionSummary = attentionItems.length === 0 ? "Clear" : pluralize(attentionItems.length, "item");
   const recoveryEvidence: EvidenceItem[] = [
     {
@@ -835,17 +771,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   ];
 
   return (
-    <main className="min-h-screen bg-[#f6f7f9] text-zinc-950">
+    <main className="min-h-screen bg-[#f3f6f8] text-zinc-950">
       <div className="grid min-h-screen lg:grid-cols-[220px_1fr]">
-        <aside className="border-b border-zinc-200 bg-white px-5 py-5 lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r lg:py-6">
+        <aside className="border-b border-cyan-200 bg-gradient-to-b from-cyan-50 via-white to-slate-100 px-5 py-5 text-slate-950 lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r lg:py-6">
           <div className="flex flex-wrap items-end justify-between gap-2 lg:block">
             <div>
-              <div className="text-2xl font-black tracking-tight">PiSignage</div>
-              <p className="mt-1 text-xs font-semibold uppercase text-teal-700">Local operations</p>
+              <div className="text-2xl font-black tracking-tight">Beam</div>
             </div>
-            <StatusPill label="Alpha" tone="muted" />
           </div>
-          <nav aria-label="Dashboard views" className="mt-5 flex gap-2 overflow-x-auto pb-1 text-sm font-medium text-zinc-700 lg:mt-8 lg:block lg:space-y-1 lg:overflow-visible lg:pb-0">
+          <nav aria-label="Dashboard views" className="mt-5 flex gap-2 overflow-x-auto pb-1 text-sm font-medium text-slate-700 lg:mt-8 lg:block lg:space-y-1 lg:overflow-visible lg:pb-0">
             {navigationItems.map((item) => {
               const selected = item.view === selectedView;
 
@@ -855,7 +789,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 href={item.view === "dashboard" ? "/" : `/?view=${item.view}`}
                 aria-current={selected ? "page" : undefined}
                 className={`block whitespace-nowrap rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-600 ${
-                  selected ? "bg-teal-50 text-teal-800 ring-1 ring-teal-100" : "hover:bg-zinc-100"
+                  selected ? "bg-white text-teal-900 shadow-sm ring-1 ring-cyan-200" : "hover:bg-white/70"
                 }`}
               >
                 {item.label}
@@ -868,7 +802,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         <div className="mx-auto w-full max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8">
           <header id="dashboard" className="flex flex-col gap-4 border-b border-zinc-200 pb-5 xl:flex-row xl:items-center xl:justify-between">
             <div>
-              <p className="text-sm font-semibold uppercase text-teal-700">{currentViewCopy.eyebrow}</p>
+              {currentViewCopy.eyebrow ? (
+                <p className="text-sm font-semibold uppercase text-teal-700">{currentViewCopy.eyebrow}</p>
+              ) : null}
               <h1 className="mt-1 text-3xl font-bold tracking-tight text-zinc-950 sm:text-4xl">{currentViewCopy.title}</h1>
               {currentViewCopy.description ? (
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600">
@@ -876,42 +812,57 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 </p>
               ) : null}
             </div>
-            <div className="grid gap-3 rounded-lg border border-zinc-200 bg-white p-3 text-sm shadow-sm sm:min-w-80">
-              <div className="flex flex-wrap items-center gap-2">
-                <StatusPill label={pi.reachable ? "Pi reachable" : "Pi unreachable"} tone={pi.reachable ? "good" : "warn"} />
-                <StatusPill label={playbackLabel} tone={playbackHealthy ? "good" : "warn"} />
-              </div>
-              <p className="text-zinc-600">
-                {pi.host ? `${pi.host} · ` : ""}{playerFreshnessDetail} · Playlist v{playlist.version}
-              </p>
-            </div>
           </header>
 
           <section
             aria-labelledby="operations-heading"
             className={selectedView === "dashboard" ? "mt-5" : "hidden"}
           >
-            <h2 id="operations-heading" className="sr-only">Operational status</h2>
-            <dl className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-                <dt className="text-xs font-semibold uppercase text-zinc-500">Screens</dt>
-                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{screenSummary}</dd>
-                <dd className="mt-1 text-sm text-zinc-600">{localScreenName}</dd>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 id="operations-heading" className="text-2xl font-semibold">Operations at a glance</h2>
               </div>
-              <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-                <dt className="text-xs font-semibold uppercase text-zinc-500">Playback</dt>
-                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{playbackMetric}</dd>
-                <dd className="mt-1 text-sm text-zinc-600">{formatStatusAge(playerStatus?.updatedAt)}</dd>
+            </div>
+            <dl className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+                <dt className="text-xs font-semibold uppercase text-emerald-800">Online</dt>
+                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{onlineScreenCount}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">{pi.reachable ? localScreenName : "No reachable screens"}</dd>
               </div>
-              <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-                <dt className="text-xs font-semibold uppercase text-zinc-500">Playlist</dt>
-                <dd className="mt-2 text-2xl font-semibold text-zinc-950">v{playlist.version}</dd>
-                <dd className="mt-1 text-sm text-zinc-600">{playlistSyncState.label}</dd>
+              <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 shadow-sm">
+                <dt className="text-xs font-semibold uppercase text-rose-800">Offline</dt>
+                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{offlineScreenCount}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">{pi.configured ? pi.message : "Pi SSH is not configured"}</dd>
               </div>
-              <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-                <dt className="text-xs font-semibold uppercase text-zinc-500">Needs attention</dt>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm">
+                <dt className="text-xs font-semibold uppercase text-amber-900">Stale</dt>
+                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{staleScreenCount}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">{isPlaying && !isPlayerStatusFresh ? playerFreshnessDetail : "No stale playback reports"}</dd>
+              </div>
+              <div className="rounded-lg border border-sky-200 bg-sky-50 p-4 shadow-sm">
+                <dt className="text-xs font-semibold uppercase text-sky-800">Playing</dt>
+                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{playingScreenCount}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">{playbackHealthy ? currentPlayback : playerFreshnessDetail}</dd>
+              </div>
+              <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 shadow-sm">
+                <dt className="text-xs font-semibold uppercase text-indigo-800">Playlist sync</dt>
+                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{playlistSyncState.label}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">Local v{playlist.version}; Pi {piPlaylistVersion ? `v${piPlaylistVersion}` : "unknown"}</dd>
+              </div>
+              <div className="rounded-lg border border-cyan-200 bg-cyan-50 p-4 shadow-sm">
+                <dt className="text-xs font-semibold uppercase text-cyan-800">Last heartbeat</dt>
+                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{lastPlayerHeartbeatAge}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">{playerFreshnessDetail}</dd>
+              </div>
+              <div className="rounded-lg border border-violet-200 bg-violet-50 p-4 shadow-sm">
+                <dt className="text-xs font-semibold uppercase text-violet-800">Last publish</dt>
+                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{publishStatus ? (publishStatus.ok ? "OK" : "Check") : "None"}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">{lastPublishLabel}</dd>
+              </div>
+              <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 shadow-sm">
+                <dt className="text-xs font-semibold uppercase text-orange-800">Recovery evidence</dt>
                 <dd className="mt-2 text-2xl font-semibold text-zinc-950">{attentionSummary}</dd>
-                <dd className="mt-1 text-sm text-zinc-600">{attentionItems[0]?.label ?? "No action needed"}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">{recoveryEvidence[0]?.value ?? "No evidence reported"}</dd>
               </div>
             </dl>
           </section>
@@ -930,8 +881,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               </div>
               <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_320px]">
                 <div className="min-w-0">
-                  <p className="break-words text-3xl font-semibold leading-tight text-zinc-950 sm:text-4xl">{currentAsset}</p>
-                  <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-600">{currentAssetStatus}</p>
+                  <p className="break-words text-3xl font-semibold leading-tight text-zinc-950 sm:text-4xl">{currentPlayback}</p>
+                  <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-600">{currentPlaybackStatus}</p>
                   <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-3">
                     <div className="rounded-md bg-zinc-50 p-3">
                       <dt className="font-semibold text-zinc-500">Playlist</dt>
@@ -996,8 +947,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
                 <div className="flex items-start justify-between gap-3 border-b border-zinc-200 p-5">
                   <div>
-                    <p className="text-sm font-semibold uppercase text-teal-700">Evidence</p>
-                    <h2 className="mt-1 text-2xl font-semibold">Recent activity</h2>
+                    <p className="text-sm font-semibold uppercase text-teal-700">Recovery</p>
+                    <h2 className="mt-1 text-2xl font-semibold">Evidence</h2>
                   </div>
                   <StatusPill label={playbackHealthy && playlistSyncState.tone === "good" ? "OK" : "Review"} tone={playbackHealthy && playlistSyncState.tone === "good" ? "good" : "warn"} />
                 </div>
@@ -1134,15 +1085,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </section>
 
           <section
-            id="locations"
-            aria-labelledby="locations-heading"
+            id="field-setup"
+            aria-labelledby="field-setup-heading"
             className={selectedView === "device-health" ? "mt-6 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]" : "hidden"}
           >
             <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
               <div className="border-b border-zinc-200 p-5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <h2 id="locations-heading" className="text-xl font-semibold">{localLocationName}</h2>
+                    <h2 id="field-setup-heading" className="text-xl font-semibold">{localLocationName}</h2>
                     <p className="mt-1 text-sm text-zinc-600">Local field setup from live configuration and Pi status.</p>
                   </div>
                   <StatusPill label={pi.reachable ? "Online" : "Offline"} tone={pi.reachable ? "good" : "warn"} />
@@ -1182,39 +1133,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </section>
 
           <section
-            aria-labelledby="device-map-heading"
-            className={selectedView === "screens" ? "mt-6 rounded-lg border border-zinc-200 bg-white shadow-sm" : "hidden"}
-          >
-            <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h2 id="device-map-heading" className="text-xl font-semibold">Device map</h2>
-                <p className="mt-1 text-sm text-zinc-600">Select a Pi pin for playback and health details.</p>
-              </div>
-              <StatusPill label={mapUrl ? "Real coordinates" : "Location needed"} tone={mapUrl ? "good" : "warn"} />
-            </div>
-            <div className="p-5">
-              {mapUrl ? (
-                <LocalDeviceMap devices={mapDevices} mapSrc={mapUrl} />
-              ) : (
-                <div className="flex min-h-80 flex-col justify-center rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-5 text-sm">
-                  <p className="text-lg font-semibold text-zinc-950">Coordinates not captured</p>
-                  <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-md bg-white p-3">
-                      <dt className="font-semibold text-zinc-500">Screen</dt>
-                      <dd className="mt-1 text-zinc-950">{localScreenName}</dd>
-                    </div>
-                    <div className="rounded-md bg-white p-3">
-                      <dt className="font-semibold text-zinc-500">Device</dt>
-                      <dd className="mt-1 text-zinc-950">{localDeviceIdentifier}</dd>
-                    </div>
-                  </dl>
-                </div>
-              )}
-              <LocalDeviceLocationCapture hasLocation={Boolean(location)} />
-            </div>
-          </section>
-
-          <section
             id="screens"
             aria-labelledby="screens-heading"
             className={selectedView === "screens" ? "mt-6 rounded-lg border border-zinc-200 bg-white shadow-sm" : "hidden"}
@@ -1227,23 +1145,53 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <StatusPill label="Local only" tone="muted" />
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-left text-sm">
+              <table className="w-full min-w-[1120px] text-left text-sm">
                 <thead className="bg-zinc-50 text-xs uppercase text-zinc-500">
                   <tr>
                     <th className="px-5 py-3">Name</th>
-                    <th className="px-5 py-3">Player status</th>
-                    <th className="px-5 py-3">Player type</th>
-                    <th className="px-5 py-3">Content</th>
-                    <th className="px-5 py-3">Last update</th>
+                    <th className="px-5 py-3">Online</th>
+                    <th className="px-5 py-3">Playback</th>
+                    <th className="px-5 py-3">Playlist sync</th>
+                    <th className="px-5 py-3">Last heartbeat</th>
+                    <th className="px-5 py-3">Last publish</th>
+                    <th className="px-5 py-3">Recovery evidence</th>
+                    <th className="px-5 py-3">Device</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-200">
                   <tr>
-                    <td className="px-5 py-4 font-semibold">{localScreenName}</td>
-                    <td className="px-5 py-4"><StatusPill label={playbackLabel} tone={playbackHealthy ? "good" : "warn"} /></td>
-                    <td className="px-5 py-4">VLC field player</td>
-                    <td className="px-5 py-4">{playlist.name}</td>
-                    <td className="px-5 py-4">{playerUpdatedAt}</td>
+                    <td className="px-5 py-4">
+                      <p className="font-semibold text-zinc-950">{localScreenName}</p>
+                      <p className="mt-1 text-xs text-zinc-600">{localLocationName}</p>
+                    </td>
+                    <td className="px-5 py-4">
+                      <StatusPill label={screenOnlineLabel(pi)} tone={screenOnlineTone(pi)} />
+                      <p className="mt-2 max-w-56 leading-5 text-zinc-600">{pi.message}</p>
+                    </td>
+                    <td className="px-5 py-4">
+                      <StatusPill label={playbackLabel} tone={playbackHealthy ? "good" : "warn"} />
+                      <p className="mt-2 max-w-56 leading-5 text-zinc-600">{playerFreshnessDetail}</p>
+                    </td>
+                    <td className="px-5 py-4">
+                      <StatusPill label={playlistSyncState.label} tone={playlistSyncState.tone} />
+                      <p className="mt-2 leading-5 text-zinc-600">Local v{playlist.version}; Pi {piPlaylistVersion ? `v${piPlaylistVersion}` : "unknown"}</p>
+                    </td>
+                    <td className="px-5 py-4">
+                      <p className="font-semibold text-zinc-950">{lastPlayerHeartbeatAge}</p>
+                      <p className="mt-1 text-zinc-600">{playerUpdatedAt}</p>
+                    </td>
+                    <td className="px-5 py-4">
+                      <p className="font-semibold text-zinc-950">{publishStatus ? (publishStatus.ok ? "Succeeded" : "Needs attention") : "Not recorded"}</p>
+                      <p className="mt-1 max-w-56 leading-5 text-zinc-600">{publishStatus?.message ?? "No local publish status has been written."}</p>
+                    </td>
+                    <td className="px-5 py-4">
+                      <p className="font-semibold text-zinc-950">{bootRecoveryLabel(pi, playbackHealthy)}</p>
+                      <p className="mt-1 max-w-56 leading-5 text-zinc-600">{bootRecoveryDetail(pi)}</p>
+                    </td>
+                    <td className="px-5 py-4">
+                      <p className="font-semibold text-zinc-950">{localDeviceIdentifier}</p>
+                      <p className="mt-1 text-zinc-600">VLC field player</p>
+                    </td>
                   </tr>
                 </tbody>
               </table>

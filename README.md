@@ -1,6 +1,6 @@
-# PiSignage
+# Beam
 
-PiSignage is a phased proof of concept for Raspberry Pi based digital signage backed by AWS services later. The first target is intentionally small: one account, one dashboard, one Raspberry Pi, one TV, and reliable fullscreen playback from local content.
+Beam is a real local-first Raspberry Pi based digital signage operations console, with AWS services planned after the local demo foundation is proven. The first target is intentionally small: one account, one dashboard, real Raspberry Pi screens, reusable media and playlists, and reliable fullscreen playback from local content.
 
 The current repository provides a local-only foundation. It does not deploy AWS infrastructure, require AWS credentials, or attempt to clone a full enterprise signage platform.
 
@@ -55,8 +55,7 @@ configured, the dashboard will show that the upload was saved locally only.
 
 Optional dashboard labels can also live in `dashboard/.env.local`. Leave them
 unset if they are not known yet; the dashboard will say they are not configured
-instead of inventing values. Real map coordinates are captured from browser
-geolocation in the dashboard and saved to ignored local state.
+instead of inventing values.
 
 ```sh
 PISIGNAGE_SCREEN_NAME='<real-screen-name>'

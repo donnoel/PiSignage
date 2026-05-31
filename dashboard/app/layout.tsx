@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "PiSignage Dashboard",
-  description: "PiSignage alpha operations console"
+  title: "Beam Dashboard",
+  description: "Beam screen control dashboard"
 };
 
 export default function RootLayout({

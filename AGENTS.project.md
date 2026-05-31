@@ -1,35 +1,41 @@
 # AGENTS.project.md
 
-# PiSignage Project Guide for Agents
+# Beam Project Guide for Agents
 
 ## Product Intent
 
-PiSignage is a phased proof of concept for replacing a Yodeck-style digital signage workflow with a simpler Raspberry Pi + AWS architecture.
+Beam is a real local-first Raspberry Pi signage operations console. AWS remains a later option after the local-first foundation is proven.
 
-The initial product target is deliberately small:
+The near-term product target is deliberately small:
 
 - One account.
-- One dashboard.
-- One Raspberry Pi device.
-- One TV.
-- One playlist.
-- Reliable fullscreen playback.
+- One local operations dashboard.
+- A small local inventory of Raspberry Pi devices and screens.
+- Reusable media and playlists.
+- Reliable fullscreen playback and recovery.
 
-This is not a full enterprise clone. The project should evolve incrementally from a local proof of concept into a cloud-backed alpha only after the local playback, device status, and contracts are clear.
+This is not a full enterprise clone. The project should evolve incrementally from a real local product into a cloud-backed alpha only after the local playback, device status, and contracts are clear.
+
+Delivery path:
+
+- Team demo by Wednesday, June 3, 2026.
+- Real AWS buildout after the team demo, with explicit approval before resource creation.
+- Five real Raspberry Pi signage systems controlled from the interface before production.
+- Production only after the five-system pilot proves playback, control, monitoring, and recovery.
 
 ## Current Product Phase
 
-The repository is in Phase 4: AWS architecture and Raspberry Pi setup are being prepared without deploying cloud resources or requiring hardware access.
+The repository is in a local product re-baseline phase. Product requirements now live in `docs/PRODUCT_REQUIREMENTS.md`, and implementation sequencing lives in `docs/PHASES.md`.
 
 Current goals:
 
-- Keep the dashboard focused on one account, one screen, and one playlist.
+- Keep the dashboard focused on local operations: Dashboard, Media Store, Playlists, Screens, Devices, Activity, Troubleshooting, and Settings.
 - Keep dashboard, player, and device-agent boundaries clear.
-- Document AWS and device setup plans before adding live services.
-- Prepare Pi-free local failure checks for tomorrow’s hardware setup.
-- Avoid real AWS resources, credentials, and deployment requirements.
+- Preserve the proven local playback and Pi recovery path while adding inventory, media, activity, scheduling, and recovery workflows.
+- Avoid creating AWS resources until the user explicitly approves that phase.
+- Remove/defer map UI until the operations foundation is stronger.
 
-## Non-Goals For The Initial POC
+## Non-Goals For The Initial Product
 
 Do not build these until explicitly approved:
 
@@ -40,8 +46,8 @@ Do not build these until explicitly approved:
 - Screenshot capture.
 - Remote reboot.
 - OTA deployment/update system.
-- Advanced fleet management.
-- Complex scheduling.
+- Advanced fleet management beyond the five-system pilot.
+- Complex scheduling beyond simple business-hours windows.
 - Production video pipeline.
 - Greengrass deployment.
 
@@ -51,12 +57,12 @@ Monitoring starts with heartbeat only.
 
 Target architecture:
 
-- `dashboard/`: Next.js, TypeScript, Tailwind dashboard hosted locally now and on Amplify Hosting later.
-- `player/`: fullscreen playback app that can run from local playlist/cache data.
+- `dashboard/`: Next.js, TypeScript, Tailwind local operations dashboard.
+- `player/`: browser playback fallback/experimental app that can run from local playlist/cache data.
 - `device-agent/`: Node.js + TypeScript Raspberry Pi agent for playlist reads, local heartbeat writes, cache management, and future MQTT.
 - `docs/`: architecture, phases, setup, API, AWS design, and security documentation.
 - `infra/`: AWS architecture notes and future IaC placeholders only.
-- `sample-content/`: local playlist and mock media fixtures.
+- `sample-content/`: tracked seed playlist and local media examples.
 
 Future AWS services are expected to include API Gateway, Lambda, DynamoDB, S3, CloudFront, Cognito, and AWS IoT Core MQTT. Greengrass is a later consideration, not a current requirement.
 
@@ -67,45 +73,60 @@ Do not regress these contracts:
 - Device playback must work from local playlist/cache data.
 - Device startup should recover to playback without dashboard interaction.
 - A missing network connection must not stop already-cached playback.
-- Heartbeat state must be inspectable as local JSON in the POC.
-- Cloud integrations must remain mockable until real AWS implementation is approved.
+- Heartbeat state must be inspectable as local JSON.
+- Cloud integrations must remain absent or clearly documented until real AWS implementation is approved.
 - Device playback and reboot recovery are first-class behavior contracts.
+
+## Real Implementation Rules
+
+- Build and test real behavior, not placeholder flows.
+- Do not add fake status, fake devices, fake screens, fake media, or fake success states to make UI look complete.
+- Seed data is allowed only as tracked example data; app behavior must operate on real local state and real uploaded media.
+- Missing Pi, SSH, player, or media prerequisites must be shown as honest unavailable/error states.
+- Validation should prove the real contract being changed. If hardware is required and unavailable, state exactly what remains unverified.
 
 ## Phase Priorities
 
-Keep the phase plan in `docs/PHASES.md` current. Every phase needs acceptance criteria and validation steps.
+Keep the phase plan in `docs/PHASES.md` current. Every phase needs acceptance criteria and validation steps. Keep product requirements in `docs/PRODUCT_REQUIREMENTS.md` current when scope changes.
 
 Near-term priority order:
 
-1. Phase 0: docs, structure, local runnable foundation.
-2. Phase 1: local fullscreen image playback and heartbeat file.
-3. Phase 2: mocked dashboard for one screen and one playlist.
-4. Phase 3: API contract definition before implementation.
-5. Phase 4: AWS design documentation before deployment.
+1. Preserve the existing local playback, publishing, and Pi recovery foundation.
+2. Get the June 3 team demo honest and real.
+3. Rework dashboard and Screens around operational status, not maps.
+4. Add local data stores for media, screens, devices, activity, settings, and schedules.
+5. Build Media Store and playlist workflows around playback-safe assets.
+6. Add device inventory, troubleshooting, activity, scheduling, settings, and simple local login.
+7. Build AWS after approval, then validate with a five-system pilot before production.
 
 ## Dashboard Rules
 
 - Keep the dashboard operational and focused, not marketing-heavy.
-- Show one mocked screen and one mocked playlist first.
+- Use these main sections: Dashboard, Media Store, Playlists, Screens, Devices, Activity, Troubleshooting, and Settings.
 - Use accessible status text for online/offline state.
-- Keep cloud data mocked until backend contracts exist.
+- Prefer dense tables and detail panels for screen inventory; map UI is deferred.
+- Keep cloud data out of product flows until backend contracts exist and real implementation is approved.
 - Avoid advanced account, org, RBAC, billing, or analytics UI.
 
 ## Player Rules
 
-- Fullscreen image playback is the first playback target.
-- The player must load from a local playlist JSON path or bundled local fixture.
-- Avoid advanced scheduling until basic playback is reliable.
+- Reliable fullscreen playback is the first playback target.
+- VLC is the preferred field playback path for appliance mode unless the user explicitly asks to revisit another player.
+- The player must load from a real local playlist JSON path.
+- JPEG and PNG dashboard uploads should become Pi-safe MP4 still clips before VLC sees them.
+- MOV support should convert to playback-safe MP4 or be rejected clearly until conversion is implemented.
+- MP3 remains deferred until audio-only signage behavior is explicitly designed.
+- Avoid transitions and advanced scheduling until basic playback, publishing, and recovery are reliable.
 - Use clear fallback/error states when playlist or assets cannot load.
 - The player should be usable in Chromium kiosk mode later.
 
 ## Device-Agent Rules
 
 - Prefer Node.js + TypeScript unless there is a strong reason to change.
-- Read local playlist JSON in the POC.
+- Read real local playlist JSON.
 - Write local heartbeat JSON atomically.
 - Log basic structured status.
-- Do not make network calls unless a future task explicitly introduces mocked or real cloud communication.
+- Do not make network calls unless a future task explicitly introduces real local device communication or approved cloud communication.
 - Future MQTT topics must follow documented contract names.
 
 Heartbeat model starts with:
@@ -120,9 +141,9 @@ Heartbeat model starts with:
 
 ## AWS Rules
 
-- Do not create real AWS infrastructure yet.
-- Do not require AWS credentials yet.
-- Mock or document cloud integrations first.
+- Do not create real AWS infrastructure until the user explicitly approves the AWS buildout phase.
+- Do not require AWS credentials for local demo work.
+- When AWS starts, build real resource-backed behavior rather than placeholder cloud flows.
 - Keep future AWS design least-privilege and easy to reason about.
 - Use signed CloudFront/S3 access patterns for private media in future docs.
 - Keep Cognito boundaries simple: one account first.
@@ -170,7 +191,7 @@ Provide:
 - Files created or modified.
 - AGENTS guidance impact when guidance changes.
 - What works now.
-- What remains mocked.
+- What remains unimplemented or unverified.
 - What is intentionally deferred.
 - Validation performed.
 - Accessibility notes for user-facing work.

@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
-  <title id="title">PiSignage demo title card</title>
+  <title id="title">Beam demo title card</title>
   <desc id="desc">A simple blue and green digital signage welcome screen.</desc>
   <rect width="1920" height="1080" fill="#0b1220"/>
   <rect x="96" y="96" width="1728" height="888" rx="36" fill="#12233f" stroke="#2dd4bf" stroke-width="6"/>
   <circle cx="320" cy="300" r="96" fill="#2dd4bf"/>
   <circle cx="400" cy="300" r="96" fill="#38bdf8" opacity="0.72"/>
-  <text x="180" y="560" fill="#f8fafc" font-family="Arial, Helvetica, sans-serif" font-size="124" font-weight="700">PiSignage</text>
-  <text x="184" y="660" fill="#cbd5e1" font-family="Arial, Helvetica, sans-serif" font-size="48">Local playback proof of concept</text>
+  <text x="180" y="560" fill="#f8fafc" font-family="Arial, Helvetica, sans-serif" font-size="124" font-weight="700">Beam</text>
+  <text x="184" y="660" fill="#cbd5e1" font-family="Arial, Helvetica, sans-serif" font-size="48">Real local playback operations</text>
   <text x="184" y="750" fill="#99f6e4" font-family="Arial, Helvetica, sans-serif" font-size="38">One dashboard. One Raspberry Pi. One TV.</text>
 </svg>

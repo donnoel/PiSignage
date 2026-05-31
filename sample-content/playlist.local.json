@@ -9,7 +9,7 @@
       "type": "video",
       "uri": "assets/demo.signage-720p.mp4",
       "durationSeconds": 30,
-      "altText": "PiSignage demo video"
+      "altText": "Beam demo video"
     },
     {
       "assetId": "asset-2026-03-17-adams-ave-barber",
@@ -30,7 +30,7 @@
       "type": "video",
       "uri": "assets/demo1.signage-720p.mp4",
       "durationSeconds": 30,
-      "altText": "PiSignage second demo video"
+      "altText": "Beam second demo video"
     },
     {
       "assetId": "asset-2022-03-23-alone-book-meet-and-greet",
