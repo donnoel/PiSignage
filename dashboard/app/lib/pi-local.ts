@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { access } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { Playlist } from "./local-playlist";
@@ -56,6 +57,24 @@ export function quoteRemoteShell(value: string): string {
 
 function remoteLogin(config: PiConfig): string {
   return `${config.user}@${config.host}`;
+}
+
+async function repoFilePath(relativePath: string): Promise<string> {
+  const candidates = [
+    path.resolve(process.cwd(), relativePath),
+    path.resolve(process.cwd(), "..", relativePath)
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      await access(candidate);
+      return candidate;
+    } catch {
+      // Keep looking from the next likely workspace root.
+    }
+  }
+
+  throw new Error(`Could not find required repo file: ${relativePath}`);
 }
 
 function quoteTclListValue(value: string): string {
@@ -150,6 +169,41 @@ export async function runScp(
   );
 }
 
+async function ensurePiScheduleEnforcement(config: PiConfig): Promise<void> {
+  const timestamp = Date.now();
+  const enforcerPath = await repoFilePath("device/pi/bin/pisignage-enforce-schedule.mjs");
+  const servicePath = await repoFilePath("device/pi/systemd/user/pisignage-schedule.service");
+  const timerPath = await repoFilePath("device/pi/systemd/user/pisignage-schedule.timer");
+  const remoteEnforcer = `/tmp/pisignage-enforce-schedule-${timestamp}.mjs`;
+  const remoteService = `/tmp/pisignage-schedule-${timestamp}.service`;
+  const remoteTimer = `/tmp/pisignage-schedule-${timestamp}.timer`;
+
+  await runSsh(
+    config,
+    [
+      "mkdir -p \"$HOME/.local/bin\" \"$HOME/.config/systemd/user\"",
+      `rm -f ${quoteRemoteShell(remoteEnforcer)} ${quoteRemoteShell(remoteService)} ${quoteRemoteShell(remoteTimer)}`
+    ].join(" && ")
+  );
+  await runScp(config, enforcerPath, remoteEnforcer);
+  await runScp(config, servicePath, remoteService);
+  await runScp(config, timerPath, remoteTimer);
+  await runSsh(
+    config,
+    [
+      `install -m 755 ${quoteRemoteShell(remoteEnforcer)} "$HOME/.local/bin/pisignage-enforce-schedule.mjs"`,
+      `install -m 644 ${quoteRemoteShell(remoteService)} "$HOME/.config/systemd/user/pisignage-schedule.service"`,
+      `install -m 644 ${quoteRemoteShell(remoteTimer)} "$HOME/.config/systemd/user/pisignage-schedule.timer"`,
+      `rm -f ${quoteRemoteShell(remoteEnforcer)} ${quoteRemoteShell(remoteService)} ${quoteRemoteShell(remoteTimer)}`,
+      "systemctl --user daemon-reload",
+      "systemctl --user enable --now pisignage-schedule.timer",
+      "systemctl --user start pisignage-schedule.service",
+      "systemctl --user is-active pisignage-schedule.timer"
+    ].join(" && "),
+    { timeoutMs: 120_000 }
+  );
+}
+
 export function requiredRemoteAssetPaths(config: PiConfig, playlist: Playlist): string[] {
   return playlist.assets.map((asset) => {
     const normalizedUri = path.posix.normalize(asset.uri);
@@ -234,11 +288,14 @@ export async function publishScheduleStoreToPi(
       config,
       `mv ${quoteRemoteShell(temporarySchedulePath)} ${quoteRemoteShell(remoteSchedulePath)}`
     );
+    await ensurePiScheduleEnforcement(config);
 
     return {
       enabled: true,
       ok: true,
-      message: messages.success ?? `Published schedules to Pi at ${config.host}.`
+      message:
+        messages.success ??
+        `Published schedules and enabled schedule enforcement on Pi at ${config.host}.`
     };
   } catch (error) {
     console.error("local schedule publish failed", error);

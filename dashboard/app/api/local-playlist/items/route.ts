@@ -14,7 +14,7 @@ import type { Playlist, PlaylistAsset } from "../../../lib/local-playlist";
 import { publishPlaylistToPi } from "../../../lib/pi-local";
 import { defaultDurationSeconds, slugify } from "../../../lib/media-processing";
 
-type PlaylistEditAction = "move-up" | "move-down" | "remove" | "update-item" | "add-media";
+type PlaylistEditAction = "move-up" | "move-down" | "remove" | "update-item" | "add-media" | "reorder";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -67,6 +67,41 @@ function updatePlaylistOrder(playlist: Playlist, action: PlaylistEditAction, ass
     version: playlist.version + 1,
     updatedAt: new Date().toISOString(),
     assets
+  };
+}
+
+function reorderPlaylist(playlist: Playlist, orderedAssetIds: unknown): Playlist {
+  if (!Array.isArray(orderedAssetIds)) {
+    throw new Error("Missing playlist order.");
+  }
+
+  const normalizedIds = orderedAssetIds.map((assetId) =>
+    typeof assetId === "string" ? assetId : ""
+  );
+  const uniqueIds = new Set(normalizedIds);
+  const currentIds = new Set(playlist.assets.map((asset) => asset.assetId));
+
+  if (
+    normalizedIds.length !== playlist.assets.length ||
+    uniqueIds.size !== playlist.assets.length ||
+    normalizedIds.some((assetId) => !currentIds.has(assetId))
+  ) {
+    throw new Error("Playlist order does not match the current playlist.");
+  }
+
+  const assetById = new Map(playlist.assets.map((asset) => [asset.assetId, asset]));
+
+  return {
+    ...playlist,
+    version: playlist.version + 1,
+    updatedAt: new Date().toISOString(),
+    assets: normalizedIds.map((assetId) => {
+      const asset = assetById.get(assetId);
+      if (!asset) {
+        throw new Error("Playlist order contains an unknown item.");
+      }
+      return asset;
+    })
   };
 }
 
@@ -150,6 +185,7 @@ export async function POST(request: Request) {
       assetId?: string;
       durationSeconds?: number;
       mediaId?: string;
+      orderedAssetIds?: string[];
     };
 
     if (
@@ -157,7 +193,8 @@ export async function POST(request: Request) {
       body.action !== "move-down" &&
       body.action !== "remove" &&
       body.action !== "update-item" &&
-      body.action !== "add-media"
+      body.action !== "add-media" &&
+      body.action !== "reorder"
     ) {
       return NextResponse.json({ error: "Unsupported playlist action." }, { status: 400 });
     }
@@ -175,6 +212,8 @@ export async function POST(request: Request) {
     let nextPlaylist = playlist;
     if (body.action === "add-media") {
       nextPlaylist = await appendMediaStoreItemToPlaylist(playlist, body.mediaId as string);
+    } else if (body.action === "reorder") {
+      nextPlaylist = reorderPlaylist(playlist, body.orderedAssetIds);
     } else if (body.action === "update-item") {
       nextPlaylist = updatePlaylistItemDetails(playlist, body.assetId as string, {
         altText: body.altText,

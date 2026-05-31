@@ -235,7 +235,7 @@ Implemented foundation:
 
 - Dashboard Scheduling view manages simple daily windows and per-screen assignment.
 - Schedule changes are stored in local JSON and published to the Pi as cached schedule state when configured.
-- Pi-side `pisignage-enforce-schedule.mjs` plus a user timer can enforce cached schedules offline by starting or stopping the VLC service.
+- Pi-side `pisignage-enforce-schedule.mjs` plus a user timer can enforce cached schedules offline by waking the HDMI output and starting VLC during active windows, then stopping VLC and turning HDMI off outside active windows.
 
 Validation:
 

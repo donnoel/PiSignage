@@ -12,6 +12,7 @@ import { LocalPlaylistBuilder } from "./local-playlist-builder";
 import { LocalPublishForm } from "./local-publish-form";
 import { LocalPlaylistControls } from "./local-playlist-controls";
 import { LocalPlaylistItemEditor } from "./local-playlist-item-editor";
+import { LocalPlaylistTimeline } from "./local-playlist-timeline";
 import { ScreenDeviceInventoryPanel } from "./screen-device-inventory-panel";
 import { LocalSystemActions } from "./local-system-actions";
 import { LocalUploadForm } from "./local-upload-form";
@@ -1291,6 +1292,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   <p className="mt-1 text-zinc-600">VLC receives video assets; JPEG and PNG uploads are converted into Pi-safe MP4 still clips before publish.</p>
                 </div>
               </div>
+              <LocalPlaylistTimeline assets={playlist.assets} piAssetIds={Array.from(piAssetIds)} />
               <ul className="divide-y divide-zinc-200">
                 {playlist.assets.map((asset, index) => {
                   const piPlaybackLabel = assetPlaybackLabel(asset, playerStatus);

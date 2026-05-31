@@ -19,6 +19,8 @@ const statusPath = path.resolve(
 );
 const screenId = process.env.PISIGNAGE_SCREEN_ID ?? "screen-primary";
 const vlcService = process.env.PISIGNAGE_VLC_SERVICE ?? "pisignage-vlc.service";
+const displayOutput = process.env.PISIGNAGE_DISPLAY_OUTPUT ?? "HDMI-A-1";
+const displayMode = process.env.PISIGNAGE_DISPLAY_RESOLUTION ?? "1920x1080@60.000000";
 const dryRun = process.argv.includes("--dry-run");
 const nowArg = process.argv.find((argument) => argument.startsWith("--now="));
 const now = nowArg ? new Date(nowArg.slice("--now=".length)) : new Date();
@@ -148,6 +150,82 @@ function runSystemctl(action) {
   }
 }
 
+function commandExists(command) {
+  const result = spawnSync("test", ["-x", command], {
+    encoding: "utf8"
+  });
+  return result.status === 0;
+}
+
+function runDisplayCommand(command, args) {
+  if (dryRun) {
+    log(`dry run: ${command} ${args.join(" ")}`);
+    return true;
+  }
+
+  const result = spawnSync(command, args, {
+    encoding: "utf8"
+  });
+  if (result.status === 0) {
+    return true;
+  }
+
+  const message = result.stderr.trim() || result.stdout.trim() || `${command} failed`;
+  log(`display command failed: ${message}`);
+  return false;
+}
+
+function setDisplayPower(power) {
+  const enabled = power === "on";
+  const attempts = [];
+
+  if (commandExists("/usr/bin/wlr-randr")) {
+    attempts.push({
+      command: "/usr/bin/wlr-randr",
+      label: "wlr-randr",
+      offArgs: ["--output", displayOutput, "--off"],
+      onArgs: ["--output", displayOutput, "--on", "--mode", displayMode]
+    });
+  }
+
+  if (commandExists("/usr/bin/xset")) {
+    attempts.push({
+      command: "/usr/bin/xset",
+      label: "xset",
+      offArgs: ["dpms", "force", "off"],
+      onArgs: ["dpms", "force", "on"]
+    });
+  }
+
+  if (commandExists("/usr/bin/vcgencmd")) {
+    attempts.push({
+      command: "/usr/bin/vcgencmd",
+      label: "vcgencmd",
+      offArgs: ["display_power", "0"],
+      onArgs: ["display_power", "1"]
+    });
+  }
+
+  for (const attempt of attempts) {
+    const args = enabled ? attempt.onArgs : attempt.offArgs;
+    if (runDisplayCommand(attempt.command, args)) {
+      return {
+        ok: true,
+        action: enabled ? "display-on" : "display-off",
+        detail: `${attempt.label} set ${displayOutput} ${power}.`
+      };
+    }
+  }
+
+  return {
+    ok: false,
+    action: enabled ? "display-on-failed" : "display-off-failed",
+    detail: attempts.length
+      ? `Could not turn display ${power} with available local commands.`
+      : "No supported local display power command was found."
+  };
+}
+
 async function enforce() {
   if (Number.isNaN(now.getTime())) {
     throw new Error("Invalid --now timestamp.");
@@ -159,28 +237,44 @@ async function enforce() {
   const active = assigned.find((schedule) => scheduleIsActive(schedule, now));
 
   if (active) {
+    const display = setDisplayPower("on");
     runSystemctl("start");
     await writeStatus({
       action: dryRun ? "would-start" : "start",
       activeScheduleId: active.id ?? null,
       activeScheduleName: active.name ?? null,
-      detail: "Schedule window is active.",
+      detail: `Schedule window is active. ${display.detail}`,
+      displayAction: display.action,
+      displayControlOk: display.ok,
+      displayOutput,
       state: "on"
     });
-    log(`schedule active for ${screenId}; ${dryRun ? "would start" : "started"} ${vlcService}`);
+    log(
+      `schedule active for ${screenId}; ${display.detail} ${
+        dryRun ? "would start" : "started"
+      } ${vlcService}`
+    );
     return;
   }
 
   if (assigned.length > 0) {
     runSystemctl("stop");
+    const display = setDisplayPower("off");
     await writeStatus({
       action: dryRun ? "would-stop" : "stop",
       activeScheduleId: null,
       activeScheduleName: null,
-      detail: "Assigned schedule is outside its active window.",
+      detail: `Assigned schedule is outside its active window. ${display.detail}`,
+      displayAction: display.action,
+      displayControlOk: display.ok,
+      displayOutput,
       state: "off"
     });
-    log(`schedule inactive for ${screenId}; ${dryRun ? "would stop" : "stopped"} ${vlcService}`);
+    log(
+      `schedule inactive for ${screenId}; ${
+        dryRun ? "would stop" : "stopped"
+      } ${vlcService}; ${display.detail}`
+    );
     return;
   }
 

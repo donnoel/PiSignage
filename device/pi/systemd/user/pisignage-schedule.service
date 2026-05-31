@@ -4,6 +4,12 @@ Description=PiSignage Schedule Enforcement
 [Service]
 Type=oneshot
 WorkingDirectory=/home/donnoel/PiSignage
+Environment=DISPLAY=:0
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+Environment=WAYLAND_DISPLAY=wayland-0
 Environment=PISIGNAGE_SCREEN_ID=screen-primary
+Environment=PISIGNAGE_DISPLAY_OUTPUT=HDMI-A-1
+Environment=PISIGNAGE_DISPLAY_RESOLUTION=1920x1080@60.000000
 Environment=PISIGNAGE_SCHEDULE_STATUS_PATH=%h/.local/state/pisignage/schedule-status.json
 ExecStart=/usr/bin/node %h/.local/bin/pisignage-enforce-schedule.mjs

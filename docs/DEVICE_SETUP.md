@@ -316,8 +316,10 @@ device/pi/systemd/user/pisignage-schedule.timer
 
 The script reads the cached schedule file, checks `PISIGNAGE_SCREEN_ID`, and
 starts or stops `pisignage-vlc.service` when the assigned screen is inside or
-outside its active window. If no schedule is assigned to the screen, playback is
-left alone.
+outside its active window. Inside an active window it wakes the HDMI output
+before starting playback. Outside the active window it stops playback and turns
+the HDMI output off so business-closed hours are visibly dark. If no schedule is
+assigned to the screen, playback and display power are left alone.
 
 Validate schedule evaluation without changing VLC:
 
