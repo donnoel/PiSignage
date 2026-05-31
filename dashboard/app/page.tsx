@@ -16,7 +16,6 @@ import { LocalPlaylistItemEditor } from "./local-playlist-item-editor";
 import { LocalPlaylistTimeline } from "./local-playlist-timeline";
 import { ScreenDeviceInventoryPanel } from "./screen-device-inventory-panel";
 import { LocalSystemActions } from "./local-system-actions";
-import { LocalUploadForm } from "./local-upload-form";
 import { SchedulingPanel } from "./scheduling-panel";
 import { TroubleshootingPanel } from "./troubleshooting-panel";
 
@@ -119,7 +118,7 @@ type DashboardPageProps = {
 const navigationItems: Array<{ label: string; view: DashboardView }> = [
   { label: "Dashboard", view: "dashboard" },
   { label: "Media Store", view: "media-store" },
-  { label: "Playlist", view: "playlist" },
+  { label: "Playlists", view: "playlist" },
   { label: "Device health", view: "device-health" },
   { label: "Screens", view: "screens" },
   { label: "Scheduling", view: "scheduling" },
@@ -137,9 +136,9 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
     description: "Upload, find, and organize media for your screens."
   },
   playlist: {
-    eyebrow: "Playback loop",
-    title: "Playlist",
-    description: "Arrange what plays and publish the local loop."
+    eyebrow: "Loops",
+    title: "Playlists",
+    description: "Build playback loops and choose which screens use them."
   },
   "device-health": {
     eyebrow: "Health",
@@ -233,7 +232,7 @@ function fileNameFromUri(uri: string): string {
 
 function assetTypeLabel(asset: PlaylistAsset): string {
   if (asset.type === "video" && /\.still-\d+s(?:-\d+)?\.mp4$/i.test(asset.uri)) {
-    return "Still clip";
+    return "Image";
   }
 
   return asset.type === "video" ? "Video" : "Image";
@@ -252,7 +251,7 @@ function assetPlaybackLabel(asset: PlaylistAsset, playerStatus: PlayerStatus | n
     return null;
   }
 
-  return "On Pi";
+  return "On device";
 }
 
 function assetLabel(playlist: Playlist, assetId: string | null | undefined): string {
@@ -729,7 +728,7 @@ function syncState(localVersion: number, piVersion: number | undefined, piReacha
 
   if (typeof piVersion !== "number") {
     return {
-      detail: "Waiting for Pi playlist status.",
+      detail: "Waiting for screen sync status.",
       label: "Unknown",
       tone: "warn" as const
     };
@@ -737,7 +736,7 @@ function syncState(localVersion: number, piVersion: number | undefined, piReacha
 
   if (piVersion === localVersion) {
     return {
-      detail: "Pi and local playlist versions match.",
+      detail: "The assigned Pi reports the latest playlist.",
       label: "In sync",
       tone: "good" as const
     };
@@ -745,14 +744,14 @@ function syncState(localVersion: number, piVersion: number | undefined, piReacha
 
   if (piVersion < localVersion) {
     return {
-      detail: "Pi has not reported the latest local playlist yet.",
+      detail: "The assigned Pi has not reported these changes yet.",
       label: "Pi behind",
       tone: "warn" as const
     };
   }
 
   return {
-    detail: "Pi is reporting a newer playlist than this dashboard has locally.",
+    detail: "The assigned Pi is reporting a different playlist than this dashboard has saved.",
     label: "Mismatch",
     tone: "warn" as const
   };
@@ -760,13 +759,48 @@ function syncState(localVersion: number, piVersion: number | undefined, piReacha
 
 function actionLabel(action: string | undefined): string {
   return {
+    "add-media": "Add media",
     "move-down": "Move down",
     "move-up": "Move up",
     publish: "Publish now",
+    reorder: "Reorder",
     remove: "Remove",
     "restore-baseline": "Restore baseline",
+    "update-item": "Edit item",
     upload: "Upload"
   }[action ?? ""] ?? "Not recorded";
+}
+
+function nameList<TItem>(items: TItem[], getName: (item: TItem) => string, emptyLabel: string): string {
+  if (items.length === 0) {
+    return emptyLabel;
+  }
+
+  return items.map(getName).join(", ");
+}
+
+function publishStateLabel(publishStatus: PublishStatus | null): string {
+  if (!publishStatus) {
+    return "Not published";
+  }
+
+  return publishStatus.ok ? "Published" : "Needs attention";
+}
+
+function publishStateTone(publishStatus: PublishStatus | null): "good" | "warn" | "muted" {
+  if (!publishStatus) {
+    return "muted";
+  }
+
+  return publishStatus.ok ? "good" : "warn";
+}
+
+function publishStateDetail(publishStatus: PublishStatus | null): string {
+  if (!publishStatus) {
+    return "No publish has been recorded from this dashboard yet.";
+  }
+
+  return `${actionLabel(publishStatus.action)} at ${formatTimestamp(publishStatus.timestamp)}. ${publishStatus.message}`;
 }
 
 type EvidenceItem = {
@@ -937,6 +971,22 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const videoAssetCount = playlist.assets.filter((asset) => asset.type === "video").length;
   const imageAssetCount = playlist.assets.length - videoAssetCount;
   const piAssetIds = new Set(playerStatus?.assetIds ?? []);
+  const assignedScreens = inventory.screens.items
+    .filter((screen) => screen.playlistId === playlist.playlistId)
+    .slice()
+    .sort((left, right) =>
+      left.location.localeCompare(right.location, undefined, { sensitivity: "base" }) ||
+      left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
+    );
+  const assignedDevices = inventory.devices.items
+    .filter((device) => device.playlistId === playlist.playlistId)
+    .slice()
+    .sort((left, right) =>
+      left.location.localeCompare(right.location, undefined, { sensitivity: "base" }) ||
+      left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
+    );
+  const assignedScreensLabel = nameList(assignedScreens, (screen) => screen.name, "No screens assigned");
+  const assignedDevicesLabel = nameList(assignedDevices, (device) => device.name, "No devices assigned");
   const attentionItems: AttentionItem[] = [];
 
   if (!pi.configured) {
@@ -1346,41 +1396,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </section>
 
           <section
-            aria-labelledby="sync-heading"
-            className={selectedView === "playlist" ? "mt-6 rounded-lg border border-zinc-200 bg-white p-5 shadow-sm" : "hidden"}
-          >
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h2 id="sync-heading" className="text-xl font-semibold">Publish sync</h2>
-                <p className="mt-1 text-sm text-zinc-600">{playlistSyncState.detail}</p>
-              </div>
-              <StatusPill label={playlistSyncState.label} tone={playlistSyncState.tone} />
-            </div>
-            <dl className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-md bg-zinc-50 p-4">
-                <dt className="text-xs font-semibold uppercase text-zinc-500">Local playlist</dt>
-                <dd className="mt-2 text-lg font-semibold">v{playlist.version}</dd>
-              </div>
-              <div className="rounded-md bg-zinc-50 p-4">
-                <dt className="text-xs font-semibold uppercase text-zinc-500">Pi playlist</dt>
-                <dd className="mt-2 text-lg font-semibold">{piPlaylistVersion ? `v${piPlaylistVersion}` : "Unknown"}</dd>
-              </div>
-              <div className="rounded-md bg-zinc-50 p-4">
-                <dt className="text-xs font-semibold uppercase text-zinc-500">Last publish</dt>
-                <dd className="mt-2 text-sm font-semibold text-zinc-950">{lastPublishLabel}</dd>
-              </div>
-              <div className="rounded-md bg-zinc-50 p-4">
-                <dt className="text-xs font-semibold uppercase text-zinc-500">Publish result</dt>
-                <dd className="mt-2 text-sm font-semibold text-zinc-950">
-                  {publishStatus ? (publishStatus.ok ? "Success" : "Needs attention") : "Not recorded"}
-                </dd>
-                {publishStatus ? <dd className="mt-1 text-sm text-zinc-600">{publishStatus.message}</dd> : null}
-              </div>
-            </dl>
-            <LocalPublishForm />
-          </section>
-
-          <section
             id="fleet-health"
             className={selectedView === "device-health" ? "" : "hidden"}
           >
@@ -1585,124 +1600,165 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           <section
             id="playlist"
             aria-labelledby="playlist-heading"
-            className={selectedView === "playlist" ? "mt-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]" : "hidden"}
+            className={selectedView === "playlist" ? "mt-6 space-y-4" : "hidden"}
           >
-            <div className="min-w-0 rounded-lg border border-zinc-200 bg-white shadow-sm">
+            <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
               <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <h2 id="playlist-heading" className="text-xl font-semibold">{playlist.name}</h2>
-                  <p className="mt-1 text-sm text-zinc-600">
-                    Playlist ID: {playlist.playlistId} · Version {playlist.version} · Live local state
-                  </p>
+                <div className="min-w-0">
+                  <h2 id="playlist-heading" className="text-xl font-semibold">Playlist library</h2>
+                  <p className="mt-1 text-sm text-zinc-600">Saved loops ready to assign to screens.</p>
                 </div>
-                <div className="flex flex-wrap gap-2 sm:justify-end">
-                  <StatusPill label={`${playlist.assets.length} items`} tone="muted" />
-                  <StatusPill label={`${totalDuration} loop`} tone="muted" />
-                  <StatusPill label={`${videoAssetCount} video`} tone="good" />
-                  {imageAssetCount > 0 ? <StatusPill label={`${imageAssetCount} raw image`} tone="warn" /> : null}
-                </div>
+                <StatusPill label="1 local playlist" tone="muted" />
               </div>
-              <div className="grid gap-3 border-b border-zinc-200 bg-zinc-50 px-5 py-4 text-sm md:grid-cols-3">
-                <div>
-                  <p className="font-semibold text-zinc-950">Dashboard queue</p>
-                  <p className="mt-1 text-zinc-600">The editable local playlist that upload, reorder, and remove actions update.</p>
-                </div>
-                <div>
-                  <p className="font-semibold text-zinc-950">Pi reported media</p>
-                  <p className="mt-1 text-zinc-600">
-                    {playerStatus?.assetCount ?? "Unknown"} items from {piPlaylistVersion ? `playlist v${piPlaylistVersion}` : "an unknown playlist version"}.
-                  </p>
-                </div>
-                <div>
-                  <p className="font-semibold text-zinc-950">Playback contract</p>
-                  <p className="mt-1 text-zinc-600">VLC receives video assets; JPEG and PNG uploads are converted into Pi-safe MP4 still clips before publish.</p>
-                </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[860px] text-left text-sm">
+                  <thead className="bg-zinc-50 text-xs uppercase text-zinc-500">
+                    <tr>
+                      <th className="px-4 py-3">Playlist</th>
+                      <th className="px-4 py-3">Screens</th>
+                      <th className="px-4 py-3">Loop</th>
+                      <th className="px-4 py-3">Publish</th>
+                      <th className="px-4 py-3">Sync</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td className="px-4 py-4">
+                        <p className="font-semibold text-zinc-950">{playlist.name}</p>
+                        <p className="mt-1 text-xs text-zinc-600">Selected</p>
+                      </td>
+                      <td className="max-w-[260px] px-4 py-4 text-zinc-700">
+                        <span className="block truncate" title={assignedScreensLabel}>{assignedScreensLabel}</span>
+                      </td>
+                      <td className="px-4 py-4 text-zinc-700">{playlist.assets.length} items · {totalDuration}</td>
+                      <td className="px-4 py-4">
+                        <StatusPill label={publishStateLabel(publishStatus)} tone={publishStateTone(publishStatus)} />
+                        <p className="mt-2 text-xs text-zinc-600">{lastPublishLabel}</p>
+                      </td>
+                      <td className="px-4 py-4">
+                        <StatusPill label={playlistSyncState.label} tone={playlistSyncState.tone} />
+                        <p className="mt-2 text-xs text-zinc-600">{playlistSyncState.detail}</p>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
-              <LocalPlaylistTimeline assets={playlist.assets} piAssetIds={Array.from(piAssetIds)} />
-              <ul className="divide-y divide-zinc-200">
-                {playlist.assets.map((asset, index) => {
-                  const piPlaybackLabel = assetPlaybackLabel(asset, playerStatus);
-                  const assetName = asset.altText ?? asset.assetId;
-                  const fileName = fileNameFromUri(asset.uri);
+            </div>
 
-                  return (
-                  <li
-                    key={asset.assetId}
-                    className={`grid gap-4 px-5 py-5 text-sm lg:grid-cols-[56px_minmax(0,1fr)] ${
-                      piAssetIds.has(asset.assetId) ? "bg-emerald-50/35" : ""
-                    }`}
-                  >
-                    <div className="flex items-start gap-3 lg:block">
-                      <span className="flex h-11 w-11 items-center justify-center rounded-md bg-zinc-100 text-sm font-bold text-zinc-700">
-                        {index + 1}
-                      </span>
-                      <div className="lg:hidden">
-                        <StatusPill label={assetTypeLabel(asset)} tone={assetTypeTone(asset)} />
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="min-w-0 rounded-lg border border-zinc-200 bg-white shadow-sm">
+                <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h3 className="text-xl font-semibold">{playlist.name}</h3>
+                    <p className="mt-1 text-sm text-zinc-600">
+                      {playlist.assets.length} items · {totalDuration} · {assignedScreens.length === 0 ? "not assigned to a screen" : `plays on ${assignedScreensLabel}`}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 sm:justify-end">
+                    <StatusPill label={`${playlist.assets.length} items`} tone="muted" />
+                    <StatusPill label={`${totalDuration} loop`} tone="muted" />
+                    <StatusPill label={`${videoAssetCount} ready`} tone="good" />
+                    {imageAssetCount > 0 ? <StatusPill label={`${imageAssetCount} needs review`} tone="warn" /> : null}
+                  </div>
+                </div>
+                <div className="grid gap-3 border-b border-zinc-200 bg-zinc-50 px-5 py-4 text-sm md:grid-cols-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-zinc-950">Screens</p>
+                    <p className="mt-1 truncate text-zinc-600" title={assignedScreensLabel}>{assignedScreensLabel}</p>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-zinc-950">Devices</p>
+                    <p className="mt-1 truncate text-zinc-600" title={assignedDevicesLabel}>{assignedDevicesLabel}</p>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-zinc-950">Publish</p>
+                    <p className="mt-1 text-zinc-600">{publishStateDetail(publishStatus)}</p>
+                  </div>
+                </div>
+                <LocalPlaylistTimeline assets={playlist.assets} piAssetIds={Array.from(piAssetIds)} />
+                <ul className="divide-y divide-zinc-200">
+                  {playlist.assets.map((asset, index) => {
+                    const piPlaybackLabel = assetPlaybackLabel(asset, playerStatus);
+                    const assetName = asset.altText ?? asset.assetId;
+                    const fileName = fileNameFromUri(asset.uri);
+
+                    return (
+                    <li
+                      key={asset.assetId}
+                      className={`grid gap-4 px-5 py-5 text-sm lg:grid-cols-[56px_minmax(0,1fr)] ${
+                        piAssetIds.has(asset.assetId) ? "bg-emerald-50/35" : ""
+                      }`}
+                    >
+                      <div className="flex items-start gap-3 lg:block">
+                        <span className="flex h-11 w-11 items-center justify-center rounded-md bg-zinc-100 text-sm font-bold text-zinc-700">
+                          {index + 1}
+                        </span>
+                        <div className="lg:hidden">
+                          <StatusPill label={assetTypeLabel(asset)} tone={assetTypeTone(asset)} />
+                        </div>
                       </div>
-                    </div>
-                    <div className="min-w-0 space-y-3">
-                      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="min-w-0 break-words text-base font-semibold leading-6 text-zinc-950">{assetName}</p>
-                            <span className="hidden lg:inline-flex">
-                              <StatusPill label={assetTypeLabel(asset)} tone={assetTypeTone(asset)} />
-                            </span>
-                            {piPlaybackLabel ? <StatusPill label={piPlaybackLabel} tone="good" /> : null}
+                      <div className="min-w-0 space-y-3">
+                        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="min-w-0 break-words text-base font-semibold leading-6 text-zinc-950">{assetName}</p>
+                              <span className="hidden lg:inline-flex">
+                                <StatusPill label={assetTypeLabel(asset)} tone={assetTypeTone(asset)} />
+                              </span>
+                              {piPlaybackLabel ? <StatusPill label={piPlaybackLabel} tone="good" /> : null}
+                            </div>
+                            <p className="mt-2 break-words text-sm leading-6 text-zinc-600">{fileName}</p>
                           </div>
-                          <p className="mt-2 break-words text-sm leading-6 text-zinc-600">{fileName}</p>
+                          <div className="flex flex-wrap gap-2 xl:justify-end">
+                            <span className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-950 ring-1 ring-zinc-200">
+                              {formatSeconds(asset.durationSeconds ?? 0)}
+                            </span>
+                            <LocalPlaylistControls
+                              assetId={asset.assetId}
+                              assetLabel={assetName}
+                              isFirst={index === 0}
+                              isLast={index === playlist.assets.length - 1}
+                              isOnlyItem={playlist.assets.length === 1}
+                            />
+                          </div>
                         </div>
-                        <div className="flex flex-wrap gap-2 xl:justify-end">
-                          <span className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-950 ring-1 ring-zinc-200">
-                            {formatSeconds(asset.durationSeconds ?? 0)}
-                          </span>
-                          <span className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-950 ring-1 ring-zinc-200">
-                            {piAssetIds.has(asset.assetId) ? "Reported" : "Pending"}
-                          </span>
-                          <LocalPlaylistControls
-                            assetId={asset.assetId}
-                            assetLabel={assetName}
-                            isFirst={index === 0}
-                            isLast={index === playlist.assets.length - 1}
-                            isOnlyItem={playlist.assets.length === 1}
-                          />
-                        </div>
+                        <LocalPlaylistItemEditor
+                          assetId={asset.assetId}
+                          defaultDurationSeconds={asset.durationSeconds ?? 30}
+                          defaultTitle={assetName}
+                        />
                       </div>
-                      <LocalPlaylistItemEditor
-                        assetId={asset.assetId}
-                        defaultDurationSeconds={asset.durationSeconds ?? 30}
-                        defaultTitle={assetName}
-                      />
-                      <dl className="grid gap-3 rounded-md bg-white/70 p-3 text-xs text-zinc-600 ring-1 ring-zinc-200 sm:grid-cols-2">
-                        <div className="min-w-0">
-                          <dt className="font-semibold uppercase text-zinc-500">Asset ID</dt>
-                          <dd className="mt-1 break-all">{asset.assetId}</dd>
-                        </div>
-                        <div className="min-w-0">
-                          <dt className="font-semibold uppercase text-zinc-500">Path</dt>
-                          <dd className="mt-1 break-words">{asset.uri}</dd>
-                        </div>
-                      </dl>
+                    </li>
+                    );
+                  })}
+                </ul>
+              </div>
+
+              <aside className="self-start space-y-4">
+                <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-semibold">Publish</h3>
+                      <p className="mt-1 text-sm text-zinc-600">{playlistSyncState.detail}</p>
                     </div>
-                  </li>
-                  );
-                })}
-              </ul>
+                    <StatusPill label={playlistSyncState.label} tone={playlistSyncState.tone} />
+                  </div>
+                  <dl className="mt-4 grid gap-3 text-sm">
+                    <div className="rounded-md bg-zinc-50 p-3">
+                      <dt className="font-semibold text-zinc-500">Last publish</dt>
+                      <dd className="mt-1 font-semibold text-zinc-950">{publishStateLabel(publishStatus)}</dd>
+                      <dd className="mt-1 text-zinc-600">{publishStateDetail(publishStatus)}</dd>
+                    </div>
+                    <div className="rounded-md bg-zinc-50 p-3">
+                      <dt className="font-semibold text-zinc-500">Assigned screens</dt>
+                      <dd className="mt-1 text-zinc-700">{assignedScreensLabel}</dd>
+                    </div>
+                  </dl>
+                  <LocalPublishForm />
+                </div>
+              </aside>
             </div>
 
-            <div id="media" className="self-start rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-              <h2 className="text-xl font-semibold">Upload media</h2>
-              <p className="mt-1 text-sm leading-6 text-zinc-600">
-                Append local MP4/MOV video or JPEG/PNG images to the playlist. JPEG and PNG uploads are converted to Pi-safe MP4 still clips before VLC sees them.
-              </p>
-              <LocalUploadForm />
-            </div>
-          </section>
-
-          <section
-            aria-labelledby="playlist-builder-heading"
-            className={selectedView === "playlist" ? "mt-4" : "hidden"}
-          >
             <h2 id="playlist-builder-heading" className="sr-only">Playlist builder</h2>
             <LocalPlaylistBuilder playlistId={playlist.playlistId} />
           </section>

@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { StatusPill } from "./dashboard-ui";
 
 type MediaItem = {
   id: string;
@@ -62,6 +61,18 @@ function isPlaylistSafeMedia(item: MediaItem): boolean {
   return item.status === "ready" && item.origin !== "playlist" && (item.playlistUseCount ?? 0) === 0 && /\.mp4$/i.test(item.playbackFileName);
 }
 
+function savedMessage(piPublish: PlaylistActionResponse["piPublish"]): string {
+  if (!piPublish) {
+    return "Added to playlist.";
+  }
+
+  if (piPublish.ok) {
+    return "Added to playlist and sent to the assigned Pi.";
+  }
+
+  return `Added to playlist. ${piPublish.message}`;
+}
+
 export function LocalPlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
   const router = useRouter();
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
@@ -96,8 +107,8 @@ export function LocalPlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
       setMediaItems(readyItems);
       setMediaMessage(
         readyItems.length === 0
-          ? "No playlist-ready MP4 media found. Upload MP4 media or converted still clips in Media Store first."
-          : `${readyItems.length} playlist-ready item${readyItems.length === 1 ? "" : "s"} available.`
+          ? "No ready media found. Upload media in Media Store first."
+          : `${readyItems.length} ready item${readyItems.length === 1 ? "" : "s"} available.`
       );
     } catch (error) {
       setMediaMessage(error instanceof Error ? error.message : "Could not load media.");
@@ -140,7 +151,7 @@ export function LocalPlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
     }
 
     setIsSaving(true);
-    setMediaMessage(`Adding ${mediaLabel} to playlist...`);
+    setMediaMessage(`Adding ${mediaLabel}...`);
     try {
       const response = await fetch("/api/local-playlist/items", {
         method: "POST",
@@ -157,8 +168,7 @@ export function LocalPlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
         throw new Error(result.error ?? "Could not add media to playlist.");
       }
 
-      const publishMessage = result.piPublish?.message ? ` ${result.piPublish.message}` : "";
-      setMediaMessage(`Added to playlist v${result.playlistVersion}.${publishMessage}`);
+      setMediaMessage(savedMessage(result.piPublish));
       startTransition(() => router.refresh());
     } catch (error) {
       setMediaMessage(error instanceof Error ? error.message : "Could not add media to playlist.");
@@ -205,8 +215,8 @@ export function LocalPlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
     <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
       <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-200 p-5">
-          <h3 className="text-lg font-semibold">Add from Media Store</h3>
-          <p className="mt-1 text-sm text-zinc-600">Choose ready media and append it to this playlist.</p>
+          <h3 className="text-lg font-semibold">Add media</h3>
+          <p className="mt-1 text-sm text-zinc-600">Choose ready media from the library.</p>
           <form
             className="mt-3 flex flex-wrap items-center gap-3"
             onSubmit={(event) => {
@@ -257,7 +267,7 @@ export function LocalPlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
                       disabled={isBusy}
                       className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
                     >
-                      Add to playlist
+                      Add
                     </button>
                   </td>
                 </tr>
@@ -275,10 +285,9 @@ export function LocalPlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
 
       <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold">Assignments</h3>
-          <StatusPill label="Local state" tone="muted" />
+          <h3 className="text-lg font-semibold">Plays on</h3>
         </div>
-        <p className="mt-1 text-sm text-zinc-600">Assign this playlist to screens and devices.</p>
+        <p className="mt-1 text-sm text-zinc-600">Screens are the client-facing targets. Devices are the local playback hardware behind them.</p>
 
         <div className="mt-4 space-y-3">
           <h4 className="text-sm font-semibold uppercase text-zinc-500">Screens</h4>
@@ -302,6 +311,9 @@ export function LocalPlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
               </label>
             );
           })}
+          {(assignments?.screens ?? []).length === 0 ? (
+            <p className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-600">No screens recorded.</p>
+          ) : null}
         </div>
 
         <div className="mt-5 space-y-3">
@@ -326,6 +338,9 @@ export function LocalPlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
               </label>
             );
           })}
+          {(assignments?.devices ?? []).length === 0 ? (
+            <p className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-600">No devices recorded.</p>
+          ) : null}
         </div>
 
         <p className="mt-4 text-sm text-zinc-600">{assignmentMessage}</p>

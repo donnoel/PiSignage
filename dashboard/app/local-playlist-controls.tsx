@@ -23,6 +23,18 @@ type PlaylistEditResponse = {
   };
 };
 
+function savedMessage(piPublish: PlaylistEditResponse["piPublish"]): string {
+  if (!piPublish) {
+    return "Saved locally.";
+  }
+
+  if (piPublish.ok) {
+    return "Saved locally and sent to the assigned Pi.";
+  }
+
+  return `Saved locally. ${piPublish.message}`;
+}
+
 export function LocalPlaylistControls({
   assetId,
   assetLabel,
@@ -64,8 +76,7 @@ export function LocalPlaylistControls({
         throw new Error(result.error ?? "Playlist edit failed.");
       }
 
-      const publishMessage = result.piPublish?.message ? ` ${result.piPublish.message}` : "";
-      setMessage(`Playlist v${result.playlistVersion} saved.${publishMessage}`);
+      setMessage(savedMessage(result.piPublish));
       startTransition(() => router.refresh());
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Playlist edit failed.");

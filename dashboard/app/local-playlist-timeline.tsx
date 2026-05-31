@@ -19,6 +19,18 @@ type PlaylistEditResponse = {
   };
 };
 
+function savedMessage(piPublish: PlaylistEditResponse["piPublish"]): string {
+  if (!piPublish) {
+    return "Saved locally.";
+  }
+
+  if (piPublish.ok) {
+    return "Saved locally and sent to the assigned Pi.";
+  }
+
+  return `Saved locally. ${piPublish.message}`;
+}
+
 function fileNameFromUri(uri: string): string {
   return uri.split("/").filter(Boolean).at(-1) ?? uri;
 }
@@ -50,7 +62,7 @@ export function LocalPlaylistTimeline({ assets, piAssetIds }: PlaylistTimelinePr
   const [items, setItems] = useState(assets);
   const [draggedAssetId, setDraggedAssetId] = useState<string | null>(null);
   const [dropAssetId, setDropAssetId] = useState<string | null>(null);
-  const [message, setMessage] = useState("Drag a tile to change playback order.");
+  const [message, setMessage] = useState("Arrange the loop in playback order.");
   const [isSaving, setIsSaving] = useState(false);
   const [isPending, startTransition] = useTransition();
   const piAssetSet = useMemo(() => new Set(piAssetIds), [piAssetIds]);
@@ -64,7 +76,7 @@ export function LocalPlaylistTimeline({ assets, piAssetIds }: PlaylistTimelinePr
     const orderedAssetIds = nextItems.map((asset) => asset.assetId);
 
     setIsSaving(true);
-    setMessage("Saving playlist order...");
+    setMessage("Saving order...");
 
     try {
       const response = await fetch("/api/local-playlist/items", {
@@ -83,8 +95,7 @@ export function LocalPlaylistTimeline({ assets, piAssetIds }: PlaylistTimelinePr
         throw new Error(result.error ?? "Could not save playlist order.");
       }
 
-      const publishMessage = result.piPublish?.message ? ` ${result.piPublish.message}` : "";
-      setMessage(`Playlist v${result.playlistVersion} saved.${publishMessage}`);
+      setMessage(savedMessage(result.piPublish));
       startTransition(() => router.refresh());
     } catch (error) {
       setItems(assets);
@@ -120,8 +131,8 @@ export function LocalPlaylistTimeline({ assets, piAssetIds }: PlaylistTimelinePr
     <div className="border-b border-zinc-200 bg-zinc-950 px-5 py-5 text-white">
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h3 className="text-lg font-semibold">Playlist timeline</h3>
-          <p className="mt-1 text-sm text-zinc-300">First frames in playback order.</p>
+          <h3 className="text-lg font-semibold">Play order</h3>
+          <p className="mt-1 text-sm text-zinc-300">First frames from this loop.</p>
         </div>
         <div className="flex flex-col gap-2 sm:items-end">
           <div className="flex gap-2">
@@ -221,7 +232,7 @@ export function LocalPlaylistTimeline({ assets, piAssetIds }: PlaylistTimelinePr
                   </span>
                   {piAssetSet.has(asset.assetId) ? (
                     <span className="absolute right-2 top-2 rounded bg-emerald-300 px-2 py-1 text-xs font-semibold text-emerald-950">
-                      Synced
+                      On device
                     </span>
                   ) : null}
                 </div>

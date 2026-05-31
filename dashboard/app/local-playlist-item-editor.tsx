@@ -19,6 +19,18 @@ type PlaylistEditResponse = {
   playlistVersion?: number;
 };
 
+function savedMessage(piPublish: PlaylistEditResponse["piPublish"]): string {
+  if (!piPublish) {
+    return "Saved locally.";
+  }
+
+  if (piPublish.ok) {
+    return "Saved locally and sent to the assigned Pi.";
+  }
+
+  return `Saved locally. ${piPublish.message}`;
+}
+
 export function LocalPlaylistItemEditor({
   assetId,
   defaultDurationSeconds,
@@ -64,8 +76,7 @@ export function LocalPlaylistItemEditor({
         throw new Error(result.error ?? "Could not save item details.");
       }
 
-      const publishMessage = result.piPublish?.message ? ` ${result.piPublish.message}` : "";
-      setMessage(`Saved in playlist v${result.playlistVersion}.${publishMessage}`);
+      setMessage(savedMessage(result.piPublish));
       startTransition(() => router.refresh());
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save item details.");
@@ -79,7 +90,7 @@ export function LocalPlaylistItemEditor({
       <div className="grid gap-2 md:grid-cols-[1fr_160px_auto] md:items-end">
         <div>
           <label htmlFor={`item-title-${assetId}`} className="text-xs font-semibold uppercase text-zinc-500">
-            Item title
+            Name
           </label>
           <input
             id={`item-title-${assetId}`}
@@ -91,7 +102,7 @@ export function LocalPlaylistItemEditor({
         </div>
         <div>
           <label htmlFor={`item-duration-${assetId}`} className="text-xs font-semibold uppercase text-zinc-500">
-            Duration (s)
+            Duration
           </label>
           <input
             id={`item-duration-${assetId}`}
@@ -116,4 +127,3 @@ export function LocalPlaylistItemEditor({
     </form>
   );
 }
-
