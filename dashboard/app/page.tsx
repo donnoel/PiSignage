@@ -916,8 +916,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     .slice(0, 8);
   const systemExceptions = attentionItems.filter((item) => item.label === "Publish failed");
   const commandAttentionCount = fleetAttentionCount + systemExceptions.length;
-  const fleetAttentionSummary = commandAttentionCount === 0 ? "Clear" : pluralize(commandAttentionCount, "item");
-  const fleetAttentionDetail = fleetExceptions[0]?.name ?? systemExceptions[0]?.label ?? "No action needed";
   const commandCenterReady = commandAttentionCount === 0 && onlineDeviceCount > 0;
   const systemStatusLabel = commandCenterReady ? "Ready" : commandAttentionCount > 0 ? "Review" : "Watching";
   const systemStatusTone = commandCenterReady ? "good" : commandAttentionCount > 0 ? "warn" : "muted";
@@ -1072,7 +1070,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 {systemStatusLabel}
               </p>
             </div>
-            <dl className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <dl className="mt-4 grid gap-3 md:grid-cols-3">
               <div className={`rounded-lg border p-4 shadow-sm ${onlineDeviceCount > 0 ? "border-emerald-200 bg-emerald-50" : "border-zinc-200 bg-white"}`}>
                 <dt className="text-xs font-semibold uppercase text-emerald-800">Online</dt>
                 <dd className="mt-2 text-2xl font-semibold text-zinc-950">{onlineDeviceCount}</dd>
@@ -1082,11 +1080,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 <dt className="text-xs font-semibold uppercase text-sky-800">Live signal</dt>
                 <dd className="mt-2 text-2xl font-semibold text-zinc-950">{playingDeviceCount}</dd>
                 <dd className="mt-1 text-sm text-zinc-600">{playingDetail}</dd>
-              </div>
-              <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 shadow-sm">
-                <dt className="text-xs font-semibold uppercase text-orange-800">Needs a look</dt>
-                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{fleetAttentionSummary}</dd>
-                <dd className="mt-1 text-sm text-zinc-600">{fleetAttentionDetail}</dd>
               </div>
               <div className="rounded-lg border border-teal-200 bg-teal-50 p-4 shadow-sm">
                 <dt className="text-xs font-semibold uppercase text-teal-800">Screens</dt>
@@ -1163,11 +1156,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   ))}
                 </ol>
               ) : (
-                <div className="p-5">
-                  <div className="rounded-lg bg-emerald-50 p-4 text-sm text-emerald-950 ring-1 ring-emerald-200">
-                    <p className="font-semibold">No device exceptions.</p>
-                    <p className="mt-1 text-emerald-900">Everything Beam can see is looking good.</p>
-                  </div>
+                <div className="border-t border-zinc-200 px-5 py-4 text-sm text-zinc-600">
+                  Everything Beam can see is looking good.
                 </div>
               )}
             </div>
