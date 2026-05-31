@@ -17,6 +17,10 @@
     "agent:heartbeat": "npm --workspace device-agent run heartbeat",
     "simulate:failures": "node scripts/local-failure-smoke.mjs",
     "test:schedule": "node scripts/schedule-evaluation-smoke.mjs",
+    "test:release-state": "node scripts/release-state-smoke.mjs",
+    "test:bad-upload": "node scripts/bad-media-upload-smoke.mjs",
+    "test:release-hardening": "npm run typecheck && npm run test:release-state && npm run test:schedule && npm run simulate:failures",
+    "drill:pi": "node scripts/pi-failure-drills.mjs",
     "generate:still-presets": "node scripts/generate-still-video-presets.mjs"
   },
   "overrides": {

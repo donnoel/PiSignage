@@ -60,6 +60,10 @@ function normalizeDeviceStore(deviceStore: DeviceStore, fallbackPlaylistId: stri
   };
 }
 
+function recordsChanged<TRecord>(before: TRecord[], after: TRecord[]): boolean {
+  return JSON.stringify(before) !== JSON.stringify(after);
+}
+
 export async function ensureInventorySeed(seed: InventorySeed): Promise<{
   devices: DeviceStore;
   screens: ScreenStore;
@@ -68,8 +72,8 @@ export async function ensureInventorySeed(seed: InventorySeed): Promise<{
   let screens = normalizeScreenStore(rawScreens, seed.playlistId);
   let devices = normalizeDeviceStore(rawDevices, seed.playlistId);
   const timestamp = isoNow();
-  let screensUpdated = screens.items.length !== rawScreens.items.length;
-  let devicesUpdated = devices.items.length !== rawDevices.items.length;
+  let screensUpdated = recordsChanged(rawScreens.items, screens.items);
+  let devicesUpdated = recordsChanged(rawDevices.items, devices.items);
 
   if (screens.items.length === 0) {
     screens = {
@@ -90,6 +94,12 @@ export async function ensureInventorySeed(seed: InventorySeed): Promise<{
       version: screens.version + 1
     };
     screensUpdated = true;
+  } else if (screensUpdated) {
+    screens = {
+      ...screens,
+      updatedAt: timestamp,
+      version: screens.version + 1
+    };
   }
 
   if (devices.items.length === 0) {
@@ -115,6 +125,12 @@ export async function ensureInventorySeed(seed: InventorySeed): Promise<{
       version: devices.version + 1
     };
     devicesUpdated = true;
+  } else if (devicesUpdated) {
+    devices = {
+      ...devices,
+      updatedAt: timestamp,
+      version: devices.version + 1
+    };
   }
 
   if (screensUpdated) {
@@ -301,4 +317,3 @@ export async function removeDevice(deviceId: string): Promise<void> {
     timestamp
   });
 }
-

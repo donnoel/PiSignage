@@ -16,6 +16,9 @@ const playlistPath = path.resolve(
 const vlcBinary = process.env.PISIGNAGE_VLC_BIN ?? "/usr/bin/cvlc";
 const displayOutput = process.env.PISIGNAGE_DISPLAY_OUTPUT ?? "HDMI-A-1";
 const displayMode = process.env.PISIGNAGE_DISPLAY_RESOLUTION ?? "1920x1080@60.000000";
+const vlcVideoOutput = process.env.PISIGNAGE_VLC_VIDEO_OUTPUT ?? "wl_shm";
+const vlcWaylandDisplay =
+  process.env.PISIGNAGE_VLC_WAYLAND_DISPLAY ?? process.env.WAYLAND_DISPLAY ?? "wayland-0";
 const statusPath = path.resolve(
   process.env.PISIGNAGE_STATUS_PATH ??
     path.join(process.env.HOME ?? repoRoot, ".local/state/pisignage/player-status.json")
@@ -46,6 +49,8 @@ let activeStatus = {
   statusPath,
   displayOutput,
   displayMode,
+  vlcVideoOutput,
+  vlcWaylandDisplay,
   playlistId: null,
   playlistVersion: null,
   assetCount: 0,
@@ -190,11 +195,19 @@ async function waitForDisplay() {
 function playPlaylist(playlist) {
   return new Promise((resolve, reject) => {
     const mediaArgs = playlist.assets.map((asset) => asset.path);
+    const waylandArgs = vlcVideoOutput.startsWith("wl_")
+      ? ["--wl-display", vlcWaylandDisplay]
+      : [];
     let playlistPollTimer;
     let statusHeartbeatTimer;
     let reloadRequested = false;
     const args = [
+      "-V",
+      vlcVideoOutput,
+      ...waylandArgs,
       "--fullscreen",
+      "--video-on-top",
+      "--no-video-deco",
       "--loop",
       "--no-video-title-show",
       "--quiet",

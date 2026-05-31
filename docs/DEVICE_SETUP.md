@@ -262,6 +262,9 @@ assets from `sample-content/assets/`, and plays the playlist with one continuous
 `cvlc` process in fullscreen mode. It keeps the display at
 `1920x1080@60.000000`, waits briefly for the display session during boot, writes
 local playback status JSON, and restarts VLC when the playlist file changes.
+The field service forces VLC to use the Wayland shared-memory video output so a
+successful player process also creates a visible fullscreen surface in the Pi
+desktop session.
 
 Validate the playlist without taking over the TV:
 

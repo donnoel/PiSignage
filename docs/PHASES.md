@@ -244,6 +244,26 @@ Validation:
 - Local schedule evaluation tests around timezone and boundary times.
 - Pi/offline schedule smoke when device support exists.
 
+## Jump-Ahead Track: Validation And Release Hardening
+
+Goal: make the local demo and five-system pilot safer by validating state contracts and running repeatable failure drills before adding more settings/login work.
+
+Acceptance:
+
+- Focused checks validate playlist, media, screen, device, schedule, settings, activity, and publish-status local JSON contracts.
+- Bad media uploads are rejected by the real dashboard and do not mutate playlist or media state.
+- Pi drill tooling separates safe read-only diagnostics from explicit service restart/recovery actions.
+- Reboot, service restart, network loss, power loss, stale publish, and bad media upload have a concrete evidence checklist.
+- Hardware-only drills are not claimed as passed until run against the real Pi/display.
+
+Validation:
+
+- `npm run test:release-hardening`
+- `npm run test:bad-upload` with the dashboard running.
+- `npm run drill:pi`
+- `npm run drill:pi -- --service-restart` when touching the live VLC service is acceptable.
+- Manual reboot, network-loss, and power-loss drills using `docs/RELEASE_HARDENING.md`.
+
 ## Phase 11: Settings And Local Admin Login
 
 Goal: centralize local configuration and add a simple operator login.
