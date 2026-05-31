@@ -15,6 +15,7 @@ import { LocalPlaylistItemEditor } from "./local-playlist-item-editor";
 import { ScreenDeviceInventoryPanel } from "./screen-device-inventory-panel";
 import { LocalSystemActions } from "./local-system-actions";
 import { LocalUploadForm } from "./local-upload-form";
+import { TroubleshootingPanel } from "./troubleshooting-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -85,7 +86,7 @@ const execTimeoutMs = 4_000;
 const staleStatusThresholdMs = 45_000;
 const staleHeartbeatThresholdMs = 120_000;
 
-type DashboardView = "dashboard" | "media-store" | "playlist" | "device-health" | "screens";
+type DashboardView = "dashboard" | "media-store" | "playlist" | "device-health" | "screens" | "troubleshooting";
 
 type DashboardPageProps = {
   searchParams?: Promise<{
@@ -98,7 +99,8 @@ const navigationItems: Array<{ label: string; view: DashboardView }> = [
   { label: "Media Store", view: "media-store" },
   { label: "Playlist", view: "playlist" },
   { label: "Device health", view: "device-health" },
-  { label: "Screens", view: "screens" }
+  { label: "Screens", view: "screens" },
+  { label: "Troubleshooting", view: "troubleshooting" }
 ];
 
 const viewCopy: Record<DashboardView, { eyebrow: string; title: string; description?: string }> = {
@@ -125,6 +127,11 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
     eyebrow: "Screen inventory",
     title: "Screens",
     description: "Status, assignments, and recovery signals."
+  },
+  troubleshooting: {
+    eyebrow: "Field support",
+    title: "Troubleshooting",
+    description: "Diagnostics, access helpers, logs, publish retry, VLC restart, and recovery history."
   }
 };
 
@@ -1214,6 +1221,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 statusTimestampLabel={playerUpdatedAt}
               />
             </div>
+          </section>
+
+          <section
+            id="troubleshooting"
+            aria-labelledby="troubleshooting-heading"
+            className={selectedView === "troubleshooting" ? "" : "hidden"}
+          >
+            <h2 id="troubleshooting-heading" className="sr-only">Troubleshooting</h2>
+            <TroubleshootingPanel />
           </section>
 
           <section
