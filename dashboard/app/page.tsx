@@ -621,7 +621,15 @@ async function loadDashboardState(): Promise<DashboardState> {
 }
 
 function syncState(localVersion: number, piVersion: number | undefined, piReachable: boolean) {
-  if (!piReachable || typeof piVersion !== "number") {
+  if (!piReachable) {
+    return {
+      detail: "Beam cannot reach the Pi right now. The last published playlist remains saved locally.",
+      label: "Waiting",
+      tone: "muted" as const
+    };
+  }
+
+  if (typeof piVersion !== "number") {
     return {
       detail: "Waiting for Pi playlist status.",
       label: "Unknown",
@@ -755,7 +763,7 @@ function fleetCommandRows({
       const deviceAssignedToPlaylist = device.playlistId === playlist.playlistId;
       const syncLabel = !deviceAssignedToPlaylist ? "Unassigned" : isLive ? playlistSyncState.label : "Unknown";
       const syncTone = !deviceAssignedToPlaylist ? "warn" : isLive ? playlistSyncState.tone : "muted";
-      const playback = isLive ? (playbackHealthy ? "Playing" : playbackLabel) : "Unknown";
+      const playback = isLive ? (!pi.reachable ? "No live report" : playbackHealthy ? "Playing" : playbackLabel) : "Unknown";
       const needsAttention =
         !hostConfigured ||
         !deviceAssignedToPlaylist ||
@@ -764,7 +772,9 @@ function fleetCommandRows({
       const detail = !hostConfigured
         ? "Add a host before this device can report."
         : isLive
-          ? playlistSyncState.detail
+          ? pi.reachable
+            ? playlistSyncState.detail
+            : "Beam cannot reach this device. Local playback may still be running from the cached playlist."
           : "This device is saved in Beam, but it is not checking in yet.";
 
       return {
@@ -878,10 +888,26 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     playlistSyncState
   });
   const onlineDeviceCount = fleetRows.filter((row) => row.healthLabel === "Online").length;
+  const offlineDeviceCount = fleetRows.filter((row) => row.healthLabel === "Offline").length;
   const notReportingDeviceCount = fleetRows.filter((row) => row.healthLabel === "Not reporting").length;
+  const disconnectedDeviceCount = offlineDeviceCount + notReportingDeviceCount;
   const playingDeviceCount = fleetRows.filter((row) => row.playbackLabel === "Playing").length;
   const staleDeviceCount = fleetRows.filter((row) => row.isLive && isPlaying && !isPlayerStatusFresh).length;
   const syncIssueCount = fleetRows.filter((row) => row.syncTone === "warn").length;
+  const playingDetail = playingDeviceCount > 0
+    ? staleDeviceCount > 0
+      ? `${staleDeviceCount} stale report`
+      : "live report confirmed"
+    : disconnectedDeviceCount > 0
+      ? "no live connection"
+      : "waiting for playback";
+  const screenDetail = offlineDeviceCount > 0
+    ? `${offlineDeviceCount} offline`
+    : notReportingDeviceCount > 0
+      ? `${notReportingDeviceCount} not reporting`
+      : syncIssueCount > 0
+        ? `${syncIssueCount} sync issue`
+        : "all reporting";
   const fleetAttentionCount = fleetRows.filter((row) => row.needsAttention).length;
   const fleetExceptions = fleetRows
     .filter((row) => row.needsAttention)
@@ -904,20 +930,35 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const focusedScreenLocation = focusedScreen
     ? `${focusedScreen.location} · ${focusedScreen.group}`
     : localLocationName;
-  const focusedScreenStatus = focusedScreen?.healthLabel ?? (pi.reachable ? "Online" : "Offline");
-  const focusedScreenStatusTone = focusedScreen?.healthTone ?? (pi.reachable ? "good" : "warn");
   const focusedPlaybackLabel = focusedScreen?.playbackLabel ?? playbackLabel;
-  const focusedPlaybackTone = focusedPlaybackLabel === "Playing" ? "good" : "warn";
   const focusedSyncLabel = focusedScreen?.syncLabel ?? playlistSyncState.label;
-  const focusedSyncTone = focusedScreen?.syncTone ?? playlistSyncState.tone;
   const focusedScreenHost = focusedScreen?.host || pi.host || "No host";
-  const focusedScreenTitle = focusedScreenIsLive ? currentPlayback : "Waiting for check-in";
+  const focusedScreenTitle = focusedScreenIsLive
+    ? pi.reachable
+      ? currentPlayback
+      : "Screen offline"
+    : "Waiting for check-in";
   const focusedScreenDetail = focusedScreenIsLive
-    ? currentPlaybackStatus
+    ? pi.reachable
+      ? currentPlaybackStatus
+      : "Beam cannot reach the Pi. Cached playback may still be running locally, but this dashboard cannot confirm it until the network returns."
     : "This screen is saved in Beam. Once it checks in, its current playback will appear here.";
-  const focusedLastReportLabel = focusedScreenIsLive ? formatStatusAge(playerStatus?.updatedAt) : "not checking in";
-  const focusedLiveSummary = focusedScreenIsLive && focusedPlaybackLabel === "Playing" ? "Playing live" : focusedPlaybackLabel;
-  const focusedScreenSummary = `${focusedLiveSummary} · ${focusedSyncLabel} · Last report ${focusedLastReportLabel}`;
+  const focusedLastReportLabel = focusedScreenIsLive
+    ? pi.reachable
+      ? formatStatusAge(playerStatus?.updatedAt)
+      : "unavailable"
+    : "not checking in";
+  const focusedLiveSummary = focusedScreenIsLive
+    ? pi.reachable
+      ? focusedPlaybackLabel === "Playing"
+        ? "Playing live"
+        : focusedPlaybackLabel
+      : "Offline"
+    : "Not reporting";
+  const focusedScreenSummary = focusedScreenIsLive && pi.reachable
+    ? `${focusedLiveSummary} · ${focusedSyncLabel} · Last report ${focusedLastReportLabel}`
+    : `${focusedLiveSummary} · Last report ${focusedLastReportLabel}`;
+  const previewEyebrow = focusedScreenIsLive && pi.reachable ? "Showing now" : "Screen status";
   const focusedPlayerUrl =
     focusedScreenIsLive && piPlayerUrl
       ? piPlayerUrl
@@ -1030,15 +1071,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               </p>
             </div>
             <dl className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+              <div className={`rounded-lg border p-4 shadow-sm ${onlineDeviceCount > 0 ? "border-emerald-200 bg-emerald-50" : "border-zinc-200 bg-white"}`}>
                 <dt className="text-xs font-semibold uppercase text-emerald-800">Online</dt>
                 <dd className="mt-2 text-2xl font-semibold text-zinc-950">{onlineDeviceCount}</dd>
                 <dd className="mt-1 text-sm text-zinc-600">of {pluralize(fleetRows.length, "device")}</dd>
               </div>
-              <div className="rounded-lg border border-sky-200 bg-sky-50 p-4 shadow-sm">
-                <dt className="text-xs font-semibold uppercase text-sky-800">Playing</dt>
+              <div className={`rounded-lg border p-4 shadow-sm ${playingDeviceCount > 0 ? "border-sky-200 bg-sky-50" : "border-zinc-200 bg-white"}`}>
+                <dt className="text-xs font-semibold uppercase text-sky-800">Live signal</dt>
                 <dd className="mt-2 text-2xl font-semibold text-zinc-950">{playingDeviceCount}</dd>
-                <dd className="mt-1 text-sm text-zinc-600">{staleDeviceCount > 0 ? `${staleDeviceCount} stale report` : "fresh reports"}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">{playingDetail}</dd>
               </div>
               <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 shadow-sm">
                 <dt className="text-xs font-semibold uppercase text-orange-800">Needs a look</dt>
@@ -1048,7 +1089,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <div className="rounded-lg border border-teal-200 bg-teal-50 p-4 shadow-sm">
                 <dt className="text-xs font-semibold uppercase text-teal-800">Screens</dt>
                 <dd className="mt-2 text-2xl font-semibold text-zinc-950">{inventory.screens.items.length}</dd>
-                <dd className="mt-1 text-sm text-zinc-600">{notReportingDeviceCount} not reporting · {syncIssueCount} sync issue</dd>
+                <dd className="mt-1 text-sm text-zinc-600">{screenDetail}</dd>
               </div>
             </dl>
           </section>
@@ -1064,7 +1105,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   <p className="mt-1 text-sm text-zinc-600">
                     {commandAttentionCount === 0
                       ? "Beam has nothing urgent to call out."
-                      : "The items most likely to affect playback are listed first."}
+                      : "What Beam cannot verify right now."}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 sm:justify-end">
@@ -1072,7 +1113,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     href="/?view=device-health"
                     className="inline-flex min-h-10 items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-950 ring-1 ring-zinc-200 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-teal-600"
                   >
-                    Open Device health
+                    Device health
                   </a>
                 </div>
               </div>
@@ -1099,22 +1140,16 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     </li>
                   ))}
                   {fleetExceptions.map((row) => (
-                    <li key={row.id} className="grid gap-3 px-5 py-4 text-sm lg:grid-cols-[minmax(180px,0.7fr)_minmax(0,1fr)_auto] lg:items-start">
-                      <div className="min-w-0">
-                        <p className="break-words font-semibold text-zinc-950">{row.name}</p>
-                        <p className="mt-1 break-words text-zinc-600">{row.location} · {row.group}</p>
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap gap-2">
-                          <StatusPill label={row.healthLabel} tone={row.healthTone} />
-                          <StatusPill label={row.playbackLabel} tone={row.playbackLabel === "Playing" ? "good" : "warn"} />
-                          <StatusPill label={row.syncLabel} tone={row.syncTone} />
+                    <li key={row.id} className="grid gap-3 px-5 py-4 text-sm">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="break-words font-semibold text-zinc-950">{row.name}</p>
+                          <p className="mt-1 break-words text-zinc-600">{row.location} · {row.group}</p>
                         </div>
-                        <p className="mt-2 break-words leading-6 text-zinc-600">
-                          {row.screenName} · {row.host || "No host"} · {row.detail}
-                        </p>
+                        <StatusPill label={row.healthLabel} tone={row.healthTone} />
                       </div>
-                      <div className="lg:justify-self-end">
+                      <p className="break-words leading-6 text-zinc-600">{row.detail}</p>
+                      <div>
                         <a
                           href="/?view=screens"
                           className="inline-flex min-h-10 items-center rounded-md px-3 py-2 font-semibold text-teal-800 ring-1 ring-teal-200 hover:bg-teal-50 focus:outline-none focus:ring-2 focus:ring-teal-600"
@@ -1174,7 +1209,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                       <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white/10 to-transparent" />
                       <div className="relative flex min-h-[260px] flex-col justify-between gap-5">
                         <div>
-                          <p className="text-sm font-semibold uppercase text-cyan-100/80">Showing now</p>
+                          <p className="text-sm font-semibold uppercase text-cyan-100/80">{previewEyebrow}</p>
                           <p className="mt-2 break-words text-3xl font-black leading-tight sm:text-4xl">{focusedScreenTitle}</p>
                           <p className="mt-3 max-w-sm text-sm leading-6 text-cyan-50/80">{focusedScreenDetail}</p>
                         </div>
