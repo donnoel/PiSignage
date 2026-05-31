@@ -1,3 +1,5 @@
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
@@ -6,6 +8,8 @@ import {
   readMediaStore,
   writeMediaStore
 } from "../../../lib/local-data-store";
+import { readLivePlaylist, sampleAssetsDirectory } from "../../../lib/local-playlist";
+import type { PlaylistAsset } from "../../../lib/local-playlist";
 
 type RouteContext = {
   params: Promise<{
@@ -29,6 +33,19 @@ function parseTags(value: unknown): string[] {
         .map((entry) => entry.slice(0, 48))
     )
   );
+}
+
+function playlistAssetFileName(asset: PlaylistAsset): string | null {
+  if (!asset.uri.startsWith("assets/")) {
+    return null;
+  }
+
+  return path.basename(asset.uri);
+}
+
+async function playlistUsesFile(fileName: string): Promise<boolean> {
+  const playlist = await readLivePlaylist();
+  return playlist.assets.some((asset) => playlistAssetFileName(asset) === fileName);
 }
 
 export async function GET(_request: Request, context: RouteContext) {
@@ -104,6 +121,66 @@ export async function PATCH(request: Request, context: RouteContext) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to update media item.";
     console.error("media store update failed", error);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(_request: Request, context: RouteContext) {
+  await ensureLocalDataFoundation();
+  const { mediaId } = await context.params;
+
+  if (mediaId.startsWith("playlist:")) {
+    return NextResponse.json(
+      { error: "This item is in the playlist. Remove it from the playlist before deleting it here." },
+      { status: 409 }
+    );
+  }
+
+  try {
+    const mediaStore = await readMediaStore();
+    const index = mediaStore.items.findIndex((candidate) => candidate.id === mediaId);
+
+    if (index === -1) {
+      return NextResponse.json({ error: "Media item not found." }, { status: 404 });
+    }
+
+    const current = mediaStore.items[index];
+    if (await playlistUsesFile(current.playbackFileName)) {
+      return NextResponse.json(
+        { error: "This media is in the playlist. Remove it from the playlist before deleting it." },
+        { status: 409 }
+      );
+    }
+
+    const now = new Date().toISOString();
+    const nextItems = mediaStore.items.filter((item) => item.id !== mediaId);
+    await writeMediaStore({
+      ...mediaStore,
+      items: nextItems,
+      version: mediaStore.version + 1,
+      updatedAt: now
+    });
+
+    const fileStillReferenced = nextItems.some((item) => item.playbackFileName === current.playbackFileName);
+    if (!fileStillReferenced) {
+      await fs.rm(path.join(sampleAssetsDirectory(), path.basename(current.playbackFileName)), { force: true });
+    }
+
+    await appendActivityRecord({
+      id: randomUUID(),
+      action: "media-delete",
+      actor: "local-operator",
+      entityId: current.id,
+      entityType: "media",
+      message: `Deleted ${current.playbackFileName} from media store.`,
+      result: "success",
+      timestamp: now
+    });
+
+    return NextResponse.json({ deleted: true, item: current });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to delete media item.";
+    console.error("media store delete failed", error);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

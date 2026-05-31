@@ -49,6 +49,11 @@ type PlaylistActionResponse = {
   playlistVersion?: number;
 };
 
+type DeleteResponse = {
+  deleted?: boolean;
+  error?: string;
+};
+
 type StatusTone = "good" | "warn" | "muted";
 type SafetyFilter = "all" | "ready" | "review";
 type TypeFilter = "all" | "video" | "still" | "mov";
@@ -206,6 +211,10 @@ function actionLabel(item: MediaItem, addingMediaId: string | null): string {
   return playbackSafety(item).canUseInPlaylist ? "Add" : "Review";
 }
 
+function canDeleteMedia(item: MediaItem): boolean {
+  return item.origin !== "playlist" && !isInPlaylist(item);
+}
+
 export function MediaStorePanel() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -226,6 +235,7 @@ export function MediaStorePanel() {
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [addingMediaId, setAddingMediaId] = useState<string | null>(null);
+  const [deletingMediaId, setDeletingMediaId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const visibleItems = useMemo(
     () => items.filter((item) => matchesSafetyFilter(item, safetyFilter) && matchesTypeFilter(item, typeFilter)),
@@ -240,7 +250,7 @@ export function MediaStorePanel() {
     [items]
   );
   const reviewItemCount = items.length - readyItemCount;
-  const isBusy = isPending || isLoading || isUploading || addingMediaId !== null;
+  const isBusy = isPending || isLoading || isUploading || addingMediaId !== null || deletingMediaId !== null;
 
   async function loadMedia(reset: boolean, requestedQuery = query): Promise<void> {
     const cursor = reset ? "0" : nextCursor ?? "0";
@@ -388,6 +398,46 @@ export function MediaStorePanel() {
       setMessageTone("error");
     } finally {
       setAddingMediaId(null);
+    }
+  }
+
+  async function handleDelete(item: MediaItem) {
+    if (isBusy) {
+      return;
+    }
+    if (!canDeleteMedia(item)) {
+      setMessage(isInPlaylist(item) ? "Remove this media from the playlist before deleting it." : "Playlist assets are managed from the Playlist view.");
+      setMessageTone("warning");
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete "${item.title}" from Media Store?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingMediaId(item.id);
+    setMessage(`Deleting ${item.title}...`);
+    setMessageTone("idle");
+    try {
+      const response = await fetch(`/api/media/${encodeURIComponent(item.id)}`, {
+        method: "DELETE",
+        cache: "no-store"
+      });
+      const result = (await response.json()) as DeleteResponse;
+      if (!response.ok || result.error || !result.deleted) {
+        throw new Error(result.error ?? "Could not delete media.");
+      }
+
+      await loadMedia(true);
+      setMessage(`${item.title} deleted.`);
+      setMessageTone("success");
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not delete media.");
+      setMessageTone("error");
+    } finally {
+      setDeletingMediaId(null);
     }
   }
 
@@ -548,7 +598,7 @@ export function MediaStorePanel() {
               <th className="px-4 py-3">Size</th>
               <th className="px-4 py-3">Tags</th>
               <th className="px-4 py-3">Updated</th>
-              <th className="px-4 py-3">Playlist</th>
+              <th className="px-4 py-3">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-200">
@@ -556,6 +606,7 @@ export function MediaStorePanel() {
               const safety = playbackSafety(item);
               const inPlaylist = isInPlaylist(item);
               const canAdd = safety.canUseInPlaylist && !inPlaylist && item.origin !== "playlist";
+              const deleting = deletingMediaId === item.id;
               return (
                 <tr key={item.id} className="bg-white hover:bg-zinc-50">
                   <td className="max-w-[300px] px-4 py-3">
@@ -575,14 +626,26 @@ export function MediaStorePanel() {
                   </td>
                   <td className="px-4 py-3 text-zinc-700">{formatTimestamp(item.updatedAt)}</td>
                   <td className="px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() => void handleAddToPlaylist(item)}
-                      disabled={isBusy || !canAdd}
-                      className="min-h-9 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
-                    >
-                      {actionLabel(item, addingMediaId)}
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleAddToPlaylist(item)}
+                        disabled={isBusy || !canAdd}
+                        className="min-h-9 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
+                      >
+                        {actionLabel(item, addingMediaId)}
+                      </button>
+                      {canDeleteMedia(item) ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(item)}
+                          disabled={isBusy}
+                          className="min-h-9 rounded-md border border-rose-200 bg-white px-3 py-1.5 text-sm font-semibold text-rose-700 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
+                        >
+                          {deleting ? "Deleting" : "Delete"}
+                        </button>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               );
