@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { PlaylistAsset } from "./lib/local-playlist";
 
@@ -46,6 +46,7 @@ function moveItem(items: PlaylistAsset[], fromIndex: number, toIndex: number): P
 
 export function LocalPlaylistTimeline({ assets, piAssetIds }: PlaylistTimelineProps) {
   const router = useRouter();
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [items, setItems] = useState(assets);
   const [draggedAssetId, setDraggedAssetId] = useState<string | null>(null);
   const [dropAssetId, setDropAssetId] = useState<string | null>(null);
@@ -103,6 +104,18 @@ export function LocalPlaylistTimeline({ assets, piAssetIds }: PlaylistTimelinePr
     void saveOrder(nextItems);
   }
 
+  function scrollTimeline(direction: "left" | "right") {
+    const scroller = scrollerRef.current;
+    if (!scroller) {
+      return;
+    }
+
+    scroller.scrollBy({
+      left: direction === "left" ? -520 : 520,
+      behavior: "smooth"
+    });
+  }
+
   return (
     <div className="border-b border-zinc-200 bg-zinc-950 px-5 py-5 text-white">
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -110,11 +123,45 @@ export function LocalPlaylistTimeline({ assets, piAssetIds }: PlaylistTimelinePr
           <h3 className="text-lg font-semibold">Playlist timeline</h3>
           <p className="mt-1 text-sm text-zinc-300">First frames in playback order.</p>
         </div>
-        <p className="text-sm text-zinc-300" role="status" aria-live="polite">
-          {message}
-        </p>
+        <div className="flex flex-col gap-2 sm:items-end">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => scrollTimeline("left")}
+              className="flex h-9 w-9 items-center justify-center rounded bg-white/10 text-base font-semibold text-white hover:bg-white/20"
+              aria-label="Scroll playlist timeline left"
+              title="Scroll left"
+            >
+              ←
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollTimeline("right")}
+              className="flex h-9 w-9 items-center justify-center rounded bg-white/10 text-base font-semibold text-white hover:bg-white/20"
+              aria-label="Scroll playlist timeline right"
+              title="Scroll right"
+            >
+              →
+            </button>
+          </div>
+          <p className="text-sm text-zinc-300" role="status" aria-live="polite">
+            {message}
+          </p>
+        </div>
       </div>
-      <div className="overflow-x-auto pb-2">
+      <div
+        ref={scrollerRef}
+        className="max-w-full overflow-x-auto overscroll-x-contain pb-4"
+        onWheel={(event) => {
+          const scroller = scrollerRef.current;
+          if (!scroller || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+            return;
+          }
+
+          event.preventDefault();
+          scroller.scrollLeft += event.deltaY;
+        }}
+      >
         <ol className="flex min-h-[178px] gap-3">
           {items.map((asset, index) => {
             const assetName = asset.altText ?? asset.assetId;

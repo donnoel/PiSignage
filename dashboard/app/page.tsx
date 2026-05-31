@@ -1259,9 +1259,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           <section
             id="playlist"
             aria-labelledby="playlist-heading"
-            className={selectedView === "playlist" ? "mt-6 grid gap-4 xl:grid-cols-[1fr_360px]" : "hidden"}
+            className={selectedView === "playlist" ? "mt-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]" : "hidden"}
           >
-            <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+            <div className="min-w-0 rounded-lg border border-zinc-200 bg-white shadow-sm">
               <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <h2 id="playlist-heading" className="text-xl font-semibold">{playlist.name}</h2>
