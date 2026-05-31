@@ -5,8 +5,10 @@ import { publishStatusPath, readLivePlaylist, repoRoot } from "./lib/local-playl
 import type { Playlist, PlaylistAsset } from "./lib/local-playlist";
 import { readPiConfig, runSsh } from "./lib/pi-local";
 import { MediaStorePanel } from "./media-store-panel";
+import { LocalPlaylistBuilder } from "./local-playlist-builder";
 import { LocalPublishForm } from "./local-publish-form";
 import { LocalPlaylistControls } from "./local-playlist-controls";
+import { LocalPlaylistItemEditor } from "./local-playlist-item-editor";
 import { LocalSystemActions } from "./local-system-actions";
 import { LocalUploadForm } from "./local-upload-form";
 
@@ -1302,6 +1304,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                           />
                         </div>
                       </div>
+                      <LocalPlaylistItemEditor
+                        assetId={asset.assetId}
+                        defaultDurationSeconds={asset.durationSeconds ?? 30}
+                        defaultTitle={assetName}
+                      />
                       <dl className="grid gap-3 rounded-md bg-white/70 p-3 text-xs text-zinc-600 ring-1 ring-zinc-200 sm:grid-cols-2">
                         <div className="min-w-0">
                           <dt className="font-semibold uppercase text-zinc-500">Asset ID</dt>
@@ -1326,6 +1333,14 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               </p>
               <LocalUploadForm />
             </div>
+          </section>
+
+          <section
+            aria-labelledby="playlist-builder-heading"
+            className={selectedView === "playlist" ? "mt-4" : "hidden"}
+          >
+            <h2 id="playlist-builder-heading" className="sr-only">Playlist builder</h2>
+            <LocalPlaylistBuilder playlistId={playlist.playlistId} />
           </section>
 
         </div>

@@ -44,6 +44,7 @@ export type DeviceRecord = {
   id: string;
   name: string;
   notes: string;
+  playlistId: string | null;
   playerType: "vlc";
   rootPath: string;
   screenId: string | null;
