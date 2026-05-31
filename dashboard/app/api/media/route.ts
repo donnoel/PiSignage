@@ -6,8 +6,11 @@ import { NextResponse } from "next/server";
 import {
   appendActivityRecord,
   ensureLocalDataFoundation,
+  type MediaFolderStore,
   type MediaRecord,
+  readMediaFolderStore,
   readMediaStore,
+  writeMediaFolderStore,
   writeMediaStore
 } from "../../lib/local-data-store";
 import { readLivePlaylist, sampleAssetsDirectory, writeFileAtomic } from "../../lib/local-playlist";
@@ -29,6 +32,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type MediaApiItem = MediaRecord & {
+  folderId: string | null;
+  folderName: string | null;
   missingFile: boolean;
   origin: "media-store" | "playlist";
   playlistAssetIds: string[];
@@ -90,6 +95,28 @@ function normalize(value: string): string {
   return value.trim().toLowerCase();
 }
 
+function normalizeFolderId(value: FormDataEntryValue | null, folderStore: MediaFolderStore): string | null {
+  if (typeof value !== "string" || value.trim() === "") {
+    return null;
+  }
+
+  const folderId = value.trim();
+  if (!folderStore.items.some((folder) => folder.id === folderId)) {
+    throw new MediaUploadError("Folder not found.", 400);
+  }
+
+  return folderId;
+}
+
+function assignedFolderId(
+  mediaId: string,
+  folderStore: MediaFolderStore,
+  folderById: Map<string, string>
+): string | null {
+  const folderId = folderStore.assignments[mediaId] ?? null;
+  return folderId && folderById.has(folderId) ? folderId : null;
+}
+
 function playlistAssetFileName(asset: PlaylistAsset): string | null {
   if (!asset.uri.startsWith("assets/")) {
     return null;
@@ -112,12 +139,16 @@ function playlistAssetRecord(
   assets: PlaylistAsset[],
   playlistUpdatedAt: string,
   sizeBytes: number,
-  missingFile: boolean
+  missingFile: boolean,
+  folderStore: MediaFolderStore,
+  folderById: Map<string, string>
 ): MediaApiItem {
   const primaryAsset = assets[0];
+  const itemId = `playlist:${primaryAsset.assetId}`;
+  const folderId = assignedFolderId(itemId, folderStore, folderById);
 
   return {
-    id: `playlist:${primaryAsset.assetId}`,
+    id: itemId,
     title: primaryAsset.altText?.trim() || baseTitleFromFileName(fileName),
     description: "",
     tags: [],
@@ -129,6 +160,8 @@ function playlistAssetRecord(
     status: missingFile ? "failed" : "ready",
     createdAt: playlistUpdatedAt,
     updatedAt: playlistUpdatedAt,
+    folderId,
+    folderName: folderId ? folderById.get(folderId) ?? null : null,
     origin: "playlist",
     missingFile,
     playlistAssetIds: assets.map((asset) => asset.assetId),
@@ -136,9 +169,13 @@ function playlistAssetRecord(
   };
 }
 
-async function mediaItemsWithPlaylistAssets(mediaStoreItems: MediaRecord[]): Promise<MediaApiItem[]> {
+async function mediaItemsWithPlaylistAssets(
+  mediaStoreItems: MediaRecord[],
+  folderStore: MediaFolderStore
+): Promise<MediaApiItem[]> {
   const playlist = await readLivePlaylist();
   const playlistAssetsByFileName = new Map<string, PlaylistAsset[]>();
+  const folderById = new Map(folderStore.items.map((folder) => [folder.id, folder.name]));
 
   for (const asset of playlist.assets) {
     const fileName = playlistAssetFileName(asset);
@@ -156,9 +193,12 @@ async function mediaItemsWithPlaylistAssets(mediaStoreItems: MediaRecord[]): Pro
     mediaStoreItems.map(async (item): Promise<MediaApiItem> => {
       const playlistAssets = playlistAssetsByFileName.get(item.playbackFileName) ?? [];
       const fileState = await fileSizeForPlaybackFile(item.playbackFileName);
+      const folderId = assignedFolderId(item.id, folderStore, folderById);
 
       return {
         ...item,
+        folderId,
+        folderName: folderId ? folderById.get(folderId) ?? null : null,
         sizeBytes: item.sizeBytes || fileState.sizeBytes,
         status: fileState.missingFile ? "failed" : item.status,
         origin: "media-store",
@@ -174,7 +214,15 @@ async function mediaItemsWithPlaylistAssets(mediaStoreItems: MediaRecord[]): Pro
       .filter(([fileName]) => !storeFileNames.has(fileName))
       .map(async ([fileName, assets]) => {
         const fileState = await fileSizeForPlaybackFile(fileName);
-        return playlistAssetRecord(fileName, assets, playlist.updatedAt, fileState.sizeBytes, fileState.missingFile);
+        return playlistAssetRecord(
+          fileName,
+          assets,
+          playlist.updatedAt,
+          fileState.sizeBytes,
+          fileState.missingFile,
+          folderStore,
+          folderById
+        );
       })
   );
 
@@ -183,8 +231,8 @@ async function mediaItemsWithPlaylistAssets(mediaStoreItems: MediaRecord[]): Pro
 
 export async function GET(request: Request) {
   await ensureLocalDataFoundation();
-  const mediaStore = await readMediaStore();
-  const mediaItems = await mediaItemsWithPlaylistAssets(mediaStore.items);
+  const [mediaStore, folderStore] = await Promise.all([readMediaStore(), readMediaFolderStore()]);
+  const mediaItems = await mediaItemsWithPlaylistAssets(mediaStore.items, folderStore);
   const { searchParams } = new URL(request.url);
   const cursor = parsePositiveInt(searchParams.get("cursor"), 0, Number.MAX_SAFE_INTEGER);
   const limit = parsePositiveInt(searchParams.get("limit"), 50, 200);
@@ -205,6 +253,7 @@ export async function GET(request: Request) {
 
     const haystack = normalize(
       `${item.title}\n${item.description}\n${item.tags.join(" ")}\n${item.playbackFileName}\n${item.sourceFileName}\n${item.origin}`
+        + `\n${item.folderName ?? ""}`
     );
     return haystack.includes(query);
   });
@@ -216,6 +265,7 @@ export async function GET(request: Request) {
   const items = sortedItems.slice(cursor, nextCursorValue);
 
   return NextResponse.json({
+    folders: folderStore.items,
     items,
     version: mediaStore.version,
     updatedAt: mediaStore.updatedAt,
@@ -257,6 +307,8 @@ export async function POST(request: Request) {
     }
 
     const safeFileName = sanitizeMediaFileName(file.name);
+    const folderStore = await readMediaFolderStore();
+    const folderId = normalizeFolderId(formData.get("folderId"), folderStore);
     const sourceType = mediaSourceTypeFromFileName(safeFileName);
     const stillDurationSeconds = imageDurationFromForm(formData.get("durationSeconds"));
     const uploadedBytes = Buffer.from(await file.arrayBuffer());
@@ -309,6 +361,18 @@ export async function POST(request: Request) {
       version: mediaStore.version + 1,
       updatedAt: now
     });
+
+    if (folderId) {
+      await writeMediaFolderStore({
+        ...folderStore,
+        assignments: {
+          ...folderStore.assignments,
+          [item.id]: folderId
+        },
+        version: folderStore.version + 1,
+        updatedAt: now
+      });
+    }
 
     await appendActivityRecord({
       id: randomUUID(),

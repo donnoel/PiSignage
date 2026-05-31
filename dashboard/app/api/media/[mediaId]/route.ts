@@ -5,7 +5,9 @@ import { NextResponse } from "next/server";
 import {
   appendActivityRecord,
   ensureLocalDataFoundation,
+  readMediaFolderStore,
   readMediaStore,
+  writeMediaFolderStore,
   writeMediaStore
 } from "../../../lib/local-data-store";
 import { readLivePlaylist, sampleAssetsDirectory } from "../../../lib/local-playlist";
@@ -154,10 +156,20 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
     const now = new Date().toISOString();
     const nextItems = mediaStore.items.filter((item) => item.id !== mediaId);
+    const folderStore = await readMediaFolderStore();
+    const assignments = { ...folderStore.assignments };
+    delete assignments[mediaId];
+
     await writeMediaStore({
       ...mediaStore,
       items: nextItems,
       version: mediaStore.version + 1,
+      updatedAt: now
+    });
+    await writeMediaFolderStore({
+      ...folderStore,
+      assignments,
+      version: folderStore.version + 1,
       updatedAt: now
     });
 

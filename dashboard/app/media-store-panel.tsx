@@ -4,6 +4,13 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { StatusPill } from "./dashboard-ui";
 
+type MediaFolder = {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type MediaItem = {
   id: string;
   title: string;
@@ -17,6 +24,8 @@ type MediaItem = {
   status: "ready" | "processing" | "failed";
   createdAt: string;
   updatedAt: string;
+  folderId?: string | null;
+  folderName?: string | null;
   missingFile?: boolean;
   origin?: "media-store" | "playlist";
   playlistAssetIds?: string[];
@@ -24,6 +33,7 @@ type MediaItem = {
 };
 
 type MediaListResponse = {
+  folders: MediaFolder[];
   items: MediaItem[];
   pagination: {
     cursor: number;
@@ -54,6 +64,22 @@ type DeleteResponse = {
   error?: string;
 };
 
+type FolderCreateResponse = {
+  error?: string;
+  folder?: MediaFolder;
+};
+
+type FolderDeleteResponse = {
+  deleted?: boolean;
+  error?: string;
+  folder?: MediaFolder;
+};
+
+type FolderMoveResponse = {
+  error?: string;
+  moved?: number;
+};
+
 type StatusTone = "good" | "warn" | "muted";
 type SafetyFilter = "all" | "ready" | "review";
 type TypeFilter = "all" | "video" | "still" | "mov";
@@ -64,6 +90,8 @@ type PlaybackSafety = {
   label: string;
   tone: StatusTone;
 };
+
+const folderFilterPrefix = "folder:";
 
 function formatTimestamp(timestamp: string): string {
   const date = new Date(timestamp);
@@ -76,7 +104,7 @@ function formatTimestamp(timestamp: string): string {
 
 function formatBytes(value: number): string {
   if (value <= 0) {
-    return "—";
+    return "-";
   }
 
   return new Intl.NumberFormat("en", {
@@ -87,11 +115,7 @@ function formatBytes(value: number): string {
 }
 
 function formatDuration(value: number | null): string {
-  return typeof value === "number" && Number.isFinite(value) ? `${value}s` : "—";
-}
-
-function formatTags(tags: string[]): string {
-  return tags.length > 0 ? tags.join(", ") : "—";
+  return typeof value === "number" && Number.isFinite(value) ? `${value}s` : "-";
 }
 
 function isMp4FileName(fileName: string): boolean {
@@ -102,9 +126,9 @@ function isStillClipFileName(fileName: string): boolean {
   return /\.still-\d+s(?:-\d+)?\.mp4$/i.test(fileName);
 }
 
-function mediaKind(item: MediaItem): "Still" | "Video" | "MOV" | "File" {
+function mediaKind(item: MediaItem): "Image" | "Video" | "MOV" | "File" {
   if (isStillClipFileName(item.playbackFileName)) {
-    return "Still";
+    return "Image";
   }
 
   if (/\.mov$/i.test(item.playbackFileName)) {
@@ -118,7 +142,7 @@ function playbackSafety(item: MediaItem): PlaybackSafety {
   if (item.missingFile) {
     return {
       canUseInPlaylist: false,
-      detail: "The local asset file is missing.",
+      detail: "The local file is missing.",
       label: "Missing",
       tone: "warn"
     };
@@ -145,7 +169,7 @@ function playbackSafety(item: MediaItem): PlaybackSafety {
   if (!isMp4FileName(item.playbackFileName)) {
     return {
       canUseInPlaylist: false,
-      detail: "Convert this media to MP4 before adding it to the Pi playlist.",
+      detail: "Convert this media to MP4 before adding it to the playlist.",
       label: "Needs MP4",
       tone: "warn"
     };
@@ -153,7 +177,7 @@ function playbackSafety(item: MediaItem): PlaybackSafety {
 
   return {
     canUseInPlaylist: true,
-    detail: "Ready for the Pi playlist.",
+    detail: "Ready for the playlist.",
     label: "Ready",
     tone: "good"
   };
@@ -176,6 +200,32 @@ function isInPlaylist(item: MediaItem): boolean {
   return (item.playlistUseCount ?? 0) > 0;
 }
 
+function selectedCustomFolderId(folderFilter: string): string | null {
+  return folderFilter.startsWith(folderFilterPrefix) ? folderFilter.slice(folderFilterPrefix.length) : null;
+}
+
+function folderLabel(item: MediaItem): string {
+  return item.folderName ?? "Unfiled";
+}
+
+function matchesFolderFilter(item: MediaItem, folderFilter: string): boolean {
+  if (folderFilter === "all") {
+    return true;
+  }
+  if (folderFilter === "unfiled") {
+    return !item.folderId;
+  }
+  if (folderFilter === "playlist") {
+    return isInPlaylist(item);
+  }
+  if (folderFilter === "review") {
+    return !playbackSafety(item).canUseInPlaylist;
+  }
+
+  const folderId = selectedCustomFolderId(folderFilter);
+  return folderId ? item.folderId === folderId : true;
+}
+
 function matchesSafetyFilter(item: MediaItem, filter: SafetyFilter): boolean {
   if (filter === "all") {
     return true;
@@ -192,7 +242,7 @@ function matchesTypeFilter(item: MediaItem, filter: TypeFilter): boolean {
 
   const kind = mediaKind(item);
   if (filter === "still") {
-    return kind === "Still";
+    return kind === "Image";
   }
   if (filter === "mov") {
     return kind === "MOV";
@@ -215,31 +265,53 @@ function canDeleteMedia(item: MediaItem): boolean {
   return item.origin !== "playlist" && !isInPlaylist(item);
 }
 
+function sidebarButtonClass(selected: boolean): string {
+  return selected
+    ? "bg-teal-50 text-teal-950 ring-teal-200"
+    : "bg-white text-zinc-700 ring-zinc-200 hover:bg-zinc-50";
+}
+
 export function MediaStorePanel() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<MediaItem[]>([]);
+  const [folders, setFolders] = useState<MediaFolder[]>([]);
   const [totalItems, setTotalItems] = useState(0);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
+  const [folderFilter, setFolderFilter] = useState("all");
   const [safetyFilter, setSafetyFilter] = useState<SafetyFilter>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [showUpload, setShowUpload] = useState(false);
   const [uploadTitle, setUploadTitle] = useState("");
   const [uploadTags, setUploadTags] = useState("");
+  const [uploadFolderId, setUploadFolderId] = useState("");
   const [durationSeconds, setDurationSeconds] = useState("10");
+  const [newFolderName, setNewFolderName] = useState("");
+  const [targetFolderId, setTargetFolderId] = useState("");
+  const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
   const [message, setMessage] = useState("Loading media...");
   const [messageTone, setMessageTone] = useState<"idle" | "success" | "warning" | "error">("idle");
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isMoving, setIsMoving] = useState(false);
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
   const [addingMediaId, setAddingMediaId] = useState<string | null>(null);
   const [deletingMediaId, setDeletingMediaId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const selectedIds = useMemo(() => new Set(selectedMediaIds), [selectedMediaIds]);
   const visibleItems = useMemo(
-    () => items.filter((item) => matchesSafetyFilter(item, safetyFilter) && matchesTypeFilter(item, typeFilter)),
-    [items, safetyFilter, typeFilter]
+    () =>
+      items.filter(
+        (item) =>
+          matchesFolderFilter(item, folderFilter) &&
+          matchesSafetyFilter(item, safetyFilter) &&
+          matchesTypeFilter(item, typeFilter)
+      ),
+    [folderFilter, items, safetyFilter, typeFilter]
   );
   const readyItemCount = useMemo(
     () => items.filter((item) => playbackSafety(item).canUseInPlaylist).length,
@@ -250,7 +322,39 @@ export function MediaStorePanel() {
     [items]
   );
   const reviewItemCount = items.length - readyItemCount;
-  const isBusy = isPending || isLoading || isUploading || addingMediaId !== null || deletingMediaId !== null;
+  const unfiledItemCount = items.filter((item) => !item.folderId).length;
+  const folderCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const folder of folders) {
+      counts.set(folder.id, 0);
+    }
+    for (const item of items) {
+      if (item.folderId) {
+        counts.set(item.folderId, (counts.get(item.folderId) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [folders, items]);
+  const selectedFolderId = selectedCustomFolderId(folderFilter);
+  const selectedFolder = folders.find((folder) => folder.id === selectedFolderId) ?? null;
+  const visibleIds = visibleItems.map((item) => item.id);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+  const isBusy =
+    isPending ||
+    isLoading ||
+    isUploading ||
+    isMoving ||
+    isCreatingFolder ||
+    deletingFolderId !== null ||
+    addingMediaId !== null ||
+    deletingMediaId !== null;
+
+  useEffect(() => {
+    if (selectedFolderId) {
+      setUploadFolderId(selectedFolderId);
+      setTargetFolderId(selectedFolderId);
+    }
+  }, [selectedFolderId]);
 
   async function loadMedia(reset: boolean, requestedQuery = query): Promise<void> {
     const cursor = reset ? "0" : nextCursor ?? "0";
@@ -273,7 +377,11 @@ export function MediaStorePanel() {
       }
 
       const loadedCount = reset ? result.items.length : Math.min(cursorAsNumber(cursor) + result.items.length, result.pagination.total);
+      setFolders(result.folders ?? []);
       setItems((current) => (reset ? result.items : [...current, ...result.items]));
+      setSelectedMediaIds((current) =>
+        current.filter((id) => (reset ? result.items : [...items, ...result.items]).some((item) => item.id === id))
+      );
       setTotalItems(result.pagination.total);
       setNextCursor(result.pagination.nextCursor);
       setHasMore(result.pagination.hasMore);
@@ -291,6 +399,125 @@ export function MediaStorePanel() {
     void loadMedia(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
+
+  async function handleCreateFolder(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (isBusy) {
+      return;
+    }
+
+    const name = newFolderName.trim();
+    if (!name) {
+      setMessage("Name the folder first.");
+      setMessageTone("error");
+      return;
+    }
+
+    setIsCreatingFolder(true);
+    setMessage(`Creating ${name}...`);
+    setMessageTone("idle");
+    try {
+      const response = await fetch("/api/media-folders", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ name })
+      });
+      const result = (await response.json()) as FolderCreateResponse;
+      if (!response.ok || result.error || !result.folder) {
+        throw new Error(result.error ?? "Could not create folder.");
+      }
+
+      setNewFolderName("");
+      setFolderFilter(`${folderFilterPrefix}${result.folder.id}`);
+      setUploadFolderId(result.folder.id);
+      setTargetFolderId(result.folder.id);
+      await loadMedia(true);
+      setMessage(`${result.folder.name} created.`);
+      setMessageTone("success");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not create folder.");
+      setMessageTone("error");
+    } finally {
+      setIsCreatingFolder(false);
+    }
+  }
+
+  async function handleRemoveSelectedFolder() {
+    if (!selectedFolder || isBusy) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Remove folder "${selectedFolder.name}"? Media will stay in Library.`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingFolderId(selectedFolder.id);
+    setMessage(`Removing ${selectedFolder.name}...`);
+    setMessageTone("idle");
+    try {
+      const response = await fetch(`/api/media-folders/${encodeURIComponent(selectedFolder.id)}`, {
+        method: "DELETE",
+        cache: "no-store"
+      });
+      const result = (await response.json()) as FolderDeleteResponse;
+      if (!response.ok || result.error || !result.deleted) {
+        throw new Error(result.error ?? "Could not remove folder.");
+      }
+
+      setFolderFilter("all");
+      setTargetFolderId("");
+      setUploadFolderId("");
+      await loadMedia(true);
+      setMessage(`${selectedFolder.name} removed.`);
+      setMessageTone("success");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not remove folder.");
+      setMessageTone("error");
+    } finally {
+      setDeletingFolderId(null);
+    }
+  }
+
+  async function handleMoveSelected() {
+    if (isBusy || selectedMediaIds.length === 0) {
+      return;
+    }
+
+    setIsMoving(true);
+    setMessage(`Moving ${selectedMediaIds.length} item${selectedMediaIds.length === 1 ? "" : "s"}...`);
+    setMessageTone("idle");
+    try {
+      const response = await fetch("/api/media-folders", {
+        method: "PATCH",
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          folderId: targetFolderId || null,
+          mediaIds: selectedMediaIds
+        })
+      });
+      const result = (await response.json()) as FolderMoveResponse;
+      if (!response.ok || result.error || typeof result.moved !== "number") {
+        throw new Error(result.error ?? "Could not move media.");
+      }
+
+      setSelectedMediaIds([]);
+      await loadMedia(true);
+      setMessage(`${result.moved} item${result.moved === 1 ? "" : "s"} moved.`);
+      setMessageTone("success");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not move media.");
+      setMessageTone("error");
+    } finally {
+      setIsMoving(false);
+    }
+  }
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -310,6 +537,7 @@ export function MediaStorePanel() {
     formData.append("title", uploadTitle);
     formData.append("tags", uploadTags);
     formData.append("durationSeconds", durationSeconds);
+    formData.append("folderId", uploadFolderId);
     setIsUploading(true);
     setMessage(`Uploading ${file.name}...`);
     setMessageTone("idle");
@@ -430,6 +658,7 @@ export function MediaStorePanel() {
       }
 
       await loadMedia(true);
+      setSelectedMediaIds((current) => current.filter((id) => id !== item.id));
       setMessage(`${item.title} deleted.`);
       setMessageTone("success");
       startTransition(() => router.refresh());
@@ -441,239 +670,381 @@ export function MediaStorePanel() {
     }
   }
 
+  function toggleMediaSelection(mediaId: string, checked: boolean) {
+    setSelectedMediaIds((current) =>
+      checked ? Array.from(new Set([...current, mediaId])) : current.filter((id) => id !== mediaId)
+    );
+  }
+
+  function toggleVisibleSelection(checked: boolean) {
+    if (!checked) {
+      setSelectedMediaIds((current) => current.filter((id) => !visibleIds.includes(id)));
+      return;
+    }
+
+    setSelectedMediaIds((current) => Array.from(new Set([...current, ...visibleIds])));
+  }
+
+  function renderFolderButton(label: string, count: number, value: string) {
+    const selected = folderFilter === value;
+    return (
+      <button
+        key={value}
+        type="button"
+        onClick={() => setFolderFilter(value)}
+        aria-pressed={selected}
+        className={`flex min-h-10 max-w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-semibold ring-1 ${sidebarButtonClass(selected)}`}
+      >
+        <span className="truncate">{label}</span>
+        <span className="shrink-0 text-xs text-zinc-500">{count}</span>
+      </button>
+    );
+  }
+
   return (
     <section className="min-w-0 rounded-lg border border-zinc-200 bg-white shadow-sm">
-      <div className="border-b border-zinc-200 p-4">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="min-w-0">
-            <h2 className="text-lg font-semibold text-zinc-950">Library</h2>
-            <p className="mt-1 text-sm text-zinc-600">
-              {totalItems} assets · {readyItemCount} ready · {playlistItemCount} in playlist · {reviewItemCount} review
-            </p>
+        <div className="border-b border-zinc-200 p-4">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold text-zinc-950">Library</h2>
+              <p className="mt-1 text-sm text-zinc-600">
+                {totalItems} assets · {readyItemCount} ready · {playlistItemCount} in playlist
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusPill label={`${visibleItems.length} shown`} tone="muted" />
+              <button
+                type="button"
+                onClick={() => setShowUpload((current) => !current)}
+                className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white"
+              >
+                {showUpload ? "Close upload" : "Upload"}
+              </button>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusPill label={`${visibleItems.length} shown`} tone="muted" />
+
+          <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(280px,380px)] xl:items-start">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-semibold text-zinc-950">Folders</span>
+                <StatusPill label={`${folders.length}`} tone="muted" />
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {renderFolderButton("All media", items.length, "all")}
+                {renderFolderButton("Unfiled", unfiledItemCount, "unfiled")}
+                {renderFolderButton("In playlist", playlistItemCount, "playlist")}
+                {renderFolderButton("Review", reviewItemCount, "review")}
+                {folders.map((folder) =>
+                  renderFolderButton(folder.name, folderCounts.get(folder.id) ?? 0, `${folderFilterPrefix}${folder.id}`)
+                )}
+              </div>
+            </div>
+
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row xl:justify-end">
+              <form onSubmit={handleCreateFolder} className="flex min-w-0 flex-1 gap-2 xl:max-w-[300px]">
+                <label htmlFor="new-media-folder" className="sr-only">New folder name</label>
+                <input
+                  id="new-media-folder"
+                  value={newFolderName}
+                  onChange={(event) => setNewFolderName(event.currentTarget.value)}
+                  placeholder="New folder"
+                  disabled={isBusy}
+                  className="min-h-10 min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+                />
+                <button
+                  type="submit"
+                  disabled={isBusy}
+                  className="min-h-10 shrink-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100"
+                >
+                  {isCreatingFolder ? "Creating" : "Add"}
+                </button>
+              </form>
+
+              {selectedFolder ? (
+                <button
+                  type="button"
+                  onClick={() => void handleRemoveSelectedFolder()}
+                  disabled={isBusy}
+                  className="min-h-10 shrink-0 rounded-md border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-700 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
+                >
+                  {deletingFolderId === selectedFolder.id ? "Removing" : "Remove folder"}
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          <form
+            className="mt-4 grid gap-2 md:grid-cols-[minmax(0,1fr)_150px_130px_auto]"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setQuery(queryInput.trim());
+            }}
+          >
+            <label className="sr-only" htmlFor="media-search">Search media</label>
+            <input
+              id="media-search"
+              name="query"
+              value={queryInput}
+              onChange={(event) => setQueryInput(event.currentTarget.value)}
+              placeholder="Search media"
+              className="min-h-10 min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+            />
+            <label className="sr-only" htmlFor="media-safety-filter">Status</label>
+            <select
+              id="media-safety-filter"
+              value={safetyFilter}
+              onChange={(event) => setSafetyFilter(event.currentTarget.value as SafetyFilter)}
+              className="min-h-10 min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+            >
+              <option value="all">All status</option>
+              <option value="ready">Ready</option>
+              <option value="review">Review</option>
+            </select>
+            <label className="sr-only" htmlFor="media-type-filter">Type</label>
+            <select
+              id="media-type-filter"
+              value={typeFilter}
+              onChange={(event) => setTypeFilter(event.currentTarget.value as TypeFilter)}
+              className="min-h-10 min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+            >
+              <option value="all">All types</option>
+              <option value="video">Video</option>
+              <option value="still">Images</option>
+              <option value="mov">MOV</option>
+            </select>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={isBusy}
+                className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100"
+              >
+                {isLoading ? "Searching" : "Search"}
+              </button>
+              <button
+                type="button"
+                disabled={isBusy || (!query && !queryInput && safetyFilter === "all" && typeFilter === "all" && folderFilter === "all")}
+                onClick={() => {
+                  setQueryInput("");
+                  setQuery("");
+                  setSafetyFilter("all");
+                  setTypeFilter("all");
+                  setFolderFilter("all");
+                }}
+                className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400"
+              >
+                Clear
+              </button>
+            </div>
+          </form>
+
+          <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_180px_auto] md:items-center">
+            <p className="text-sm text-zinc-600">{selectedMediaIds.length} selected</p>
+            <label className="sr-only" htmlFor="move-media-folder">Move selected to folder</label>
+            <select
+              id="move-media-folder"
+              value={targetFolderId}
+              onChange={(event) => setTargetFolderId(event.currentTarget.value)}
+              disabled={isBusy || selectedMediaIds.length === 0}
+              className="min-h-10 min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 disabled:bg-zinc-100"
+            >
+              <option value="">Unfiled</option>
+              {folders.map((folder) => (
+                <option key={folder.id} value={folder.id}>{folder.name}</option>
+              ))}
+            </select>
             <button
               type="button"
-              onClick={() => setShowUpload((current) => !current)}
-              className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white"
+              onClick={() => void handleMoveSelected()}
+              disabled={isBusy || selectedMediaIds.length === 0}
+              className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400"
             >
-              {showUpload ? "Close upload" : "Upload"}
+              {isMoving ? "Moving" : "Move"}
             </button>
           </div>
         </div>
 
-        <form
-          className="mt-4 grid gap-2 md:grid-cols-[minmax(0,1fr)_160px_140px_auto]"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setQuery(queryInput.trim());
-          }}
-        >
-          <label className="sr-only" htmlFor="media-search">Search media</label>
-          <input
-            id="media-search"
-            name="query"
-            value={queryInput}
-            onChange={(event) => setQueryInput(event.currentTarget.value)}
-            placeholder="Search media"
-            className="min-h-10 min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-          />
-          <label className="sr-only" htmlFor="media-safety-filter">Status</label>
-          <select
-            id="media-safety-filter"
-            value={safetyFilter}
-            onChange={(event) => setSafetyFilter(event.currentTarget.value as SafetyFilter)}
-            className="min-h-10 min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-          >
-            <option value="all">All status</option>
-            <option value="ready">Ready</option>
-            <option value="review">Review</option>
-          </select>
-          <label className="sr-only" htmlFor="media-type-filter">Type</label>
-          <select
-            id="media-type-filter"
-            value={typeFilter}
-            onChange={(event) => setTypeFilter(event.currentTarget.value as TypeFilter)}
-            className="min-h-10 min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-          >
-            <option value="all">All types</option>
-            <option value="video">Video</option>
-            <option value="still">Still</option>
-            <option value="mov">MOV</option>
-          </select>
-          <div className="flex gap-2">
+        {showUpload ? (
+          <form onSubmit={handleUpload} className="grid gap-3 border-b border-zinc-200 bg-zinc-50 p-4 xl:grid-cols-[minmax(220px,1fr)_minmax(150px,0.5fr)_110px_minmax(150px,0.55fr)_minmax(150px,0.55fr)_auto] xl:items-end">
+            <div>
+              <label htmlFor="media-file" className="text-sm font-semibold text-zinc-950">File</label>
+              <input
+                ref={fileInputRef}
+                id="media-file"
+                name="media"
+                type="file"
+                accept="video/mp4,video/quicktime,image/jpeg,image/png,.mp4,.mov,.jpg,.jpeg,.png"
+                disabled={isBusy}
+                className="mt-1 block min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-950 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white"
+              />
+            </div>
+            <div>
+              <label htmlFor="media-title" className="text-sm font-semibold text-zinc-950">Title</label>
+              <input
+                id="media-title"
+                name="title"
+                value={uploadTitle}
+                onChange={(event) => setUploadTitle(event.currentTarget.value)}
+                disabled={isBusy}
+                className="mt-1 min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+              />
+            </div>
+            <div>
+              <label htmlFor="media-duration" className="text-sm font-semibold text-zinc-950">Image time</label>
+              <input
+                id="media-duration"
+                name="durationSeconds"
+                type="number"
+                min="1"
+                max="300"
+                value={durationSeconds}
+                onChange={(event) => setDurationSeconds(event.currentTarget.value)}
+                disabled={isBusy}
+                className="mt-1 min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+              />
+            </div>
+            <div>
+              <label htmlFor="media-tags" className="text-sm font-semibold text-zinc-950">Tags</label>
+              <input
+                id="media-tags"
+                name="tags"
+                value={uploadTags}
+                onChange={(event) => setUploadTags(event.currentTarget.value)}
+                disabled={isBusy}
+                className="mt-1 min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+              />
+            </div>
+            <div>
+              <label htmlFor="upload-media-folder" className="text-sm font-semibold text-zinc-950">Folder</label>
+              <select
+                id="upload-media-folder"
+                value={uploadFolderId}
+                onChange={(event) => setUploadFolderId(event.currentTarget.value)}
+                disabled={isBusy}
+                className="mt-1 min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+              >
+                <option value="">Unfiled</option>
+                {folders.map((folder) => (
+                  <option key={folder.id} value={folder.id}>{folder.name}</option>
+                ))}
+              </select>
+            </div>
             <button
               type="submit"
               disabled={isBusy}
-              className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100"
+              className="min-h-10 rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
             >
-              {isLoading ? "Searching" : "Search"}
+              {isUploading ? "Uploading" : "Save"}
             </button>
-            <button
-              type="button"
-              disabled={isBusy || (!query && !queryInput && safetyFilter === "all" && typeFilter === "all")}
-              onClick={() => {
-                setQueryInput("");
-                setQuery("");
-                setSafetyFilter("all");
-                setTypeFilter("all");
-              }}
-              className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400"
-            >
-              Clear
-            </button>
-          </div>
-        </form>
-      </div>
+          </form>
+        ) : null}
 
-      {showUpload ? (
-        <form onSubmit={handleUpload} className="grid gap-3 border-b border-zinc-200 bg-zinc-50 p-4 lg:grid-cols-[minmax(240px,1fr)_minmax(160px,0.5fr)_minmax(140px,0.4fr)_minmax(180px,0.6fr)_auto] lg:items-end">
-          <div>
-            <label htmlFor="media-file" className="text-sm font-semibold text-zinc-950">File</label>
-            <input
-              ref={fileInputRef}
-              id="media-file"
-              name="media"
-              type="file"
-              accept="video/mp4,video/quicktime,image/jpeg,image/png,.mp4,.mov,.jpg,.jpeg,.png"
-              disabled={isBusy}
-              className="mt-1 block min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-950 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white"
-            />
-          </div>
-          <div>
-            <label htmlFor="media-title" className="text-sm font-semibold text-zinc-950">Title</label>
-            <input
-              id="media-title"
-              name="title"
-              value={uploadTitle}
-              onChange={(event) => setUploadTitle(event.currentTarget.value)}
-              disabled={isBusy}
-              className="mt-1 min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-            />
-          </div>
-          <div>
-            <label htmlFor="media-duration" className="text-sm font-semibold text-zinc-950">Still sec</label>
-            <input
-              id="media-duration"
-              name="durationSeconds"
-              type="number"
-              min="1"
-              max="300"
-              value={durationSeconds}
-              onChange={(event) => setDurationSeconds(event.currentTarget.value)}
-              disabled={isBusy}
-              className="mt-1 min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-            />
-          </div>
-          <div>
-            <label htmlFor="media-tags" className="text-sm font-semibold text-zinc-950">Tags</label>
-            <input
-              id="media-tags"
-              name="tags"
-              value={uploadTags}
-              onChange={(event) => setUploadTags(event.currentTarget.value)}
-              disabled={isBusy}
-              className="mt-1 min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={isBusy}
-            className="min-h-10 rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
-          >
-            {isUploading ? "Uploading" : "Save"}
-          </button>
-        </form>
-      ) : null}
-
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[920px] text-left text-sm">
-          <thead className="bg-zinc-50 text-xs uppercase text-zinc-500">
-            <tr>
-              <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Type</th>
-              <th className="px-4 py-3">Duration</th>
-              <th className="px-4 py-3">Size</th>
-              <th className="px-4 py-3">Tags</th>
-              <th className="px-4 py-3">Updated</th>
-              <th className="px-4 py-3">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-200">
-            {visibleItems.map((item) => {
-              const safety = playbackSafety(item);
-              const inPlaylist = isInPlaylist(item);
-              const canAdd = safety.canUseInPlaylist && !inPlaylist && item.origin !== "playlist";
-              const deleting = deletingMediaId === item.id;
-              return (
-                <tr key={item.id} className="bg-white hover:bg-zinc-50">
-                  <td className="max-w-[300px] px-4 py-3">
-                    <p className="truncate font-semibold text-zinc-950" title={item.title}>{item.title}</p>
-                    <p className="mt-1 truncate text-xs text-zinc-500" title={item.playbackFileName}>{item.playbackFileName}</p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span title={safety.detail}>
-                      <StatusPill label={safety.label} tone={safety.tone} />
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-zinc-700">{mediaKind(item)}</td>
-                  <td className="px-4 py-3 text-zinc-700">{formatDuration(item.durationSeconds)}</td>
-                  <td className="px-4 py-3 text-zinc-700">{formatBytes(item.sizeBytes)}</td>
-                  <td className="max-w-[160px] px-4 py-3 text-zinc-700">
-                    <span className="block truncate" title={formatTags(item.tags)}>{formatTags(item.tags)}</span>
-                  </td>
-                  <td className="px-4 py-3 text-zinc-700">{formatTimestamp(item.updatedAt)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void handleAddToPlaylist(item)}
-                        disabled={isBusy || !canAdd}
-                        className="min-h-9 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
-                      >
-                        {actionLabel(item, addingMediaId)}
-                      </button>
-                      {canDeleteMedia(item) ? (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] text-left text-sm">
+            <thead className="bg-zinc-50 text-xs uppercase text-zinc-500">
+              <tr>
+                <th className="px-4 py-3">
+                  <label className="sr-only" htmlFor="select-visible-media">Select visible media</label>
+                  <input
+                    id="select-visible-media"
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={(event) => toggleVisibleSelection(event.currentTarget.checked)}
+                    className="h-4 w-4 accent-teal-700"
+                  />
+                </th>
+                <th className="px-4 py-3">Name</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Folder</th>
+                <th className="px-4 py-3">Duration</th>
+                <th className="px-4 py-3">Size</th>
+                <th className="px-4 py-3">Updated</th>
+                <th className="px-4 py-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-200">
+              {visibleItems.map((item) => {
+                const safety = playbackSafety(item);
+                const inPlaylist = isInPlaylist(item);
+                const canAdd = safety.canUseInPlaylist && !inPlaylist && item.origin !== "playlist";
+                const deleting = deletingMediaId === item.id;
+                return (
+                  <tr key={item.id} className="bg-white hover:bg-zinc-50">
+                    <td className="px-4 py-3">
+                      <label className="sr-only" htmlFor={`select-${item.id}`}>Select {item.title}</label>
+                      <input
+                        id={`select-${item.id}`}
+                        type="checkbox"
+                        checked={selectedIds.has(item.id)}
+                        onChange={(event) => toggleMediaSelection(item.id, event.currentTarget.checked)}
+                        className="h-4 w-4 accent-teal-700"
+                      />
+                    </td>
+                    <td className="max-w-[380px] px-4 py-3">
+                      <p className="truncate font-semibold text-zinc-950" title={item.title}>{item.title}</p>
+                      <p className="mt-1 truncate text-xs text-zinc-500" title={item.playbackFileName}>{item.playbackFileName}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span title={safety.detail}>
+                        <StatusPill label={safety.label} tone={safety.tone} />
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-zinc-700">{mediaKind(item)}</td>
+                    <td className="max-w-[160px] px-4 py-3 text-zinc-700">
+                      <span className="block truncate" title={folderLabel(item)}>{folderLabel(item)}</span>
+                    </td>
+                    <td className="px-4 py-3 text-zinc-700">{formatDuration(item.durationSeconds)}</td>
+                    <td className="px-4 py-3 text-zinc-700">{formatBytes(item.sizeBytes)}</td>
+                    <td className="px-4 py-3 text-zinc-700">{formatTimestamp(item.updatedAt)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
-                          onClick={() => void handleDelete(item)}
-                          disabled={isBusy}
-                          className="min-h-9 rounded-md border border-rose-200 bg-white px-3 py-1.5 text-sm font-semibold text-rose-700 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
+                          onClick={() => void handleAddToPlaylist(item)}
+                          disabled={isBusy || !canAdd}
+                          className="min-h-9 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
                         >
-                          {deleting ? "Deleting" : "Delete"}
+                          {actionLabel(item, addingMediaId)}
                         </button>
-                      ) : null}
-                    </div>
+                        {canDeleteMedia(item) ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleDelete(item)}
+                            disabled={isBusy}
+                            className="min-h-9 rounded-md border border-rose-200 bg-white px-3 py-1.5 text-sm font-semibold text-rose-700 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
+                          >
+                            {deleting ? "Deleting" : "Delete"}
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {visibleItems.length === 0 ? (
+                <tr>
+                  <td className="px-4 py-8 text-zinc-600" colSpan={9}>
+                    {items.length === 0 ? message : "No media matches these filters."}
                   </td>
                 </tr>
-              );
-            })}
-            {visibleItems.length === 0 ? (
-              <tr>
-                <td className="px-4 py-8 text-zinc-600" colSpan={8}>
-                  {items.length === 0 ? message : "No media matches these filters."}
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
 
-      <div className="flex flex-col gap-2 border-t border-zinc-200 p-4 sm:flex-row sm:items-center sm:justify-between">
-        <p className={`text-sm ${messageClass(messageTone)}`} role="status" aria-live="polite">{message}</p>
-        <button
-          type="button"
-          disabled={!hasMore || isLoading}
-          onClick={() => {
-            void loadMedia(false);
-          }}
-          className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400"
-        >
-          {isLoading ? "Loading" : hasMore ? "Load more" : "All loaded"}
-        </button>
-      </div>
+        <div className="flex flex-col gap-2 border-t border-zinc-200 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className={`text-sm ${messageClass(messageTone)}`} role="status" aria-live="polite">{message}</p>
+          <button
+            type="button"
+            disabled={!hasMore || isLoading}
+            onClick={() => {
+              void loadMedia(false);
+            }}
+            className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400"
+          >
+            {isLoading ? "Loading" : hasMore ? "Load more" : "All loaded"}
+          </button>
+        </div>
     </section>
   );
 }

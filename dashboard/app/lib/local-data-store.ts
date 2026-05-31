@@ -23,6 +23,20 @@ export type MediaStore = {
   version: number;
 };
 
+export type MediaFolderRecord = {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MediaFolderStore = {
+  assignments: Record<string, string | null>;
+  items: MediaFolderRecord[];
+  updatedAt: string;
+  version: number;
+};
+
 export type ScreenRecord = {
   deviceId: string | null;
   group: string;
@@ -135,6 +149,7 @@ export type RecoveryStore = {
 type JsonStorePaths = {
   activity: string;
   devices: string;
+  mediaFolders: string;
   media: string;
   recovery: string;
   schedules: string;
@@ -151,6 +166,7 @@ function jsonStorePaths(): JsonStorePaths {
   return {
     activity: path.join(root, "activity.local.json"),
     devices: path.join(root, "devices.local.json"),
+    mediaFolders: path.join(root, "media-folders.local.json"),
     media: path.join(root, "media.local.json"),
     recovery: path.join(root, "recovery.local.json"),
     schedules: path.join(root, "schedules.local.json"),
@@ -161,6 +177,15 @@ function jsonStorePaths(): JsonStorePaths {
 
 function defaultMediaStore(): MediaStore {
   return {
+    items: [],
+    updatedAt: isoNow(),
+    version: 1
+  };
+}
+
+function defaultMediaFolderStore(): MediaFolderStore {
+  return {
+    assignments: {},
     items: [],
     updatedAt: isoNow(),
     version: 1
@@ -257,6 +282,7 @@ export async function ensureLocalDataFoundation(): Promise<void> {
   await fs.mkdir(localStateDirectory(), { recursive: true });
   await Promise.all([
     ensureJsonFile(paths.media, defaultMediaStore()),
+    ensureJsonFile(paths.mediaFolders, defaultMediaFolderStore()),
     ensureJsonFile(paths.screens, defaultScreenStore()),
     ensureJsonFile(paths.devices, defaultDeviceStore()),
     ensureJsonFile(paths.schedules, defaultScheduleStore()),
@@ -274,6 +300,21 @@ export async function readMediaStore(): Promise<MediaStore> {
 export async function writeMediaStore(value: MediaStore): Promise<void> {
   const paths = jsonStorePaths();
   await writeJsonStore(paths.media, value);
+}
+
+export async function readMediaFolderStore(): Promise<MediaFolderStore> {
+  const paths = jsonStorePaths();
+  const store = await readJsonOrDefaults(paths.mediaFolders, defaultMediaFolderStore());
+  return {
+    ...store,
+    assignments: store.assignments ?? {},
+    items: Array.isArray(store.items) ? store.items : []
+  };
+}
+
+export async function writeMediaFolderStore(value: MediaFolderStore): Promise<void> {
+  const paths = jsonStorePaths();
+  await writeJsonStore(paths.mediaFolders, value);
 }
 
 export async function readScreenStore(): Promise<ScreenStore> {
