@@ -5,7 +5,7 @@ import { DeviceHealthFleetPanel } from "./device-health-fleet-panel";
 import { ensureLocalDataFoundation } from "./lib/local-data-store";
 import type { DeviceStore, ScreenRecord, ScreenStore } from "./lib/local-data-store";
 import { ensureInventorySeed } from "./lib/local-inventory";
-import { publishStatusPath, readLivePlaylist, repoRoot } from "./lib/local-playlist";
+import { localStateDirectory, publishStatusPath, readLivePlaylist, repoRoot, writeFileAtomic } from "./lib/local-playlist";
 import type { Playlist, PlaylistAsset } from "./lib/local-playlist";
 import { readPiConfig, runSsh } from "./lib/pi-local";
 import { MediaStorePanel } from "./media-store-panel";
@@ -64,12 +64,23 @@ type PiProbe = {
   displayMode: string | null;
 };
 
+type LastKnownPlayback = {
+  bootId: string | null;
+  displayMode: string | null;
+  host: string;
+  observedAt: string;
+  playerStatus: PlayerStatus | null;
+  serviceActiveState: string | null;
+  serviceSubState: string | null;
+};
+
 type DashboardState = {
   heartbeat: Heartbeat | null;
   inventory: {
     devices: DeviceStore;
     screens: ScreenStore;
   };
+  lastKnownPlayback: LastKnownPlayback | null;
   playlist: Playlist;
   publishStatus: PublishStatus | null;
   pi: PiProbe;
@@ -327,6 +338,11 @@ function formatStatusAge(timestamp: string | null | undefined): string {
   return `${Math.round(ageMinutes / 60)}h ago`;
 }
 
+function formatElapsedSince(timestamp: string | null | undefined): string | null {
+  const age = formatStatusAge(timestamp);
+  return age === "Not reported" || age === "Unknown" ? null : age.replace(/ ago$/, "");
+}
+
 function localConfigLabel(name: string): string | null {
   const value = process.env[name]?.trim();
   return value ? value : null;
@@ -455,6 +471,86 @@ function bootRecoveryLabel(pi: PiProbe, playbackHealthy: boolean): string {
 function bootRecoveryDetail(pi: PiProbe): string {
   const bootLabel = pi.bootId ? `boot ${pi.bootId.slice(0, 8)}` : "boot not reported";
   return pi.uptime ? `${pi.uptime} · ${bootLabel}` : bootLabel;
+}
+
+function lastKnownPlaybackPath(): string {
+  return `${localStateDirectory()}/last-known-playback.json`;
+}
+
+async function readLastKnownPlayback(host: string | null): Promise<LastKnownPlayback | null> {
+  if (!host) {
+    return null;
+  }
+
+  try {
+    const snapshot = JSON.parse(await fs.readFile(lastKnownPlaybackPath(), "utf8")) as LastKnownPlayback;
+    return snapshot.host === host ? snapshot : null;
+  } catch (error) {
+    const code = error instanceof Error && "code" in error ? error.code : undefined;
+    if (code === "ENOENT") {
+      return null;
+    }
+
+    console.error("last known playback read failed", error);
+    return null;
+  }
+}
+
+async function resolveLastKnownPlayback(pi: PiProbe): Promise<LastKnownPlayback | null> {
+  if (!pi.host) {
+    return null;
+  }
+
+  if (!pi.reachable) {
+    return readLastKnownPlayback(pi.host);
+  }
+
+  const snapshot: LastKnownPlayback = {
+    bootId: pi.bootId,
+    displayMode: pi.displayMode,
+    host: pi.host,
+    observedAt: new Date().toISOString(),
+    playerStatus: pi.playerStatus,
+    serviceActiveState: pi.serviceActiveState,
+    serviceSubState: pi.serviceSubState
+  };
+
+  try {
+    await writeFileAtomic(lastKnownPlaybackPath(), `${JSON.stringify(snapshot, null, 2)}\n`);
+  } catch (error) {
+    console.error("last known playback write failed", error);
+  }
+
+  return snapshot;
+}
+
+function lastKnownPlaybackLabel(snapshot: LastKnownPlayback | null): string | null {
+  if (!snapshot || snapshot.playerStatus?.state !== "playing") {
+    return null;
+  }
+
+  return `Last known playing ${formatStatusAge(snapshot.playerStatus.updatedAt ?? snapshot.observedAt)}`;
+}
+
+function offlineDurationLabel(snapshot: LastKnownPlayback | null): string | null {
+  const elapsed = formatElapsedSince(snapshot?.observedAt);
+  return elapsed ? `Offline for ${elapsed}` : null;
+}
+
+function offlinePlaybackDetail(snapshot: LastKnownPlayback | null): string {
+  const details: string[] = [];
+  const lastKnown = lastKnownPlaybackLabel(snapshot);
+  const offlineDuration = offlineDurationLabel(snapshot);
+
+  if (offlineDuration) {
+    details.push(`${offlineDuration}.`);
+  }
+  if (lastKnown) {
+    details.push(`${lastKnown}.`);
+  }
+  details.push("Playback unknown until this screen comes back online.");
+
+  return details.join(" ");
 }
 
 function parseServiceStatus(rawValue: string): Pick<
@@ -617,8 +713,9 @@ async function loadDashboardState(): Promise<DashboardState> {
     readJsonFile<PublishStatus>(publishStatusPath()),
     loadPiProbe()
   ]);
+  const lastKnownPlayback = await resolveLastKnownPlayback(pi);
 
-  return { heartbeat, inventory, playlist, publishStatus, pi };
+  return { heartbeat, inventory, lastKnownPlayback, playlist, publishStatus, pi };
 }
 
 function syncState(localVersion: number, piVersion: number | undefined, piReachable: boolean) {
@@ -716,6 +813,7 @@ function fleetCommandRows({
   inventory,
   isPlaying,
   isPlayerStatusFresh,
+  lastKnownPlayback,
   pi,
   playbackHealthy,
   playbackLabel,
@@ -725,6 +823,7 @@ function fleetCommandRows({
   inventory: DashboardState["inventory"];
   isPlaying: boolean;
   isPlayerStatusFresh: boolean;
+  lastKnownPlayback: LastKnownPlayback | null;
   pi: PiProbe;
   playbackHealthy: boolean;
   playbackLabel: string;
@@ -775,7 +874,7 @@ function fleetCommandRows({
         : isLive
           ? pi.reachable
             ? playlistSyncState.detail
-            : "Beam cannot reach this device. Local playback may still be running from the cached playlist."
+            : offlinePlaybackDetail(lastKnownPlayback)
           : "This device is saved in Beam, but it is not checking in yet.";
 
       return {
@@ -807,7 +906,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const resolvedSearchParams = await searchParams;
   const selectedView = dashboardViewFrom(resolvedSearchParams?.view);
   const currentViewCopy = viewCopy[selectedView];
-  const { heartbeat, inventory, playlist, publishStatus, pi } = await loadDashboardState();
+  const { heartbeat, inventory, lastKnownPlayback, playlist, publishStatus, pi } = await loadDashboardState();
   const selectedScreenParam = scalarSearchParam(resolvedSearchParams?.screen);
   const playerStatus = pi.playerStatus;
   const playbackState = playerStatus?.state ?? (pi.reachable ? "unknown" : "unreachable");
@@ -882,6 +981,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     inventory,
     isPlaying,
     isPlayerStatusFresh,
+    lastKnownPlayback,
     pi,
     playbackHealthy,
     playbackLabel,
@@ -932,6 +1032,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const focusedPlaybackLabel = focusedScreen?.playbackLabel ?? playbackLabel;
   const focusedSyncLabel = focusedScreen?.syncLabel ?? playlistSyncState.label;
   const focusedScreenHost = focusedScreen?.host || pi.host || "No host";
+  const focusedOfflineDuration = focusedScreenIsLive && !pi.reachable ? offlineDurationLabel(lastKnownPlayback) : null;
+  const focusedLastKnownPlayback =
+    focusedScreenIsLive && !pi.reachable ? lastKnownPlaybackLabel(lastKnownPlayback) : null;
   const focusedScreenTitle = focusedScreenIsLive
     ? pi.reachable
       ? currentPlayback
@@ -940,7 +1043,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const focusedScreenDetail = focusedScreenIsLive
     ? pi.reachable
       ? currentPlaybackStatus
-      : "Beam cannot reach this screen. Cached playback may still be running locally, but this dashboard cannot confirm it until the network returns."
+      : offlinePlaybackDetail(lastKnownPlayback)
     : "This screen is saved in Beam. Once it checks in, its current playback will appear here.";
   const focusedLastReportLabel = focusedScreenIsLive
     ? pi.reachable
@@ -956,7 +1059,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     : "Not reporting";
   const focusedScreenSummary = focusedScreenIsLive && pi.reachable
     ? `${focusedLiveSummary} · ${focusedSyncLabel} · Last report ${focusedLastReportLabel}`
-    : `${focusedLiveSummary} · Last report ${focusedLastReportLabel}`;
+    : [focusedOfflineDuration ?? focusedLiveSummary, focusedLastKnownPlayback ?? "Playback unknown"].join(" · ");
   const previewEyebrow = focusedScreenIsLive && pi.reachable ? "Showing now" : "Screen status";
   const focusedPlayerUrl =
     focusedScreenIsLive && piPlayerUrl
