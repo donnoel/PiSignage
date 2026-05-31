@@ -29,20 +29,26 @@ type FleetDeviceHealthPanelProps = {
   devices: DeviceRecord[];
   screens: ScreenRecord[];
   liveHost: string | null;
+  livePlaylistId: string | null;
   livePlaybackHealthy: boolean;
   livePlaybackState: string;
   livePlaylistVersion: number | null;
   liveReachable: boolean;
   liveStatusStale: boolean;
-  playlistId: string;
-  playlistVersion: number;
+  playlists: Array<{
+    name: string;
+    playlistId: string;
+    version: number;
+  }>;
   statusAgeLabel: string;
   statusTimestampLabel: string;
 };
 
-type FilterKey = "all" | "attention" | "offline" | "stale" | "sync" | "unknown";
+type FilterKey = "all" | "attention" | "offline" | "stale" | "sync" | "waiting";
 
 type RowState = {
+  assignedPlaylistId: string | null;
+  assignedPlaylistName: string;
   device: DeviceRecord;
   healthDetail: string;
   healthLabel: string;
@@ -51,15 +57,23 @@ type RowState = {
   lastSeen: string;
   linkedScreen: ScreenRecord | null;
   needsAttention: boolean;
+  playbackDetail: string;
+  playbackTone: Tone;
   playbackLabel: string;
   syncDetail: string;
   syncLabel: string;
   syncTone: Tone;
+  syncVersionDetail: string;
 };
 
-type RecoveryResponse = {
+type ActionResponse = {
   error?: string;
   message?: string;
+  piPublish?: {
+    message: string;
+    ok: boolean;
+  };
+  playlistVersion?: number;
 };
 
 function compareText(left: string, right: string): number {
@@ -78,17 +92,31 @@ function deviceMatchesLiveHost(device: DeviceRecord, liveHost: string | null): b
   return Boolean(liveHost && normalize(device.host) === normalize(liveHost));
 }
 
+function plainPlaybackLabel(value: string): string {
+  if (value === "Stale") {
+    return "Old report";
+  }
+  if (value === "unreachable") {
+    return "Not available";
+  }
+  if (value === "unknown") {
+    return "Not confirmed";
+  }
+
+  return value || "Not reported";
+}
+
 export function DeviceHealthFleetPanel({
   devices,
   screens,
   liveHost,
+  livePlaylistId,
   livePlaybackHealthy,
   livePlaybackState,
   livePlaylistVersion,
   liveReachable,
   liveStatusStale,
-  playlistId,
-  playlistVersion,
+  playlists,
   statusAgeLabel,
   statusTimestampLabel
 }: FleetDeviceHealthPanelProps) {
@@ -97,8 +125,9 @@ export function DeviceHealthFleetPanel({
   const [query, setQuery] = useState("");
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(devices[0]?.id ?? null);
   const [message, setMessage] = useState("");
-  const [recoveringDeviceId, setRecoveringDeviceId] = useState<string | null>(null);
+  const [busyAction, setBusyAction] = useState<"publish" | "recover" | "refresh" | "restart" | null>(null);
   const [isPending, startTransition] = useTransition();
+  const isBusy = Boolean(busyAction) || isPending;
 
   const screensByDeviceId = useMemo(() => {
     const next = new Map<string, ScreenRecord>();
@@ -116,6 +145,10 @@ export function DeviceHealthFleetPanel({
     return next;
   }, [devices, screens]);
 
+  const playlistsById = useMemo(() => {
+    return new Map(playlists.map((playlist) => [playlist.playlistId, playlist]));
+  }, [playlists]);
+
   const rows = useMemo<RowState[]>(() => {
     return devices
       .slice()
@@ -127,38 +160,72 @@ export function DeviceHealthFleetPanel({
       )
       .map((device) => {
         const linkedScreen = screensByDeviceId.get(device.id) ?? null;
+        const assignedPlaylistId = linkedScreen?.playlistId ?? device.playlistId;
+        const assignedPlaylist = assignedPlaylistId ? playlistsById.get(assignedPlaylistId) : null;
         const isLive = deviceMatchesLiveHost(device, liveHost);
         const hostConfigured = Boolean(device.host.trim()) && device.host !== "Not configured";
-        let healthLabel = "Unknown";
-        let healthDetail = "No live probe for this host";
+        let healthLabel = "Waiting";
+        let healthDetail = "Saved in Beam, but this screen has not checked in yet.";
         let healthTone: Tone = "muted";
 
         if (!hostConfigured) {
-          healthLabel = "Not configured";
-          healthDetail = "Host not configured";
+          healthLabel = "Set up needed";
+          healthDetail = "Add the device host before Beam can check this screen.";
+          healthTone = "warn";
         } else if (isLive) {
           healthLabel = liveReachable ? "Online" : "Offline";
-          healthDetail = liveReachable ? "Live probe reachable" : "Live probe unavailable";
+          healthDetail = liveReachable
+            ? "Beam can reach this screen on the local network."
+            : "Beam cannot reach this screen right now.";
           healthTone = liveReachable ? "good" : "warn";
         }
 
-        const playbackLabel = isLive ? livePlaybackState : "Unknown";
-        let syncLabel = "Unknown";
-        let syncDetail = "No playlist version has been reported for this device";
+        let playbackLabel = "Not reported";
+        let playbackDetail = "No live playback report is available for this saved screen.";
+        let playbackTone: Tone = "muted";
+        if (isLive && !liveReachable) {
+          playbackLabel = "Not available";
+          playbackDetail = "Playback may continue locally, but Beam cannot verify it until the screen is reachable.";
+          playbackTone = "warn";
+        } else if (isLive && livePlaybackHealthy) {
+          playbackLabel = "Playing";
+          playbackDetail = "Beam has a fresh report that this screen is playing.";
+          playbackTone = "good";
+        } else if (isLive) {
+          playbackLabel = plainPlaybackLabel(livePlaybackState);
+          playbackDetail = liveStatusStale
+            ? "The last playing report is old. Playback may still be running locally."
+            : "Beam has not confirmed playback yet.";
+          playbackTone = "warn";
+        }
+
+        let syncLabel = "Waiting";
+        let syncDetail = "No playlist update report has been received from this screen yet.";
         let syncTone: Tone = "muted";
 
-        if (device.playlistId !== playlistId) {
-          syncLabel = "Unassigned";
-          syncDetail = "No active playlist is assigned";
+        if (!assignedPlaylistId) {
+          syncLabel = "Choose playlist";
+          syncDetail = "Assign a playlist before publishing to this screen.";
           syncTone = "warn";
-        } else if (isLive && liveReachable && livePlaylistVersion !== null) {
-          if (livePlaylistVersion === playlistVersion) {
-            syncLabel = "In sync";
-            syncDetail = `Local v${playlistVersion}; Pi v${livePlaylistVersion}`;
+        } else if (!assignedPlaylist) {
+          syncLabel = "Review";
+          syncDetail = "This screen points to a playlist Beam cannot find locally.";
+          syncTone = "warn";
+        } else if (isLive && liveReachable && livePlaylistVersion !== null && livePlaylistId) {
+          if (livePlaylistId !== assignedPlaylist.playlistId) {
+            syncLabel = "Update needed";
+            syncDetail = `Assigned to ${assignedPlaylist.name}, but the screen reported another playlist.`;
+            syncTone = "warn";
+          } else if (livePlaylistVersion === assignedPlaylist.version) {
+            syncLabel = "Up to date";
+            syncDetail = `${assignedPlaylist.name} is on the screen.`;
             syncTone = "good";
           } else {
-            syncLabel = livePlaylistVersion < playlistVersion ? "Pi behind" : "Mismatch";
-            syncDetail = `Local v${playlistVersion}; Pi v${livePlaylistVersion}`;
+            syncLabel = livePlaylistVersion < assignedPlaylist.version ? "Update needed" : "Review";
+            syncDetail =
+              livePlaylistVersion < assignedPlaylist.version
+                ? "Beam has a newer saved update than the screen has reported."
+                : "The screen reported a newer playlist update than Beam has saved.";
             syncTone = "warn";
           }
         }
@@ -174,6 +241,8 @@ export function DeviceHealthFleetPanel({
 
         return {
           device,
+          assignedPlaylistId: assignedPlaylistId ?? null,
+          assignedPlaylistName: assignedPlaylist?.name ?? "No playlist assigned",
           healthDetail,
           healthLabel,
           healthTone,
@@ -181,22 +250,29 @@ export function DeviceHealthFleetPanel({
           lastSeen: isLive ? `${statusAgeLabel} (${statusTimestampLabel})` : "Not seen yet",
           linkedScreen,
           needsAttention,
+          playbackDetail,
           playbackLabel,
+          playbackTone,
           syncDetail,
           syncLabel,
-          syncTone
+          syncTone,
+          syncVersionDetail: assignedPlaylist
+            ? `Beam v${assignedPlaylist.version}; screen ${
+                isLive && livePlaylistVersion !== null ? `v${livePlaylistVersion}` : "unknown"
+              }.`
+            : "No playlist version is available."
         };
       });
   }, [
     devices,
     liveHost,
+    livePlaylistId,
     livePlaybackHealthy,
     livePlaybackState,
     livePlaylistVersion,
     liveReachable,
     liveStatusStale,
-    playlistId,
-    playlistVersion,
+    playlistsById,
     screensByDeviceId,
     statusAgeLabel,
     statusTimestampLabel
@@ -230,8 +306,8 @@ export function DeviceHealthFleetPanel({
     if (filter === "sync") {
       return row.syncTone === "warn";
     }
-    if (filter === "unknown") {
-      return row.healthLabel === "Unknown";
+    if (filter === "waiting") {
+      return row.healthLabel === "Waiting";
     }
 
     return true;
@@ -244,44 +320,80 @@ export function DeviceHealthFleetPanel({
   const playingCount = rows.filter((row) => row.isLive && livePlaybackHealthy).length;
   const attentionCount = rows.filter((row) => row.needsAttention).length;
   const syncIssueCount = rows.filter((row) => row.syncTone === "warn").length;
-  const unknownCount = rows.filter((row) => row.healthLabel === "Unknown").length;
-  const isRecovering = Boolean(recoveringDeviceId) || isPending;
+  const waitingCount = rows.filter((row) => row.healthLabel === "Waiting").length;
 
-  async function recoverDevice(row: RowState) {
-    if (!row.isLive || isRecovering) {
+  function refreshStatus() {
+    if (isBusy) {
       return;
     }
 
-    setRecoveringDeviceId(row.device.id);
-    setMessage(`Recovering ${row.device.name}...`);
+    setBusyAction("refresh");
+    setMessage("Refreshing screen status...");
+    startTransition(() => {
+      router.refresh();
+      setBusyAction(null);
+      setMessage("Screen status refreshed.");
+    });
+  }
+
+  async function postJson(path: string, body?: unknown): Promise<ActionResponse> {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined
+    });
+    const result = (await response.json()) as ActionResponse;
+    if (!response.ok || result.error) {
+      throw new Error(result.error ?? "Action failed.");
+    }
+
+    return result;
+  }
+
+  async function runAction(action: "publish" | "recover" | "restart", row: RowState) {
+    if (!row.isLive || isBusy) {
+      return;
+    }
+
+    setBusyAction(action);
+    setMessage(
+      action === "publish"
+        ? `Retrying playlist update for ${row.linkedScreen?.name ?? row.device.name}...`
+        : action === "restart"
+          ? `Restarting playback for ${row.linkedScreen?.name ?? row.device.name}...`
+          : `Running recovery for ${row.linkedScreen?.name ?? row.device.name}...`
+    );
     try {
-      const response = await fetch("/api/local-player/actions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ action: "recover" })
-      });
-      const result = (await response.json()) as RecoveryResponse;
-      if (!response.ok || result.error) {
-        throw new Error(result.error ?? "Recover failed.");
-      }
-      setMessage(result.message ?? `${row.device.name} recovery completed.`);
+      const result =
+        action === "publish"
+          ? await postJson("/api/local-playlist/publish", {
+              playlistId: row.linkedScreen?.playlistId ?? row.device.playlistId ?? undefined
+            })
+          : await postJson("/api/local-player/actions", {
+              action: action === "restart" ? "restart-vlc" : "recover"
+            });
+      const publishMessage = result.piPublish?.message ? ` ${result.piPublish.message}` : "";
+      setMessage(
+        result.message ??
+          (action === "publish"
+            ? `Playlist update retried.${publishMessage}`
+            : `${row.device.name} action completed.`)
+      );
       startTransition(() => router.refresh());
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Recover failed.");
+      setMessage(error instanceof Error ? error.message : "Action failed.");
     } finally {
-      setRecoveringDeviceId(null);
+      setBusyAction(null);
     }
   }
 
   const filters: Array<{ count: number; key: FilterKey; label: string }> = [
-    { count: rows.length, key: "all", label: "All" },
+    { count: rows.length, key: "all", label: "All screens" },
     { count: attentionCount, key: "attention", label: "Needs attention" },
     { count: offlineCount, key: "offline", label: "Offline" },
-    { count: staleCount, key: "stale", label: "Stale" },
-    { count: syncIssueCount, key: "sync", label: "Sync" },
-    { count: unknownCount, key: "unknown", label: "Unknown" }
+    { count: staleCount, key: "stale", label: "Old check-in" },
+    { count: syncIssueCount, key: "sync", label: "Update needed" },
+    { count: waitingCount, key: "waiting", label: "Waiting" }
   ];
 
   return (
@@ -289,9 +401,9 @@ export function DeviceHealthFleetPanel({
       <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
         <div className="flex flex-col gap-4 border-b border-zinc-200 p-5 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <h2 id="fleet-health-heading" className="text-xl font-semibold">Fleet health</h2>
+            <h2 id="fleet-health-heading" className="text-xl font-semibold">Screen status</h2>
             <p className="mt-1 text-sm text-zinc-600">
-              Scan every device quickly, then open the row that needs work.
+              Status comes from saved local screens and the connected Pi.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -312,7 +424,7 @@ export function DeviceHealthFleetPanel({
           </div>
         </div>
 
-        <dl className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-6">
+        <dl className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-5">
           <div className="rounded-md bg-emerald-50 p-4 ring-1 ring-emerald-100">
             <dt className="text-xs font-semibold uppercase text-emerald-800">Online</dt>
             <dd className="mt-2 text-2xl font-semibold">{onlineCount}</dd>
@@ -322,11 +434,11 @@ export function DeviceHealthFleetPanel({
             <dd className="mt-2 text-2xl font-semibold">{offlineCount}</dd>
           </div>
           <div className="rounded-md bg-amber-50 p-4 ring-1 ring-amber-100">
-            <dt className="text-xs font-semibold uppercase text-amber-900">Stale</dt>
+            <dt className="text-xs font-semibold uppercase text-amber-900">Old check-in</dt>
             <dd className="mt-2 text-2xl font-semibold">{staleCount}</dd>
           </div>
           <div className="rounded-md bg-sky-50 p-4 ring-1 ring-sky-100">
-            <dt className="text-xs font-semibold uppercase text-sky-800">Playing</dt>
+            <dt className="text-xs font-semibold uppercase text-sky-800">Playing now</dt>
             <dd className="mt-2 text-2xl font-semibold">{playingCount}</dd>
           </div>
           <div className="rounded-md bg-orange-50 p-4 ring-1 ring-orange-100">
@@ -334,39 +446,38 @@ export function DeviceHealthFleetPanel({
             <dd className="mt-2 text-2xl font-semibold">{attentionCount}</dd>
           </div>
           <div className="rounded-md bg-zinc-50 p-4 ring-1 ring-zinc-200">
-            <dt className="text-xs font-semibold uppercase text-zinc-600">Inventory</dt>
+            <dt className="text-xs font-semibold uppercase text-zinc-600">Saved screens</dt>
             <dd className="mt-2 text-2xl font-semibold">{rows.length}</dd>
           </div>
         </dl>
 
         <div className="border-t border-zinc-200 p-5">
           <label htmlFor="device-health-search" className="text-sm font-semibold text-zinc-800">
-            Search devices
+            Search screens
           </label>
           <input
             id="device-health-search"
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
-            placeholder="Name, host, location, group, or screen"
+            placeholder="Screen, device, host, location, or group"
             className="mt-2 min-h-11 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-100"
           />
           <p className="mt-2 text-sm text-zinc-600">
-            Showing {formatCount(visibleRows.length, "device")} from {formatCount(rows.length, "device")}.
+            Showing {formatCount(visibleRows.length, "screen")} from {formatCount(rows.length, "screen")}.
           </p>
         </div>
 
         <div className="max-w-full overflow-x-auto border-t border-zinc-200">
-          <table className="w-full min-w-[1180px] text-left text-sm">
+          <table className="w-full min-w-[1080px] text-left text-sm">
             <thead className="bg-zinc-50 text-xs uppercase text-zinc-500">
               <tr>
+                <th className="px-4 py-3">Screen</th>
                 <th className="px-4 py-3">Device</th>
                 <th className="px-4 py-3">Location</th>
-                <th className="px-4 py-3">Group</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Playback</th>
-                <th className="px-4 py-3">Sync</th>
-                <th className="px-4 py-3">Last seen</th>
-                <th className="px-4 py-3">Screen</th>
+                <th className="px-4 py-3">Now playing</th>
+                <th className="px-4 py-3">Playlist update</th>
+                <th className="px-4 py-3">Last check-in</th>
                 <th className="px-4 py-3">Actions</th>
               </tr>
             </thead>
@@ -374,22 +485,27 @@ export function DeviceHealthFleetPanel({
               {visibleRows.map((row) => (
                 <tr key={row.device.id} className={row.needsAttention ? "bg-amber-50/40" : undefined}>
                   <td className="px-4 py-3">
+                    <p className="font-semibold text-zinc-950">{row.linkedScreen?.name ?? "No screen linked"}</p>
+                    <p className="mt-1 text-xs text-zinc-600">{row.assignedPlaylistName}</p>
+                  </td>
+                  <td className="px-4 py-3">
                     <p className="font-semibold text-zinc-950">{row.device.name}</p>
                     <p className="mt-1 text-xs text-zinc-600">{row.device.host}</p>
                   </td>
-                  <td className="px-4 py-3 text-zinc-700">{row.device.location}</td>
-                  <td className="px-4 py-3 text-zinc-700">{row.device.group}</td>
+                  <td className="px-4 py-3 text-zinc-700">{row.linkedScreen?.location ?? row.device.location}</td>
                   <td className="px-4 py-3">
                     <StatusPill label={row.healthLabel} tone={row.healthTone} />
                     <p className="mt-1 text-xs text-zinc-600">{row.healthDetail}</p>
                   </td>
-                  <td className="px-4 py-3 text-zinc-700">{row.playbackLabel}</td>
+                  <td className="px-4 py-3">
+                    <StatusPill label={row.playbackLabel} tone={row.playbackTone} />
+                    <p className="mt-1 text-xs text-zinc-600">{row.playbackDetail}</p>
+                  </td>
                   <td className="px-4 py-3">
                     <StatusPill label={row.syncLabel} tone={row.syncTone} />
                     <p className="mt-1 text-xs text-zinc-600">{row.syncDetail}</p>
                   </td>
                   <td className="px-4 py-3 text-zinc-700">{row.lastSeen}</td>
-                  <td className="px-4 py-3 text-zinc-700">{row.linkedScreen?.name ?? "Not linked"}</td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-2">
                       <button
@@ -401,11 +517,11 @@ export function DeviceHealthFleetPanel({
                       </button>
                       <button
                         type="button"
-                        disabled={!row.isLive || isRecovering}
-                        onClick={() => void recoverDevice(row)}
+                        disabled={!row.isLive || !row.assignedPlaylistId || isBusy}
+                        onClick={() => void runAction("publish", row)}
                         className="min-h-9 rounded-md bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
                       >
-                        {recoveringDeviceId === row.device.id ? "Recovering" : "Recover"}
+                        {busyAction === "publish" ? "Syncing" : "Retry sync"}
                       </button>
                     </div>
                   </td>
@@ -413,8 +529,8 @@ export function DeviceHealthFleetPanel({
               ))}
               {visibleRows.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-5 text-zinc-600" colSpan={9}>
-                    No devices match this view.
+                  <td className="px-4 py-5 text-zinc-600" colSpan={8}>
+                    No screens match this view.
                   </td>
                 </tr>
               ) : null}
@@ -433,35 +549,102 @@ export function DeviceHealthFleetPanel({
         <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm" aria-label="Selected device details">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h3 className="text-lg font-semibold">{selectedRow.device.name}</h3>
+              <h3 className="text-lg font-semibold">{selectedRow.linkedScreen?.name ?? selectedRow.device.name}</h3>
               <p className="mt-1 text-sm text-zinc-600">
-                {selectedRow.device.host} / {selectedRow.device.location} / {selectedRow.device.group}
+                {selectedRow.device.name} at {selectedRow.device.host} / {selectedRow.linkedScreen?.location ?? selectedRow.device.location}
               </p>
             </div>
-            <StatusPill label={selectedRow.needsAttention ? "Review" : "OK"} tone={selectedRow.needsAttention ? "warn" : "good"} />
+            <StatusPill label={selectedRow.needsAttention ? "Needs attention" : "Looks good"} tone={selectedRow.needsAttention ? "warn" : "good"} />
           </div>
           <dl className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-md bg-zinc-50 p-4">
-              <dt className="text-xs font-semibold uppercase text-zinc-500">Health</dt>
+              <dt className="text-xs font-semibold uppercase text-zinc-500">Screen status</dt>
               <dd className="mt-2 font-semibold text-zinc-950">{selectedRow.healthLabel}</dd>
               <dd className="mt-1 text-sm text-zinc-600">{selectedRow.healthDetail}</dd>
             </div>
             <div className="rounded-md bg-zinc-50 p-4">
-              <dt className="text-xs font-semibold uppercase text-zinc-500">Playback</dt>
+              <dt className="text-xs font-semibold uppercase text-zinc-500">Now playing</dt>
               <dd className="mt-2 font-semibold text-zinc-950">{selectedRow.playbackLabel}</dd>
-              <dd className="mt-1 text-sm text-zinc-600">{selectedRow.isLive ? "Live player evidence" : "No live player evidence yet"}</dd>
+              <dd className="mt-1 text-sm text-zinc-600">{selectedRow.playbackDetail}</dd>
             </div>
             <div className="rounded-md bg-zinc-50 p-4">
-              <dt className="text-xs font-semibold uppercase text-zinc-500">Sync</dt>
+              <dt className="text-xs font-semibold uppercase text-zinc-500">Playlist update</dt>
               <dd className="mt-2 font-semibold text-zinc-950">{selectedRow.syncLabel}</dd>
               <dd className="mt-1 text-sm text-zinc-600">{selectedRow.syncDetail}</dd>
             </div>
             <div className="rounded-md bg-zinc-50 p-4">
-              <dt className="text-xs font-semibold uppercase text-zinc-500">Screen</dt>
-              <dd className="mt-2 font-semibold text-zinc-950">{selectedRow.linkedScreen?.name ?? "Not linked"}</dd>
-              <dd className="mt-1 text-sm text-zinc-600">{selectedRow.linkedScreen?.location ?? "No screen assignment"}</dd>
+              <dt className="text-xs font-semibold uppercase text-zinc-500">Last check-in</dt>
+              <dd className="mt-2 font-semibold text-zinc-950">{selectedRow.lastSeen}</dd>
+              <dd className="mt-1 text-sm text-zinc-600">{selectedRow.isLive ? "From the connected local Pi." : "No live report yet."}</dd>
             </div>
           </dl>
+
+          <div className="mt-5 rounded-md border border-zinc-200 bg-zinc-50 p-4">
+            <h4 className="text-sm font-semibold text-zinc-950">Actions for this screen</h4>
+            <p className="mt-1 text-sm text-zinc-600">
+              These actions use the connected local Pi. Inventory-only screens show status until they check in.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={isBusy}
+                onClick={refreshStatus}
+                className="min-h-10 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {busyAction === "refresh" ? "Refreshing..." : "Refresh status"}
+              </button>
+              <button
+                type="button"
+                disabled={!selectedRow.isLive || !selectedRow.assignedPlaylistId || isBusy}
+                onClick={() => void runAction("publish", selectedRow)}
+                className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+              >
+                {busyAction === "publish" ? "Syncing..." : "Retry sync"}
+              </button>
+              <button
+                type="button"
+                disabled={!selectedRow.isLive || isBusy}
+                onClick={() => void runAction("restart", selectedRow)}
+                className="min-h-10 rounded-md bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+              >
+                {busyAction === "restart" ? "Restarting..." : "Restart playback"}
+              </button>
+              <button
+                type="button"
+                disabled={!selectedRow.isLive || isBusy}
+                onClick={() => void runAction("recover", selectedRow)}
+                className="min-h-10 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+              >
+                {busyAction === "recover" ? "Recovering..." : "Run recovery"}
+              </button>
+            </div>
+          </div>
+
+          <details className="mt-4 rounded-md border border-zinc-200 bg-white p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-zinc-900">More details</summary>
+            <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <dt className="font-semibold text-zinc-500">Device host</dt>
+                <dd className="mt-1 break-words text-zinc-800">{selectedRow.device.host}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-zinc-500">Group</dt>
+                <dd className="mt-1 break-words text-zinc-800">{selectedRow.linkedScreen?.group ?? selectedRow.device.group}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-zinc-500">Assigned playlist</dt>
+                <dd className="mt-1 break-words text-zinc-800">{selectedRow.assignedPlaylistName}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-zinc-500">Playlist versions</dt>
+                <dd className="mt-1 break-words text-zinc-800">{selectedRow.syncVersionDetail}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-zinc-500">Live target</dt>
+                <dd className="mt-1 break-words text-zinc-800">{selectedRow.isLive ? "Configured Pi" : "Inventory only"}</dd>
+              </div>
+            </dl>
+          </details>
         </section>
       ) : null}
     </section>

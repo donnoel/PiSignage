@@ -16,7 +16,6 @@ import { LocalPlaylistControls } from "./local-playlist-controls";
 import { LocalPlaylistItemEditor } from "./local-playlist-item-editor";
 import { LocalPlaylistTimeline } from "./local-playlist-timeline";
 import { ScreenDeviceInventoryPanel } from "./screen-device-inventory-panel";
-import { LocalSystemActions } from "./local-system-actions";
 import { SchedulingPanel } from "./scheduling-panel";
 import { TroubleshootingPanel } from "./troubleshooting-panel";
 
@@ -147,8 +146,8 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
   },
   "device-health": {
     eyebrow: "Health",
-    title: "Device Health",
-    description: "Live playback, recovery, and Pi status."
+    title: "Screen Status",
+    description: "See what is online, what is playing, and what needs attention."
   },
   screens: {
     eyebrow: "Inventory",
@@ -1186,32 +1185,32 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         : null;
   const recoveryEvidence: EvidenceItem[] = [
     {
-      label: "Playback heartbeat",
+      label: "Playback report",
       value: playbackHealthy ? "Fresh and playing" : isPlaying ? "Playing but stale" : "Needs attention",
       detail: `${playerFreshnessDetail} ${playerStatus?.lastError ? `Last error: ${playerStatus.lastError}` : "No VLC error reported."}`,
       tone: playbackHealthy ? "good" : "warn",
       timestamp: playerStatus?.updatedAt
     },
     {
-      label: "VLC service",
+      label: "Playback service",
       value: serviceLabel(pi.serviceActiveState, pi.serviceSubState),
       detail: `Systemd reports ${pi.serviceRestartCount ?? "unknown"} restart(s) this boot.`,
       tone: serviceTone(pi.serviceActiveState)
     },
     {
-      label: "Boot recovery",
+      label: "Restart recovery",
       value: bootRecoveryLabel(pi, playbackHealthy),
       detail: bootRecoveryDetail(pi),
       tone: playbackHealthy ? "good" : pi.reachable ? "warn" : "muted"
     },
     {
-      label: "Playlist sync",
+      label: "Playlist update",
       value: playlistSyncState.label,
       detail: `${playlistSyncState.detail} Local v${playlist.version}; Pi ${piPlaylistVersion ? `v${piPlaylistVersion}` : "unknown"}.`,
       tone: playlistSyncState.tone
     },
     {
-      label: "Last publish",
+      label: "Last send",
       value: publishStatusForSelected ? (publishStatusForSelected.ok ? "Succeeded" : "Needs attention") : "Not recorded",
       detail: publishStatusForSelected
         ? `${actionLabel(publishStatusForSelected.action)} wrote playlist v${publishStatusForSelected.playlistVersion}. ${publishStatusForSelected.message}`
@@ -1220,13 +1219,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       timestamp: publishStatusForSelected?.timestamp
     },
     {
-      label: "Display",
+      label: "TV output",
       value: formatDisplayMode(playerStatus?.displayMode) ?? pi.displayMode ?? "Unknown",
       detail: playerStatus?.displayOutput ? `Output ${playerStatus.displayOutput}.` : "No display output was reported by VLC status.",
       tone: playerStatus?.displayMode || pi.displayMode ? "good" : "warn"
     },
     {
-      label: "Thermals",
+      label: "Device temperature",
       value: formatTemperature(pi.temp),
       detail: `Throttle ${formatThrottle(pi.throttled)}.`,
       tone: pi.temp && pi.throttled ? "good" : "warn"
@@ -1470,144 +1469,100 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               devices={inventory.devices.items}
               screens={inventory.screens.items}
               liveHost={pi.host}
+              livePlaylistId={playerStatus?.playlistId ?? null}
               livePlaybackHealthy={playbackHealthy}
               livePlaybackState={playbackLabel}
               livePlaylistVersion={typeof piPlaylistVersion === "number" ? piPlaylistVersion : null}
               liveReachable={pi.reachable}
               liveStatusStale={Boolean(pi.configured && isPlaying && !isPlayerStatusFresh)}
-              playlistId={playlist.playlistId}
-              playlistVersion={playlist.version}
+              playlists={playlistStore.items.map((item) => ({
+                name: item.name,
+                playlistId: item.playlistId,
+                version: item.version
+              }))}
               statusAgeLabel={lastPlayerHeartbeatAge}
               statusTimestampLabel={playerUpdatedAt}
             />
           </section>
 
           <section
-            aria-labelledby="recovery-heading"
-            className={selectedView === "device-health" ? "mt-6 rounded-lg border border-zinc-200 bg-white p-5 shadow-sm" : "hidden"}
-          >
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h2 id="recovery-heading" className="text-xl font-semibold">Recovery evidence</h2>
-                <p className="mt-1 text-sm text-zinc-600">
-                  Latest boot, player, display, and health reports.
-                </p>
-              </div>
-              <StatusPill
-                label={serviceLabel(pi.serviceActiveState, pi.serviceSubState)}
-                tone={serviceTone(pi.serviceActiveState)}
-              />
-            </div>
-            <dl className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-              <div className="rounded-md bg-zinc-50 p-4">
-                <dt className="text-xs font-semibold uppercase text-zinc-500">Boot recovery</dt>
-                <dd className="mt-2 text-lg font-semibold">{bootRecoveryLabel(pi, playbackHealthy)}</dd>
-                <dd className="mt-1 text-sm text-zinc-600">{bootRecoveryDetail(pi)}</dd>
-              </div>
-              <div className="rounded-md bg-zinc-50 p-4">
-                <dt className="text-xs font-semibold uppercase text-zinc-500">VLC service</dt>
-                <dd className="mt-2 text-lg font-semibold">{serviceLabel(pi.serviceActiveState, pi.serviceSubState)}</dd>
-              </div>
-              <div className="rounded-md bg-zinc-50 p-4">
-                <dt className="text-xs font-semibold uppercase text-zinc-500">Auto restarts</dt>
-                <dd className="mt-2 text-lg font-semibold">{pi.serviceRestartCount ?? "Unknown"}</dd>
-                <dd className="mt-1 text-sm text-zinc-600">Crash recovery this boot</dd>
-              </div>
-              <div className="rounded-md bg-zinc-50 p-4">
-                <dt className="text-xs font-semibold uppercase text-zinc-500">Status age</dt>
-                <dd className="mt-2 text-lg font-semibold">{formatStatusAge(playerStatus?.updatedAt)}</dd>
-              </div>
-              <div className="rounded-md bg-zinc-50 p-4">
-                <dt className="text-xs font-semibold uppercase text-zinc-500">Display</dt>
-                <dd className="mt-2 text-lg font-semibold">{formatDisplayMode(playerStatus?.displayMode) ?? pi.displayMode ?? "Unknown"}</dd>
-                <dd className="mt-1 text-sm text-zinc-600">{playerStatus?.displayOutput ?? "No output reported"}</dd>
-              </div>
-              <div className="rounded-md bg-zinc-50 p-4">
-                <dt className="text-xs font-semibold uppercase text-zinc-500">Thermals</dt>
-                <dd className="mt-2 text-lg font-semibold">{formatTemperature(pi.temp)}</dd>
-                <dd className="mt-1 text-sm text-zinc-600">Throttle {formatThrottle(pi.throttled)}</dd>
-              </div>
-            </dl>
-          </section>
-
-          <section
             aria-labelledby="recovery-history-heading"
             className={selectedView === "device-health" ? "mt-6 rounded-lg border border-zinc-200 bg-white shadow-sm" : "hidden"}
           >
-            <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h2 id="recovery-history-heading" className="text-xl font-semibold">Recovery history</h2>
-                <p className="mt-1 text-sm text-zinc-600">
-                  Latest local evidence the Pi reported for playback, service recovery, publish state, display, and health.
+            <details>
+              <summary className="cursor-pointer border-b border-zinc-200 p-5 text-xl font-semibold" id="recovery-history-heading">
+                Technical status details
+              </summary>
+              <div className="px-5 pb-2 pt-4">
+                <p className="text-sm text-zinc-600">
+                  Latest local evidence from the connected Pi. These details stay secondary so the main screen remains readable for clients.
                 </p>
               </div>
-              <StatusPill label={playbackHealthy && playlistSyncState.tone === "good" ? "Ready" : "Review"} tone={playbackHealthy && playlistSyncState.tone === "good" ? "good" : "warn"} />
-            </div>
-            <ol className="divide-y divide-zinc-200">
-              {recoveryEvidence.map((item) => (
-                <li key={item.label} className="grid gap-3 px-5 py-4 text-sm md:grid-cols-[180px_1fr_auto] md:items-start">
-                  <div>
-                    <p className="font-semibold text-zinc-950">{item.label}</p>
-                    <p className="mt-1 text-xs font-medium text-zinc-500">{item.timestamp ? formatTimestamp(item.timestamp) : "Latest probe"}</p>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-zinc-950">{item.value}</p>
-                    <p className="mt-1 leading-6 text-zinc-600">{item.detail}</p>
-                  </div>
-                  <div className="md:justify-self-end">
-                    <StatusPill label={item.tone === "good" ? "OK" : item.tone === "warn" ? "Check" : "Info"} tone={item.tone} />
-                  </div>
-                </li>
-              ))}
-            </ol>
+              <ol className="divide-y divide-zinc-200">
+                {recoveryEvidence.map((item) => (
+                  <li key={item.label} className="grid gap-3 px-5 py-4 text-sm md:grid-cols-[180px_1fr_auto] md:items-start">
+                    <div>
+                      <p className="font-semibold text-zinc-950">{item.label}</p>
+                      <p className="mt-1 text-xs font-medium text-zinc-500">{item.timestamp ? formatTimestamp(item.timestamp) : "Latest check"}</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-zinc-950">{item.value}</p>
+                      <p className="mt-1 leading-6 text-zinc-600">{item.detail}</p>
+                    </div>
+                    <div className="md:justify-self-end">
+                      <StatusPill label={item.tone === "good" ? "OK" : item.tone === "warn" ? "Check" : "Info"} tone={item.tone} />
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </details>
           </section>
 
           <section
             id="field-setup"
             aria-labelledby="field-setup-heading"
-            className={selectedView === "device-health" ? "mt-6 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]" : "hidden"}
+            className={selectedView === "device-health" ? "mt-6 rounded-lg border border-zinc-200 bg-white shadow-sm" : "hidden"}
           >
-            <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
-              <div className="border-b border-zinc-200 p-5">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <h2 id="field-setup-heading" className="text-xl font-semibold">{localLocationName}</h2>
-                    <p className="mt-1 text-sm text-zinc-600">Local field setup from live configuration and Pi status.</p>
+            <details>
+              <summary className="cursor-pointer border-b border-zinc-200 p-5 text-xl font-semibold" id="field-setup-heading">
+                Setup and device details
+              </summary>
+              <div className="grid gap-4 p-5 xl:grid-cols-[1.1fr_0.9fr]">
+                <div className="rounded-md border border-zinc-200 bg-zinc-50">
+                  <div className="border-b border-zinc-200 p-5">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <h2 className="text-lg font-semibold">{localLocationName}</h2>
+                        <p className="mt-1 text-sm text-zinc-600">Local setup from saved configuration and the latest Pi check.</p>
+                      </div>
+                      <StatusPill label={pi.reachable ? "Online" : "Offline"} tone={pi.reachable ? "good" : "warn"} />
+                    </div>
                   </div>
-                  <StatusPill label={pi.reachable ? "Online" : "Offline"} tone={pi.reachable ? "good" : "warn"} />
+                  <dl className="grid gap-0 divide-y divide-zinc-200 text-sm sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+                    <div className="p-5">
+                      <dt className="font-semibold text-zinc-500">Screen</dt>
+                      <dd className="mt-2 text-lg font-semibold">{localScreenName}</dd>
+                      <dd className="mt-1 text-zinc-600">Device ID: {localDeviceIdentifier}</dd>
+                    </div>
+                    <div className="p-5">
+                      <dt className="font-semibold text-zinc-500">Last local status</dt>
+                      <dd className="mt-2 text-lg font-semibold">{playerUpdatedAt}</dd>
+                      <dd className="mt-1 text-zinc-600">{pi.message}</dd>
+                    </div>
+                  </dl>
+                </div>
+
+                <div id="device-health" className="rounded-md border border-zinc-200 bg-zinc-50 p-5">
+                  <h2 className="text-lg font-semibold">Device readings</h2>
+                  <dl className="mt-5 grid gap-3 sm:grid-cols-2">
+                    <Metric label="Temperature" value={formatTemperature(pi.temp)} />
+                    <Metric label="Throttle" value={formatThrottle(pi.throttled)} />
+                    <Metric label="Uptime" value={pi.uptime ?? "Unknown"} />
+                    <Metric label="Disk free" value={isHeartbeatFresh ? formatBytes(heartbeat?.diskFreeBytes) : "Not reported"} />
+                  </dl>
                 </div>
               </div>
-              <dl className="grid gap-0 divide-y divide-zinc-200 text-sm sm:grid-cols-2 sm:divide-x sm:divide-y-0">
-                <div className="p-5">
-                  <dt className="font-semibold text-zinc-500">Screen</dt>
-                  <dd className="mt-2 text-lg font-semibold">{localScreenName}</dd>
-                  <dd className="mt-1 text-zinc-600">Device ID: {localDeviceIdentifier}</dd>
-                </div>
-                <div className="p-5">
-                  <dt className="font-semibold text-zinc-500">Last local status</dt>
-                  <dd className="mt-2 text-lg font-semibold">{playerUpdatedAt}</dd>
-                  <dd className="mt-1 text-zinc-600">{pi.message}</dd>
-                </div>
-              </dl>
-            </div>
-
-            <div id="device-health" className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-              <h2 className="text-xl font-semibold">Device health</h2>
-              <dl className="mt-5 grid gap-3 sm:grid-cols-2">
-                <Metric label="Temperature" value={formatTemperature(pi.temp)} />
-                <Metric label="Throttle" value={formatThrottle(pi.throttled)} />
-                <Metric label="Uptime" value={pi.uptime ?? "Unknown"} />
-                <Metric label="Disk free" value={isHeartbeatFresh ? formatBytes(heartbeat?.diskFreeBytes) : "Not reported"} />
-              </dl>
-            </div>
-          </section>
-
-          <section
-            aria-labelledby="system-actions-heading"
-            className={selectedView === "device-health" ? "mt-6" : "hidden"}
-          >
-            <h2 id="system-actions-heading" className="sr-only">System actions</h2>
-            <LocalSystemActions />
+            </details>
           </section>
 
           <section
