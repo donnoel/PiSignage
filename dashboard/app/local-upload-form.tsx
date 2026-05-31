@@ -25,7 +25,7 @@ export function LocalUploadForm() {
   const [selectedFileKind, setSelectedFileKind] = useState<"image" | "video" | "unknown">("unknown");
   const [imageDurationSeconds, setImageDurationSeconds] = useState("10");
   const [uploadState, setUploadState] = useState<UploadState>({
-    message: "Select an MP4, JPEG, or PNG file to append it to the local playlist.",
+    message: "Select an MP4, MOV, JPEG, or PNG file to append it to the local playlist.",
     kind: "idle"
   });
   const [isUploading, setIsUploading] = useState(false);
@@ -40,7 +40,12 @@ export function LocalUploadForm() {
       return "image";
     }
 
-    if (file.type === "video/mp4" || fileName.endsWith(".mp4")) {
+    if (
+      file.type === "video/mp4" ||
+      file.type === "video/quicktime" ||
+      fileName.endsWith(".mp4") ||
+      fileName.endsWith(".mov")
+    ) {
       return "video";
     }
 
@@ -69,13 +74,13 @@ export function LocalUploadForm() {
 
     const file = fileInputRef.current?.files?.[0];
     if (!file) {
-      setUploadState({ message: "Choose an MP4, JPEG, or PNG file first.", kind: "error" });
+      setUploadState({ message: "Choose an MP4, MOV, JPEG, or PNG file first.", kind: "error" });
       return;
     }
 
     if (fileKindFrom(file) === "unknown") {
       setUploadState({
-        message: "That file type is not supported here. Choose an MP4 video, JPEG image, or PNG image.",
+        message: "That file type is not supported here. Choose MP4/MOV video, JPEG image, or PNG image.",
         kind: "error"
       });
       return;
@@ -137,7 +142,7 @@ export function LocalUploadForm() {
           Add local media
         </label>
         <p className="mt-1 text-sm text-zinc-600">
-          MP4 files are added directly. JPEG and PNG files become 720p H.264 still clips for VLC.
+          MP4 and MOV files are added directly. JPEG and PNG files become 720p H.264 still clips for VLC.
         </p>
       </div>
       <div className="mt-4 grid gap-4">
@@ -146,7 +151,7 @@ export function LocalUploadForm() {
           id="local-media-upload"
           name="media"
           type="file"
-          accept="video/mp4,image/jpeg,image/png,.mp4,.jpg,.jpeg,.png"
+          accept="video/mp4,video/quicktime,image/jpeg,image/png,.mp4,.mov,.jpg,.jpeg,.png"
           className="sr-only"
           disabled={isBusy}
           onChange={handleFileChange}
@@ -165,7 +170,7 @@ export function LocalUploadForm() {
                 ? "Will convert before adding to the playlist."
                 : selectedFileKind === "video"
                   ? "Will add as a video asset."
-                  : "Accepted formats: .mp4, .jpg, .jpeg, .png."}
+                  : "Accepted formats: .mp4, .mov, .jpg, .jpeg, .png. MP3 is intentionally disabled."}
             </p>
           </div>
         </div>

@@ -88,6 +88,14 @@ npm run agent:heartbeat
 The agent reads the local playlist, writes a last-known-good playlist cache, and writes a heartbeat file. Runtime files are intentionally ignored by git:
 
 ```text
+dashboard/local-state/activity.local.json
+dashboard/local-state/devices.local.json
+dashboard/local-state/media.local.json
+dashboard/local-state/playlist.local.json
+dashboard/local-state/publish-status.json
+dashboard/local-state/schedules.local.json
+dashboard/local-state/screens.local.json
+dashboard/local-state/settings.local.json
 device-agent/local-cache/playlists/current.json
 device-agent/local-state/heartbeat.json
 ```

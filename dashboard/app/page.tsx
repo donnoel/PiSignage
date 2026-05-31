@@ -1,8 +1,10 @@
 import { promises as fs } from "node:fs";
 import { Metric, StatusPill } from "./dashboard-ui";
+import { ensureLocalDataFoundation } from "./lib/local-data-store";
 import { publishStatusPath, readLivePlaylist, repoRoot } from "./lib/local-playlist";
 import type { Playlist, PlaylistAsset } from "./lib/local-playlist";
 import { readPiConfig, runSsh } from "./lib/pi-local";
+import { MediaStorePanel } from "./media-store-panel";
 import { LocalPublishForm } from "./local-publish-form";
 import { LocalPlaylistControls } from "./local-playlist-controls";
 import { LocalSystemActions } from "./local-system-actions";
@@ -73,7 +75,7 @@ const execTimeoutMs = 4_000;
 const staleStatusThresholdMs = 45_000;
 const staleHeartbeatThresholdMs = 120_000;
 
-type DashboardView = "dashboard" | "playlist" | "device-health" | "screens";
+type DashboardView = "dashboard" | "media-store" | "playlist" | "device-health" | "screens";
 
 type DashboardPageProps = {
   searchParams?: Promise<{
@@ -83,6 +85,7 @@ type DashboardPageProps = {
 
 const navigationItems: Array<{ label: string; view: DashboardView }> = [
   { label: "Dashboard", view: "dashboard" },
+  { label: "Media Store", view: "media-store" },
   { label: "Playlist", view: "playlist" },
   { label: "Device health", view: "device-health" },
   { label: "Screens", view: "screens" }
@@ -92,6 +95,11 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
   dashboard: {
     eyebrow: "",
     title: "Dashboard"
+  },
+  "media-store": {
+    eyebrow: "Content library",
+    title: "Media Store",
+    description: "Upload, catalog, and maintain reusable media with searchable metadata."
   },
   playlist: {
     eyebrow: "Content operations",
@@ -556,6 +564,8 @@ function textBetween(value: string, start: string, end: string): string {
 }
 
 async function loadDashboardState(): Promise<DashboardState> {
+  await ensureLocalDataFoundation();
+
   const root = repoRoot();
   const heartbeatPath = `${root}/device-agent/local-state/heartbeat.json`;
   const [playlist, heartbeat, publishStatus, pi] = await Promise.all([
@@ -1133,6 +1143,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </section>
 
           <section
+            id="media-store"
+            aria-labelledby="media-store-heading"
+            className={selectedView === "media-store" ? "mt-6" : "hidden"}
+          >
+            <h2 id="media-store-heading" className="sr-only">Media Store</h2>
+            <MediaStorePanel />
+          </section>
+
+          <section
             id="screens"
             aria-labelledby="screens-heading"
             className={selectedView === "screens" ? "mt-6 rounded-lg border border-zinc-200 bg-white shadow-sm" : "hidden"}
@@ -1231,7 +1250,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 </div>
                 <div>
                   <p className="font-semibold text-zinc-950">Playback contract</p>
-                  <p className="mt-1 text-zinc-600">VLC receives MP4 assets only; JPEG and PNG uploads are converted before publish.</p>
+                  <p className="mt-1 text-zinc-600">VLC receives video assets; JPEG and PNG uploads are converted into Pi-safe MP4 still clips before publish.</p>
                 </div>
               </div>
               <ul className="divide-y divide-zinc-200">
@@ -1303,7 +1322,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             <div id="media" className="self-start rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
               <h2 className="text-xl font-semibold">Upload media</h2>
               <p className="mt-1 text-sm leading-6 text-zinc-600">
-                Append a local MP4, JPEG, or PNG to the playlist. JPEG and PNG uploads are converted to Pi-safe MP4 still clips before VLC sees them.
+                Append local MP4/MOV video or JPEG/PNG images to the playlist. JPEG and PNG uploads are converted to Pi-safe MP4 still clips before VLC sees them.
               </p>
               <LocalUploadForm />
             </div>

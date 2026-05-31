@@ -1,8 +1,6 @@
 import { promises as fs } from "node:fs";
-import { execFile } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import { NextResponse } from "next/server";
 import {
   ensureLivePlaylistPath,
@@ -23,203 +21,21 @@ import {
   runSsh
 } from "../../../lib/pi-local";
 import type { PiPublishResult } from "../../../lib/local-playlist";
-
-const defaultDurationSeconds = 30;
-const defaultImageDurationSeconds = 10;
-const minimumImageDurationSeconds = 1;
-const maximumImageDurationSeconds = 300;
-const defaultMaxUploadBytes = 1024 * 1024 * 1024;
-const configuredMaxUploadBytes = Number.parseInt(
-  process.env.PISIGNAGE_MAX_UPLOAD_BYTES ?? "",
-  10
-);
-const maxUploadBytes = Number.isFinite(configuredMaxUploadBytes)
-  ? configuredMaxUploadBytes
-  : defaultMaxUploadBytes;
-const ffmpegBinary = process.env.PISIGNAGE_FFMPEG_BIN ?? "ffmpeg";
-const execFileAsync = promisify(execFile);
+import {
+  createStillVideoClip,
+  defaultDurationSeconds,
+  formatUploadLimit,
+  imageDurationFromForm,
+  maxUploadBytes,
+  MediaUploadError,
+  mediaSourceTypeFromFileName,
+  sanitizeMediaFileName,
+  slugify,
+  stillClipFileName,
+  uniqueFileName
+} from "../../../lib/media-processing";
 
 export const runtime = "nodejs";
-
-class UploadRequestError extends Error {
-  constructor(
-    message: string,
-    readonly status: number
-  ) {
-    super(message);
-    this.name = "UploadRequestError";
-  }
-}
-
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/\.[a-z0-9]+$/i, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 60);
-}
-
-function mediaTypeFromFileName(fileName: string): "image" | "video" {
-  const extension = path.extname(fileName).toLowerCase();
-
-  if (extension === ".mp4") {
-    return "video";
-  }
-
-  if (extension === ".jpg" || extension === ".jpeg" || extension === ".png") {
-    return "image";
-  }
-
-  throw new UploadRequestError(
-    "This install accepts MP4 videos plus JPEG and PNG still images.",
-    400
-  );
-}
-
-function sanitizeMediaFileName(fileName: string): string {
-  const baseName = path.basename(fileName).replace(/[^a-zA-Z0-9._-]/g, "-");
-
-  if (!baseName || baseName === "." || baseName === "..") {
-    throw new UploadRequestError("Choose a media file with a usable file name.", 400);
-  }
-
-  mediaTypeFromFileName(baseName);
-
-  return baseName;
-}
-
-async function uniqueFileName(assetsDirectory: string, fileName: string): Promise<string> {
-  const extension = path.extname(fileName);
-  const baseName = path.basename(fileName, extension);
-  let candidate = fileName;
-  let suffix = 1;
-
-  while (true) {
-    try {
-      await fs.access(path.join(assetsDirectory, candidate));
-      candidate = `${baseName}-${suffix}${extension}`;
-      suffix += 1;
-    } catch {
-      return candidate;
-    }
-  }
-}
-
-function imageDurationFromForm(value: FormDataEntryValue | null): number {
-  if (typeof value !== "string" || value.trim() === "") {
-    return defaultImageDurationSeconds;
-  }
-
-  const duration = Number.parseInt(value, 10);
-  if (!Number.isFinite(duration)) {
-    return defaultImageDurationSeconds;
-  }
-
-  return Math.min(Math.max(duration, minimumImageDurationSeconds), maximumImageDurationSeconds);
-}
-
-function stillClipFileName(fileName: string, durationSeconds: number): string {
-  const baseName = path.basename(fileName, path.extname(fileName));
-  return `${baseName}.still-${durationSeconds}s.mp4`;
-}
-
-async function createStillVideoClip(
-  sourceImagePath: string,
-  outputVideoPath: string,
-  durationSeconds: number
-): Promise<void> {
-  const temporaryOutputPath = `${outputVideoPath}.${process.pid}.tmp.mp4`;
-
-  try {
-    await execFileAsync(
-      ffmpegBinary,
-      [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-y",
-        "-loop",
-        "1",
-        "-framerate",
-        "30",
-        "-t",
-        String(durationSeconds),
-        "-i",
-        sourceImagePath,
-        "-f",
-        "lavfi",
-        "-t",
-        String(durationSeconds),
-        "-i",
-        "anullsrc=channel_layout=stereo:sample_rate=48000",
-        "-vf",
-        "scale=1280:720:force_original_aspect_ratio=decrease:in_range=full:out_range=tv,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,format=yuv420p",
-        "-r",
-        "30",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "slow",
-        "-profile:v",
-        "baseline",
-        "-level:v",
-        "3.1",
-        "-pix_fmt",
-        "yuv420p",
-        "-x264-params",
-        "keyint=30:min-keyint=30:scenecut=0:bframes=0",
-        "-color_range",
-        "tv",
-        "-colorspace",
-        "bt709",
-        "-color_primaries",
-        "bt709",
-        "-color_trc",
-        "bt709",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "96k",
-        "-shortest",
-        "-movflags",
-        "+faststart",
-        temporaryOutputPath
-      ],
-      { timeout: 120_000, maxBuffer: 1024 * 1024 * 4 }
-    );
-    await fs.rename(temporaryOutputPath, outputVideoPath);
-  } catch (error) {
-    await fs.rm(temporaryOutputPath, { force: true });
-    const nodeError = error as NodeJS.ErrnoException & {
-      killed?: boolean;
-      signal?: NodeJS.Signals;
-      stderr?: string;
-    };
-
-    if (nodeError.code === "ENOENT") {
-      throw new UploadRequestError(
-        `JPEG/PNG uploads need ffmpeg before they can become Pi-safe MP4 still clips. Install ffmpeg locally or set PISIGNAGE_FFMPEG_BIN, then try again.`,
-        503
-      );
-    }
-
-    if (nodeError.killed || nodeError.signal === "SIGTERM") {
-      throw new UploadRequestError(
-        "The image conversion timed out before ffmpeg finished. Try a smaller image or a shorter still duration.",
-        504
-      );
-    }
-
-    const detail = typeof nodeError.stderr === "string" && nodeError.stderr.trim()
-      ? ` ffmpeg said: ${nodeError.stderr.trim().split("\n").at(-1)}`
-      : "";
-    throw new UploadRequestError(
-      `That image could not be converted into a Pi-safe MP4 still clip.${detail}`,
-      422
-    );
-  }
-}
 
 function appendAsset(
   playlist: Playlist,
@@ -297,10 +113,6 @@ async function publishUploadToPi(
   }
 }
 
-function formatUploadLimit(bytes: number): string {
-  return `${Math.floor(bytes / (1024 * 1024))} MB`;
-}
-
 export async function POST(request: Request) {
   try {
     let formData: FormData;
@@ -328,7 +140,7 @@ export async function POST(request: Request) {
     }
 
     const safeFileName = sanitizeMediaFileName(file.name);
-    const mediaType = mediaTypeFromFileName(safeFileName);
+    const mediaType = mediaSourceTypeFromFileName(safeFileName);
     const imageDurationSeconds = imageDurationFromForm(formData.get("durationSeconds"));
 
     const assetsDirectory = sampleAssetsDirectory();
@@ -374,9 +186,9 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Upload failed.";
-    const status = error instanceof UploadRequestError ? error.status : 500;
+    const status = error instanceof MediaUploadError ? error.status : 500;
 
-    if (error instanceof UploadRequestError) {
+    if (error instanceof MediaUploadError) {
       console.warn("local playlist upload rejected", message);
     } else {
       console.error("local playlist upload failed", error);
