@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   appendActivityRecord,
   ensureLocalDataFoundation,
+  readActivityStore,
   readScheduleStore,
   readSettingsRecord,
   scheduleStorePath,
@@ -11,7 +12,7 @@ import {
   writeScheduleStore
 } from "../../lib/local-data-store";
 import { ensureInventorySeed } from "../../lib/local-inventory";
-import { readLivePlaylist } from "../../lib/local-playlist";
+import { readLivePlaylist, readPlaylistStore } from "../../lib/local-playlist";
 import { publishScheduleStoreToPi, readPiConfig } from "../../lib/pi-local";
 import {
   dayOptions,
@@ -126,22 +127,65 @@ async function publishSchedules() {
 
 async function scheduleResponse(publish?: Awaited<ReturnType<typeof publishSchedules>>) {
   await ensureLocalDataFoundation();
-  const [scheduleStore, settings, inventory] = await Promise.all([
+  const [scheduleStore, settings, inventory, playlistStore, activityStore, piConfig] = await Promise.all([
     readScheduleStore(),
     readSettingsRecord(),
-    inventoryForSchedules()
+    inventoryForSchedules(),
+    readPlaylistStore(),
+    readActivityStore(),
+    Promise.resolve(readPiConfig())
   ]);
   const screenStates = inventory.screens.items.map((screen) =>
     scheduleStateForScreen(scheduleStore.items, screen)
   );
+  const lastSchedulePublish =
+    activityStore.items.find((item) => item.action === "schedule-publish") ?? null;
+  const lastSuccessfulSchedulePublish =
+    activityStore.items.find((item) => item.action === "schedule-publish" && item.result === "success") ?? null;
+  const storeUpdatedAt = Date.parse(scheduleStore.updatedAt);
+  const successTimestamp = lastSuccessfulSchedulePublish
+    ? Date.parse(lastSuccessfulSchedulePublish.timestamp)
+    : Number.NaN;
+  const pendingLocalChanges = lastSuccessfulSchedulePublish
+    ? Number.isFinite(storeUpdatedAt) &&
+      Number.isFinite(successTimestamp) &&
+      storeUpdatedAt > successTimestamp
+    : scheduleStore.items.length > 0;
 
   return NextResponse.json({
     defaultTimezone: settings.defaultScheduleTimezone,
     days: dayOptions,
+    playlists: playlistStore.items.map((playlist) => ({
+      assetCount: playlist.assets.length,
+      name: playlist.name,
+      playlistId: playlist.playlistId,
+      version: playlist.version
+    })),
     publish: publish ?? null,
+    scheduleSupport: {
+      host: piConfig?.host ?? null,
+      lastPublish: lastSchedulePublish
+        ? {
+            message: lastSchedulePublish.message,
+            result: lastSchedulePublish.result,
+            timestamp: lastSchedulePublish.timestamp
+          }
+        : null,
+      lastSuccessfulPublish: lastSuccessfulSchedulePublish
+        ? {
+            message: lastSuccessfulSchedulePublish.message,
+            result: lastSuccessfulSchedulePublish.result,
+            timestamp: lastSuccessfulSchedulePublish.timestamp
+          }
+        : null,
+      pendingLocalChanges,
+      piConfigured: Boolean(piConfig)
+    },
     schedules: scheduleStore.items,
     screens: inventory.screens.items,
-    screenStates
+    screenStates,
+    storeUpdatedAt: scheduleStore.updatedAt,
+    storeVersion: scheduleStore.version
   });
 }
 
