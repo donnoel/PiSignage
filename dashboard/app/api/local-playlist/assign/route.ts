@@ -7,6 +7,7 @@ import {
   writeDeviceStore,
   writeScreenStore
 } from "../../../lib/local-data-store";
+import { ensureInventorySeed } from "../../../lib/local-inventory";
 import { readLivePlaylist } from "../../../lib/local-playlist";
 import { readPiConfig } from "../../../lib/pi-local";
 
@@ -19,84 +20,21 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-async function ensureDefaultInventory() {
-  const [screenStore, deviceStore, playlist, piConfig] = await Promise.all([
-    readScreenStore(),
-    readDeviceStore(),
-    readLivePlaylist(),
-    Promise.resolve(readPiConfig())
-  ]);
-
-  let nextScreenStore = screenStore;
-  let nextDeviceStore = deviceStore;
-  let wroteScreens = false;
-  let wroteDevices = false;
-  const timestamp = nowIso();
-
-  if (screenStore.items.length === 0) {
-    nextScreenStore = {
-      ...screenStore,
-      items: [
-        {
-          deviceId: "device-primary",
-          id: "screen-primary",
-          location: "Primary location",
-          name: "Primary Screen",
-          notes: "",
-          playlistId: playlist.playlistId,
-          updatedAt: timestamp
-        }
-      ],
-      updatedAt: timestamp,
-      version: screenStore.version + 1
-    };
-    wroteScreens = true;
-  }
-
-  if (deviceStore.items.length === 0) {
-    nextDeviceStore = {
-      ...deviceStore,
-      items: [
-        {
-          host: piConfig?.host ?? "Not configured",
-          id: "device-primary",
-          name: "Primary Device",
-          notes: "",
-          playlistId: playlist.playlistId,
-          playerType: "vlc",
-          rootPath: piConfig?.root ?? "~",
-          screenId: nextScreenStore.items[0]?.id ?? null,
-          sshUser: piConfig?.user ?? "pi",
-          updatedAt: timestamp
-        }
-      ],
-      updatedAt: timestamp,
-      version: deviceStore.version + 1
-    };
-    wroteDevices = true;
-  }
-
-  if (wroteScreens) {
-    await writeScreenStore(nextScreenStore);
-  }
-
-  if (wroteDevices) {
-    await writeDeviceStore(nextDeviceStore);
-  }
-
-  return {
-    deviceStore: nextDeviceStore,
-    screenStore: nextScreenStore
-  };
-}
-
 export async function GET() {
-  const [playlist, inventory] = await Promise.all([readLivePlaylist(), ensureDefaultInventory()]);
+  const [playlist, piConfig] = await Promise.all([readLivePlaylist(), Promise.resolve(readPiConfig())]);
+  const inventory = await ensureInventorySeed({
+    host: piConfig?.host ?? null,
+    location: process.env.PISIGNAGE_LOCATION_NAME?.trim() || "Primary location",
+    playlistId: playlist.playlistId,
+    rootPath: piConfig?.root ?? null,
+    screenName: process.env.PISIGNAGE_SCREEN_NAME?.trim() || "Primary Screen",
+    sshUser: piConfig?.user ?? null
+  });
 
   return NextResponse.json({
-    devices: inventory.deviceStore.items,
+    devices: inventory.devices.items,
     playlistId: playlist.playlistId,
-    screens: inventory.screenStore.items
+    screens: inventory.screens.items
   });
 }
 
@@ -188,4 +126,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

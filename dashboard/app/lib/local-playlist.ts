@@ -58,7 +58,7 @@ async function fileExists(filePath: string): Promise<boolean> {
 
 export async function writeFileAtomic(filePath: string, value: Buffer | string): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  const temporaryPath = `${filePath}.${process.pid}.tmp`;
+  const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`;
 
   try {
     await fs.writeFile(temporaryPath, value);

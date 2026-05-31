@@ -9,6 +9,7 @@ import { LocalPlaylistBuilder } from "./local-playlist-builder";
 import { LocalPublishForm } from "./local-publish-form";
 import { LocalPlaylistControls } from "./local-playlist-controls";
 import { LocalPlaylistItemEditor } from "./local-playlist-item-editor";
+import { ScreenDeviceInventoryPanel } from "./screen-device-inventory-panel";
 import { LocalSystemActions } from "./local-system-actions";
 import { LocalUploadForm } from "./local-upload-form";
 
@@ -783,8 +784,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   ];
 
   return (
-    <main className="min-h-screen bg-[#f3f6f8] text-zinc-950">
-      <div className="grid min-h-screen lg:grid-cols-[220px_1fr]">
+    <main className="min-h-screen overflow-x-hidden bg-[#f3f6f8] text-zinc-950">
+      <div className="grid min-h-screen lg:grid-cols-[220px_minmax(0,1fr)]">
         <aside className="border-b border-cyan-200 bg-gradient-to-b from-cyan-50 via-white to-slate-100 px-5 py-5 text-slate-950 lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r lg:py-6">
           <div className="flex flex-wrap items-end justify-between gap-2 lg:block">
             <div>
@@ -811,7 +812,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </nav>
         </aside>
 
-        <div className="mx-auto w-full max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full min-w-0 max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8">
           <header id="dashboard" className="flex flex-col gap-4 border-b border-zinc-200 pb-5 xl:flex-row xl:items-center xl:justify-between">
             <div>
               {currentViewCopy.eyebrow ? (
@@ -1156,66 +1157,27 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           <section
             id="screens"
             aria-labelledby="screens-heading"
-            className={selectedView === "screens" ? "mt-6 rounded-lg border border-zinc-200 bg-white shadow-sm" : "hidden"}
+            className={selectedView === "screens" ? "mt-6" : "hidden"}
           >
-            <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
               <div>
                 <h2 id="screens-heading" className="text-xl font-semibold">Screens</h2>
-                <p className="mt-1 text-sm text-zinc-600">Screen inventory and playback assignment.</p>
+                <p className="mt-1 text-sm text-zinc-600">
+                  Add and manage screen and device inventory with live status and playlist assignment visibility.
+                </p>
               </div>
-              <StatusPill label="Local only" tone="muted" />
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1120px] text-left text-sm">
-                <thead className="bg-zinc-50 text-xs uppercase text-zinc-500">
-                  <tr>
-                    <th className="px-5 py-3">Name</th>
-                    <th className="px-5 py-3">Online</th>
-                    <th className="px-5 py-3">Playback</th>
-                    <th className="px-5 py-3">Playlist sync</th>
-                    <th className="px-5 py-3">Last heartbeat</th>
-                    <th className="px-5 py-3">Last publish</th>
-                    <th className="px-5 py-3">Recovery evidence</th>
-                    <th className="px-5 py-3">Device</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-200">
-                  <tr>
-                    <td className="px-5 py-4">
-                      <p className="font-semibold text-zinc-950">{localScreenName}</p>
-                      <p className="mt-1 text-xs text-zinc-600">{localLocationName}</p>
-                    </td>
-                    <td className="px-5 py-4">
-                      <StatusPill label={screenOnlineLabel(pi)} tone={screenOnlineTone(pi)} />
-                      <p className="mt-2 max-w-56 leading-5 text-zinc-600">{pi.message}</p>
-                    </td>
-                    <td className="px-5 py-4">
-                      <StatusPill label={playbackLabel} tone={playbackHealthy ? "good" : "warn"} />
-                      <p className="mt-2 max-w-56 leading-5 text-zinc-600">{playerFreshnessDetail}</p>
-                    </td>
-                    <td className="px-5 py-4">
-                      <StatusPill label={playlistSyncState.label} tone={playlistSyncState.tone} />
-                      <p className="mt-2 leading-5 text-zinc-600">Local v{playlist.version}; Pi {piPlaylistVersion ? `v${piPlaylistVersion}` : "unknown"}</p>
-                    </td>
-                    <td className="px-5 py-4">
-                      <p className="font-semibold text-zinc-950">{lastPlayerHeartbeatAge}</p>
-                      <p className="mt-1 text-zinc-600">{playerUpdatedAt}</p>
-                    </td>
-                    <td className="px-5 py-4">
-                      <p className="font-semibold text-zinc-950">{publishStatus ? (publishStatus.ok ? "Succeeded" : "Needs attention") : "Not recorded"}</p>
-                      <p className="mt-1 max-w-56 leading-5 text-zinc-600">{publishStatus?.message ?? "No local publish status has been written."}</p>
-                    </td>
-                    <td className="px-5 py-4">
-                      <p className="font-semibold text-zinc-950">{bootRecoveryLabel(pi, playbackHealthy)}</p>
-                      <p className="mt-1 max-w-56 leading-5 text-zinc-600">{bootRecoveryDetail(pi)}</p>
-                    </td>
-                    <td className="px-5 py-4">
-                      <p className="font-semibold text-zinc-950">{localDeviceIdentifier}</p>
-                      <p className="mt-1 text-zinc-600">VLC field player</p>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+            <div className="mt-4">
+              <ScreenDeviceInventoryPanel
+                liveHost={pi.host}
+                livePlaybackState={playbackLabel}
+                livePlaylistVersion={typeof piPlaylistVersion === "number" ? piPlaylistVersion : null}
+                liveReachable={pi.reachable}
+                playlistId={playlist.playlistId}
+                playlistVersion={playlist.version}
+                statusAgeLabel={lastPlayerHeartbeatAge}
+                statusTimestampLabel={playerUpdatedAt}
+              />
             </div>
           </section>
 

@@ -25,6 +25,7 @@ export type MediaStore = {
 
 export type ScreenRecord = {
   deviceId: string | null;
+  group: string;
   id: string;
   location: string;
   name: string;
@@ -40,8 +41,10 @@ export type ScreenStore = {
 };
 
 export type DeviceRecord = {
+  group: string;
   host: string;
   id: string;
+  location: string;
   name: string;
   notes: string;
   playlistId: string | null;
