@@ -56,6 +56,10 @@ type PlaylistBuilderProps = {
   playlistId: string;
 };
 
+function isPlaylistSafeMedia(item: MediaItem): boolean {
+  return item.status === "ready" && /\.mp4$/i.test(item.playbackFileName);
+}
+
 export function LocalPlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
   const router = useRouter();
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
@@ -86,12 +90,12 @@ export function LocalPlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
         throw new Error(result.error ?? "Could not load media.");
       }
 
-      const readyItems = result.items.filter((item) => item.status === "ready");
+      const readyItems = result.items.filter(isPlaylistSafeMedia);
       setMediaItems(readyItems);
       setMediaMessage(
         readyItems.length === 0
-          ? "No ready media found. Upload media in Media Store first."
-          : `${readyItems.length} ready item${readyItems.length === 1 ? "" : "s"} available.`
+          ? "No playlist-ready MP4 media found. Upload MP4 media or converted still clips in Media Store first."
+          : `${readyItems.length} playlist-ready item${readyItems.length === 1 ? "" : "s"} available.`
       );
     } catch (error) {
       setMediaMessage(error instanceof Error ? error.message : "Could not load media.");
@@ -327,4 +331,3 @@ export function LocalPlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
     </div>
   );
 }
-

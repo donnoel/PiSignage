@@ -152,6 +152,10 @@ async function appendMediaStoreItemToPlaylist(playlist: Playlist, mediaId: strin
     throw new Error("Only ready media can be added to the playlist.");
   }
 
+  if (path.extname(media.playbackFileName).toLowerCase() !== ".mp4") {
+    throw new Error("Only MP4 playback files can be added to the Pi playlist. Convert this media before using it.");
+  }
+
   const playbackPath = path.join(sampleAssetsDirectory(), media.playbackFileName);
   try {
     await fs.access(playbackPath);
