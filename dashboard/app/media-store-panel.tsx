@@ -257,15 +257,15 @@ export function MediaStorePanel() {
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-      <div className="space-y-4">
-        <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+    <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(300px,380px)]">
+      <div className="min-w-0 space-y-4">
+        <section className="min-w-0 rounded-lg border border-zinc-200 bg-white shadow-sm">
           <div className="border-b border-zinc-200 p-5">
             <h2 className="text-xl font-semibold">Upload media</h2>
             <p className="mt-1 text-sm text-zinc-600">Add reusable media assets with descriptive metadata and tags.</p>
           </div>
-          <form onSubmit={handleUpload} className="grid gap-4 p-5">
-            <div className="grid gap-3 sm:grid-cols-2">
+          <form onSubmit={handleUpload} className="grid min-w-0 gap-4 p-5">
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2">
               <div className="sm:col-span-2">
                 <label htmlFor="media-file" className="text-sm font-semibold text-zinc-950">Media file</label>
                 <input
@@ -275,7 +275,7 @@ export function MediaStorePanel() {
                   type="file"
                   accept="video/mp4,video/quicktime,image/jpeg,image/png,.mp4,.mov,.jpg,.jpeg,.png"
                   disabled={isBusy}
-                  className="mt-2 block min-h-11 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-900 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white"
+                  className="mt-2 block min-h-11 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-900 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white"
                 />
                 <p className="mt-2 text-xs text-zinc-600">
                   MP4 and MOV upload directly. JPEG and PNG convert into Pi-safe MP4 still clips. MP3 remains disabled pending audio signage design.
@@ -289,7 +289,7 @@ export function MediaStorePanel() {
                   value={uploadTitle}
                   onChange={(event) => setUploadTitle(event.currentTarget.value)}
                   disabled={isBusy}
-                  className="mt-2 min-h-11 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+                  className="mt-2 min-h-11 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
                   placeholder="Optional custom title"
                 />
               </div>
@@ -304,7 +304,7 @@ export function MediaStorePanel() {
                   value={durationSeconds}
                   onChange={(event) => setDurationSeconds(event.currentTarget.value)}
                   disabled={isBusy}
-                  className="mt-2 min-h-11 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+                  className="mt-2 min-h-11 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
                 />
               </div>
               <div className="sm:col-span-2">
@@ -315,7 +315,7 @@ export function MediaStorePanel() {
                   value={uploadTags}
                   onChange={(event) => setUploadTags(event.currentTarget.value)}
                   disabled={isBusy}
-                  className="mt-2 min-h-11 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+                  className="mt-2 min-h-11 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
                   placeholder="menu, lobby, spring"
                 />
               </div>
@@ -328,7 +328,7 @@ export function MediaStorePanel() {
                   value={uploadDescription}
                   onChange={(event) => setUploadDescription(event.currentTarget.value)}
                   disabled={isBusy}
-                  className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+                  className="mt-2 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
                   placeholder="Verbose notes about where this media should run and why."
                 />
               </div>
@@ -360,7 +360,7 @@ export function MediaStorePanel() {
           </form>
         </section>
 
-        <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+        <section className="min-w-0 rounded-lg border border-zinc-200 bg-white shadow-sm">
           <div className="border-b border-zinc-200 p-5">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
@@ -382,14 +382,14 @@ export function MediaStorePanel() {
                 value={queryInput}
                 onChange={(event) => setQueryInput(event.currentTarget.value)}
                 placeholder="Search title, description, file, or tag"
-                className="min-h-11 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+                className="min-h-11 min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
               />
               <input
                 name="tag"
                 value={tagInput}
                 onChange={(event) => setTagInput(event.currentTarget.value)}
                 placeholder="Tag filter"
-                className="min-h-11 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+                className="min-h-11 min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
               />
               <button
                 type="submit"
@@ -423,10 +423,10 @@ export function MediaStorePanel() {
                         <button
                           type="button"
                           onClick={() => setSelectedId(item.id)}
-                          className="text-left"
+                          className="min-w-0 text-left"
                         >
-                          <p className="font-semibold text-zinc-950">{item.title}</p>
-                          <p className="mt-1 text-xs text-zinc-600">{item.playbackFileName}</p>
+                          <p className="break-words font-semibold text-zinc-950">{item.title}</p>
+                          <p className="mt-1 break-words text-xs text-zinc-600">{item.playbackFileName}</p>
                         </button>
                       </td>
                       <td className="px-4 py-3">
@@ -450,7 +450,7 @@ export function MediaStorePanel() {
               </tbody>
             </table>
           </div>
-          <div className="flex items-center justify-between border-t border-zinc-200 p-4">
+          <div className="flex flex-col gap-3 border-t border-zinc-200 p-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-zinc-600">{listMessage}</p>
             <button
               type="button"
@@ -466,13 +466,13 @@ export function MediaStorePanel() {
         </section>
       </div>
 
-      <section className="self-start rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+      <section className="min-w-0 self-start rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
         <div className="flex items-start justify-between gap-3">
           <h3 className="text-lg font-semibold">Media Details</h3>
           {selectedItem ? <StatusPill label={selectedItem.status} tone={statusTone(selectedItem.status)} /> : null}
         </div>
         {selectedItem ? (
-          <form onSubmit={handleSaveDetails} className="mt-4 grid gap-3">
+          <form onSubmit={handleSaveDetails} className="mt-4 grid min-w-0 gap-3">
             <div>
               <label htmlFor="details-title" className="text-sm font-semibold text-zinc-950">Title</label>
               <input
@@ -480,7 +480,7 @@ export function MediaStorePanel() {
                 value={detailsTitle}
                 onChange={(event) => setDetailsTitle(event.currentTarget.value)}
                 disabled={isBusy}
-                className="mt-2 min-h-11 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+                className="mt-2 min-h-11 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
               />
             </div>
             <div>
@@ -490,7 +490,7 @@ export function MediaStorePanel() {
                 value={detailsTags}
                 onChange={(event) => setDetailsTags(event.currentTarget.value)}
                 disabled={isBusy}
-                className="mt-2 min-h-11 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+                className="mt-2 min-h-11 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
               />
             </div>
             <div>
@@ -501,25 +501,25 @@ export function MediaStorePanel() {
                 value={detailsDescription}
                 onChange={(event) => setDetailsDescription(event.currentTarget.value)}
                 disabled={isBusy}
-                className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+                className="mt-2 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
               />
             </div>
-            <dl className="grid gap-2 rounded-md bg-zinc-50 p-3 text-sm text-zinc-700">
-              <div className="grid grid-cols-[100px_1fr] gap-2">
+            <dl className="grid min-w-0 gap-2 rounded-md bg-zinc-50 p-3 text-sm text-zinc-700">
+              <div className="grid min-w-0 grid-cols-[88px_minmax(0,1fr)] gap-2">
                 <dt className="font-semibold text-zinc-500">Playback</dt>
-                <dd className="break-words">{selectedItem.playbackFileName}</dd>
+                <dd className="min-w-0 break-words">{selectedItem.playbackFileName}</dd>
               </div>
-              <div className="grid grid-cols-[100px_1fr] gap-2">
+              <div className="grid min-w-0 grid-cols-[88px_minmax(0,1fr)] gap-2">
                 <dt className="font-semibold text-zinc-500">Source</dt>
-                <dd className="break-words">{selectedItem.sourceFileName}</dd>
+                <dd className="min-w-0 break-words">{selectedItem.sourceFileName}</dd>
               </div>
-              <div className="grid grid-cols-[100px_1fr] gap-2">
+              <div className="grid min-w-0 grid-cols-[88px_minmax(0,1fr)] gap-2">
                 <dt className="font-semibold text-zinc-500">Created</dt>
-                <dd>{formatTimestamp(selectedItem.createdAt)}</dd>
+                <dd className="min-w-0 break-words">{formatTimestamp(selectedItem.createdAt)}</dd>
               </div>
-              <div className="grid grid-cols-[100px_1fr] gap-2">
+              <div className="grid min-w-0 grid-cols-[88px_minmax(0,1fr)] gap-2">
                 <dt className="font-semibold text-zinc-500">Updated</dt>
-                <dd>{formatTimestamp(selectedItem.updatedAt)}</dd>
+                <dd className="min-w-0 break-words">{formatTimestamp(selectedItem.updatedAt)}</dd>
               </div>
             </dl>
             <button
