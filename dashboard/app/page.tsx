@@ -19,7 +19,6 @@ import { LocalSystemActions } from "./local-system-actions";
 import { LocalUploadForm } from "./local-upload-form";
 import { SchedulingPanel } from "./scheduling-panel";
 import { TroubleshootingPanel } from "./troubleshooting-panel";
-import { VisualConfirmationControl } from "./visual-confirmation-control";
 
 export const dynamic = "force-dynamic";
 
@@ -63,24 +62,16 @@ type PiProbe = {
   uptime: string | null;
   bootId: string | null;
   displayMode: string | null;
-  displayConnection: "connected" | "disconnected" | "unknown" | null;
-  displayConnectionPath: string | null;
 };
 
 type LastKnownPlayback = {
   bootId: string | null;
   displayMode: string | null;
-  displayConnection: PiProbe["displayConnection"];
   host: string;
   observedAt: string;
   playerStatus: PlayerStatus | null;
   serviceActiveState: string | null;
   serviceSubState: string | null;
-};
-
-type VisualConfirmation = {
-  confirmedAt: string;
-  host: string;
 };
 
 type DashboardState = {
@@ -93,7 +84,6 @@ type DashboardState = {
   playlist: Playlist;
   publishStatus: PublishStatus | null;
   pi: PiProbe;
-  visualConfirmation: VisualConfirmation | null;
 };
 
 type PublishStatus = {
@@ -109,7 +99,6 @@ type PublishStatus = {
 const execTimeoutMs = 4_000;
 const staleStatusThresholdMs = 45_000;
 const staleHeartbeatThresholdMs = 120_000;
-const visualConfirmationFreshMs = 15 * 60 * 1000;
 
 type DashboardView =
   | "dashboard"
@@ -291,40 +280,6 @@ function displayModeFromKmsprint(rawValue: string): string | null {
   return formatDisplayMode(match?.[1]) ?? null;
 }
 
-function parseDisplayConnection(
-  rawValue: string,
-  preferredOutput: string | null | undefined
-): Pick<PiProbe, "displayConnection" | "displayConnectionPath"> {
-  const lines = rawValue
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  const preferredLine = preferredOutput
-    ? lines.find((line) => line.includes(preferredOutput))
-    : null;
-  const firstLine = preferredLine ?? lines[0];
-
-  if (!firstLine) {
-    return {
-      displayConnection: null,
-      displayConnectionPath: null
-    };
-  }
-
-  const [path, value] = firstLine.includes("=")
-    ? firstLine.split("=", 2)
-    : [null, firstLine];
-  const displayConnection = value === "connected" || value === "disconnected" || value === "unknown"
-    ? value
-    : null;
-
-  return {
-    displayConnection,
-    displayConnectionPath: path
-  };
-}
-
 function cleanProbeOutput(rawValue: string): string {
   const statusIndex = rawValue.lastIndexOf("__STATUS__");
   return statusIndex === -1 ? rawValue : rawValue.slice(statusIndex);
@@ -342,58 +297,6 @@ function formatDisplayMode(value: string | null | undefined): string | null {
 
   const refreshRate = Number.parseFloat(match[2]);
   return Number.isFinite(refreshRate) ? `${match[1]} @ ${refreshRate.toFixed(0)} Hz` : value;
-}
-
-function displayConnectionLabel(pi: PiProbe): string {
-  if (!pi.reachable) {
-    return "Unknown";
-  }
-
-  if (pi.displayConnection === "connected") {
-    return "HDMI connected";
-  }
-
-  if (pi.displayConnection === "disconnected") {
-    return "HDMI disconnected";
-  }
-
-  if (pi.displayConnection === "unknown") {
-    return "HDMI unknown";
-  }
-
-  return "Not reported";
-}
-
-function displayConnectionTone(pi: PiProbe): "good" | "warn" | "muted" {
-  if (!pi.reachable || !pi.displayConnection) {
-    return "muted";
-  }
-
-  return pi.displayConnection === "connected" ? "good" : "warn";
-}
-
-function displayConnectionDetail(pi: PiProbe): string {
-  const mode = formatDisplayMode(pi.playerStatus?.displayMode) ?? pi.displayMode;
-  const output = pi.playerStatus?.displayOutput;
-  const modeText = mode ? ` ${mode}${output ? ` on ${output}` : ""}.` : "";
-
-  if (!pi.reachable) {
-    return "Display status is unavailable until Beam can reach the Pi.";
-  }
-
-  if (pi.displayConnection === "connected") {
-    return `The Pi reports the HDMI connector is active.${modeText} Monitor power is not verified.`;
-  }
-
-  if (pi.displayConnection === "disconnected") {
-    return "The Pi is online and playback may still be running, but HDMI does not report a connected screen.";
-  }
-
-  if (pi.displayConnection === "unknown") {
-    return "The Pi reports the HDMI connector, but its connection state is unknown.";
-  }
-
-  return "The Pi did not report an HDMI connector state.";
 }
 
 function formatTemperature(value: string | null): string {
@@ -605,7 +508,6 @@ async function resolveLastKnownPlayback(pi: PiProbe): Promise<LastKnownPlayback 
   const snapshot: LastKnownPlayback = {
     bootId: pi.bootId,
     displayMode: pi.displayMode,
-    displayConnection: pi.displayConnection,
     host: pi.host,
     observedAt: new Date().toISOString(),
     playerStatus: pi.playerStatus,
@@ -649,34 +551,6 @@ function offlinePlaybackDetail(snapshot: LastKnownPlayback | null): string {
   details.push("Playback unknown until this screen comes back online.");
 
   return details.join(" ");
-}
-
-function visualConfirmationPath(): string {
-  return `${localStateDirectory()}/visual-confirmation.json`;
-}
-
-async function readVisualConfirmation(host: string | null): Promise<VisualConfirmation | null> {
-  if (!host) {
-    return null;
-  }
-
-  try {
-    const confirmation = JSON.parse(await fs.readFile(visualConfirmationPath(), "utf8")) as VisualConfirmation;
-    return confirmation.host === host ? confirmation : null;
-  } catch (error) {
-    const code = error instanceof Error && "code" in error ? error.code : undefined;
-    if (code === "ENOENT") {
-      return null;
-    }
-
-    console.error("visual confirmation read failed", error);
-    return null;
-  }
-}
-
-function visualConfirmationIsFresh(confirmation: VisualConfirmation | null): boolean {
-  const age = statusAgeMs(confirmation?.confirmedAt);
-  return age !== null && age <= visualConfirmationFreshMs;
 }
 
 function parseServiceStatus(rawValue: string): Pick<
@@ -724,9 +598,7 @@ async function loadPiProbe(): Promise<PiProbe> {
       serviceRestartCount: null,
       uptime: null,
       bootId: null,
-      displayMode: null,
-      displayConnection: null,
-      displayConnectionPath: null
+      displayMode: null
     };
   }
 
@@ -746,9 +618,7 @@ async function loadPiProbe(): Promise<PiProbe> {
     "printf '__BOOT__\\n'",
     "cat /proc/sys/kernel/random/boot_id 2>/dev/null || true",
     "printf '__DISPLAY__\\n'",
-    "kmsprint 2>/dev/null | sed -n '1,20p' || true",
-    "printf '\\n__DISPLAY_STATUS__\\n'",
-    "for status in /sys/class/drm/card*-HDMI-A-*/status /sys/class/drm/*HDMI*/status; do if [ -r \"$status\" ]; then printf '%s=' \"$status\"; cat \"$status\"; fi; done 2>/dev/null || true"
+    "kmsprint 2>/dev/null | sed -n '1,20p' || true"
   ].join("; ");
 
   try {
@@ -769,10 +639,6 @@ async function loadPiProbe(): Promise<PiProbe> {
     } catch {
       playerStatus = null;
     }
-    const displayConnection = parseDisplayConnection(
-      textAfter(stdout, "__DISPLAY_STATUS__"),
-      playerStatus?.displayOutput ?? process.env.PISIGNAGE_DISPLAY_OUTPUT?.trim() ?? null
-    );
 
     return {
       configured: true,
@@ -786,8 +652,7 @@ async function loadPiProbe(): Promise<PiProbe> {
       ...serviceStatus,
       uptime,
       bootId,
-      displayMode,
-      ...displayConnection
+      displayMode
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
@@ -812,9 +677,7 @@ async function loadPiProbe(): Promise<PiProbe> {
       serviceRestartCount: null,
       uptime: null,
       bootId: null,
-      displayMode: null,
-      displayConnection: null,
-      displayConnectionPath: null
+      displayMode: null
     };
   }
 }
@@ -828,16 +691,6 @@ function textBetween(value: string, start: string, end: string): string {
   }
 
   return value.slice(startIndex + start.length, endIndex).trim();
-}
-
-function textAfter(value: string, start: string): string {
-  const startIndex = value.indexOf(start);
-
-  if (startIndex === -1) {
-    return "";
-  }
-
-  return value.slice(startIndex + start.length).trim();
 }
 
 async function loadDashboardState(): Promise<DashboardState> {
@@ -861,9 +714,8 @@ async function loadDashboardState(): Promise<DashboardState> {
     loadPiProbe()
   ]);
   const lastKnownPlayback = await resolveLastKnownPlayback(pi);
-  const visualConfirmation = await readVisualConfirmation(pi.host);
 
-  return { heartbeat, inventory, lastKnownPlayback, playlist, publishStatus, pi, visualConfirmation };
+  return { heartbeat, inventory, lastKnownPlayback, playlist, publishStatus, pi };
 }
 
 function syncState(localVersion: number, piVersion: number | undefined, piReachable: boolean) {
@@ -933,8 +785,6 @@ type AttentionItem = {
 
 type FleetCommandRow = {
   detail: string;
-  displayLabel: string;
-  displayTone: "good" | "warn" | "muted";
   group: string;
   healthLabel: string;
   healthTone: "good" | "warn" | "muted";
@@ -1008,11 +858,8 @@ function fleetCommandRows({
       const hostConfigured = Boolean(device.host.trim()) && device.host !== "Not configured";
       const isLive = Boolean(pi.host && normalizeIdentity(device.host) === normalizeIdentity(pi.host));
       const livePlaybackStale = isLive && isPlaying && !isPlayerStatusFresh;
-      const displayDisconnected = isLive && pi.reachable && pi.displayConnection === "disconnected";
       const healthLabel = !hostConfigured ? "No host" : isLive ? (pi.reachable ? "Online" : "Offline") : "Not reporting";
       const healthTone = !hostConfigured ? "warn" : isLive ? (pi.reachable ? "good" : "warn") : "muted";
-      const displayLabel = isLive ? displayConnectionLabel(pi) : "Unknown";
-      const displayTone = isLive ? displayConnectionTone(pi) : "muted";
       const deviceAssignedToPlaylist = device.playlistId === playlist.playlistId;
       const syncLabel = !deviceAssignedToPlaylist ? "Unassigned" : isLive ? playlistSyncState.label : "Unknown";
       const syncTone = !deviceAssignedToPlaylist ? "warn" : isLive ? playlistSyncState.tone : "muted";
@@ -1020,22 +867,18 @@ function fleetCommandRows({
       const needsAttention =
         !hostConfigured ||
         !deviceAssignedToPlaylist ||
-        (isLive && (!pi.reachable || displayDisconnected || !playbackHealthy || livePlaybackStale || playlistSyncState.tone !== "good")) ||
+        (isLive && (!pi.reachable || !playbackHealthy || livePlaybackStale || playlistSyncState.tone !== "good")) ||
         (!isLive && hostConfigured);
       const detail = !hostConfigured
         ? "Add a host before this device can report."
         : isLive
           ? pi.reachable
-            ? displayDisconnected
-              ? "Beam can reach the Pi and VLC is reporting playback, but HDMI does not report a connected screen."
-              : playlistSyncState.detail
+            ? playlistSyncState.detail
             : offlinePlaybackDetail(lastKnownPlayback)
           : "This device is saved in Beam, but it is not checking in yet.";
 
       return {
         detail,
-        displayLabel,
-        displayTone,
         group: linkedScreen?.group ?? device.group,
         healthLabel,
         healthTone,
@@ -1063,7 +906,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const resolvedSearchParams = await searchParams;
   const selectedView = dashboardViewFrom(resolvedSearchParams?.view);
   const currentViewCopy = viewCopy[selectedView];
-  const { heartbeat, inventory, lastKnownPlayback, playlist, publishStatus, pi, visualConfirmation } = await loadDashboardState();
+  const { heartbeat, inventory, lastKnownPlayback, playlist, publishStatus, pi } = await loadDashboardState();
   const selectedScreenParam = scalarSearchParam(resolvedSearchParams?.screen);
   const playerStatus = pi.playerStatus;
   const playbackState = playerStatus?.state ?? (pi.reachable ? "unknown" : "unreachable");
@@ -1151,13 +994,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const disconnectedDeviceCount = offlineDeviceCount + notReportingDeviceCount;
   const playingDeviceCount = fleetRows.filter((row) => row.playbackLabel === "Playing").length;
   const staleDeviceCount = fleetRows.filter((row) => row.isLive && isPlaying && !isPlayerStatusFresh).length;
-  const displayIssueCount = fleetRows.filter((row) => row.displayTone === "warn").length;
   const syncIssueCount = fleetRows.filter((row) => row.syncTone === "warn").length;
-  const visualConfirmationFresh = visualConfirmationIsFresh(visualConfirmation);
-  const visualConfirmationLabel = visualConfirmationFresh
-    ? `Confirmed visible ${formatStatusAge(visualConfirmation?.confirmedAt)}`
-    : null;
-  const monitorVisibilityUnknown = pi.reachable && pi.displayConnection === "connected" && !visualConfirmationFresh;
   const playingDetail = playingDeviceCount > 0
     ? staleDeviceCount > 0
       ? `${staleDeviceCount} stale report`
@@ -1169,13 +1006,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     ? `${offlineDeviceCount} offline`
     : notReportingDeviceCount > 0
       ? `${notReportingDeviceCount} not reporting`
-      : displayIssueCount > 0
-        ? `${displayIssueCount} display issue`
-        : syncIssueCount > 0
-          ? `${syncIssueCount} sync issue`
-          : monitorVisibilityUnknown
-            ? "not visually confirmed"
-            : "all reporting";
+      : syncIssueCount > 0
+        ? `${syncIssueCount} sync issue`
+        : "all reporting";
   const fleetAttentionCount = fleetRows.filter((row) => row.needsAttention).length;
   const fleetExceptions = fleetRows
     .filter((row) => row.needsAttention)
@@ -1184,12 +1017,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const systemExceptions = attentionItems.filter((item) => item.label === "Publish failed");
   const commandAttentionCount = fleetAttentionCount + systemExceptions.length;
   const commandCenterReady = commandAttentionCount === 0 && onlineDeviceCount > 0;
-  const visualCheckNeeded = commandCenterReady && monitorVisibilityUnknown;
-  const systemStatusLabel = visualCheckNeeded ? "Verify screen" : commandCenterReady ? "Player ready" : commandAttentionCount > 0 ? "Review" : "Watching";
-  const systemStatusTone = visualCheckNeeded ? "warn" : commandCenterReady ? "good" : commandAttentionCount > 0 ? "warn" : "muted";
-  const verifiedHealthyDetail = pi.displayConnection === "connected"
-    ? "Beam can confirm the Pi and player. It cannot confirm the physical monitor is on or visible."
-    : "No Beam-verifiable issues right now.";
+  const systemStatusLabel = commandCenterReady ? "Ready" : commandAttentionCount > 0 ? "Review" : "Watching";
+  const systemStatusTone = commandCenterReady ? "good" : commandAttentionCount > 0 ? "warn" : "muted";
   const focusedScreen =
     fleetRows.find((row) => row.screenId === selectedScreenParam || row.id === selectedScreenParam) ??
     fleetRows.find((row) => row.isLive) ??
@@ -1203,22 +1032,17 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const focusedPlaybackLabel = focusedScreen?.playbackLabel ?? playbackLabel;
   const focusedSyncLabel = focusedScreen?.syncLabel ?? playlistSyncState.label;
   const focusedScreenHost = focusedScreen?.host || pi.host || "No host";
-  const focusedDisplayDisconnected = focusedScreenIsLive && pi.reachable && pi.displayConnection === "disconnected";
   const focusedOfflineDuration = focusedScreenIsLive && !pi.reachable ? offlineDurationLabel(lastKnownPlayback) : null;
   const focusedLastKnownPlayback =
     focusedScreenIsLive && !pi.reachable ? lastKnownPlaybackLabel(lastKnownPlayback) : null;
   const focusedScreenTitle = focusedScreenIsLive
     ? pi.reachable
-      ? focusedDisplayDisconnected
-        ? "Display not connected"
-        : currentPlayback
+      ? currentPlayback
       : "Screen offline"
     : "Waiting for check-in";
   const focusedScreenDetail = focusedScreenIsLive
     ? pi.reachable
-      ? focusedDisplayDisconnected
-        ? "VLC is reporting playback, but HDMI does not report a connected screen. Check the cable at the Pi and monitor."
-        : currentPlaybackStatus
+      ? currentPlaybackStatus
       : offlinePlaybackDetail(lastKnownPlayback)
     : "This screen is saved in Beam. Once it checks in, its current playback will appear here.";
   const focusedLastReportLabel = focusedScreenIsLive
@@ -1234,11 +1058,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       : "Offline"
     : "Not reporting";
   const focusedScreenSummary = focusedScreenIsLive && pi.reachable
-    ? focusedDisplayDisconnected
-      ? `Display not connected · ${focusedLiveSummary} · Last report ${focusedLastReportLabel}`
-      : `${focusedLiveSummary} · ${visualConfirmationLabel ?? "Monitor not verified"} · ${focusedSyncLabel} · Last report ${focusedLastReportLabel}`
+    ? `${focusedLiveSummary} · ${focusedSyncLabel} · Last report ${focusedLastReportLabel}`
     : [focusedOfflineDuration ?? focusedLiveSummary, focusedLastKnownPlayback ?? "Playback unknown"].join(" · ");
-  const previewEyebrow = focusedScreenIsLive && pi.reachable && !focusedDisplayDisconnected ? "Showing now" : "Screen status";
+  const previewEyebrow = focusedScreenIsLive && pi.reachable ? "Showing now" : "Screen status";
   const focusedPlayerUrl =
     focusedScreenIsLive && piPlayerUrl
       ? piPlayerUrl
@@ -1282,9 +1104,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     },
     {
       label: "Display",
-      value: displayConnectionLabel(pi),
-      detail: displayConnectionDetail(pi),
-      tone: displayConnectionTone(pi)
+      value: formatDisplayMode(playerStatus?.displayMode) ?? pi.displayMode ?? "Unknown",
+      detail: playerStatus?.displayOutput ? `Output ${playerStatus.displayOutput}.` : "No display output was reported by VLC status.",
+      tone: playerStatus?.displayMode || pi.displayMode ? "good" : "warn"
     },
     {
       label: "Thermals",
@@ -1362,8 +1184,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 <dd className="mt-2 text-2xl font-semibold text-zinc-950">{playingDeviceCount}</dd>
                 <dd className="mt-1 text-sm text-zinc-600">{playingDetail}</dd>
               </div>
-              <div className={`rounded-lg border p-4 shadow-sm ${visualCheckNeeded ? "border-amber-200 bg-amber-50" : "border-teal-200 bg-teal-50"}`}>
-                <dt className={`text-xs font-semibold uppercase ${visualCheckNeeded ? "text-amber-900" : "text-teal-800"}`}>Screens</dt>
+              <div className="rounded-lg border border-teal-200 bg-teal-50 p-4 shadow-sm">
+                <dt className="text-xs font-semibold uppercase text-teal-800">Screens</dt>
                 <dd className="mt-2 text-2xl font-semibold text-zinc-950">{inventory.screens.items.length}</dd>
                 <dd className="mt-1 text-sm text-zinc-600">{screenDetail}</dd>
               </div>
@@ -1377,12 +1199,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             <div className="order-2 rounded-lg border border-zinc-200 bg-white shadow-sm xl:order-2">
               <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <h2 id="now-playing-heading" className="mt-1 text-2xl font-semibold">{visualCheckNeeded ? "Visual check needed" : commandAttentionCount === 0 ? "Player verified" : "Exceptions"}</h2>
+                  <h2 id="now-playing-heading" className="mt-1 text-2xl font-semibold">{commandAttentionCount === 0 ? "All clear" : "Exceptions"}</h2>
                   <p className="mt-1 text-sm text-zinc-600">
-                    {visualCheckNeeded
-                      ? "The dashboard is not a physical monitor check."
-                      : commandAttentionCount === 0
-                        ? "Beam has nothing urgent it can verify."
+                    {commandAttentionCount === 0
+                      ? "Beam has nothing urgent to call out."
                       : "What Beam cannot verify right now."}
                   </p>
                 </div>
@@ -1424,10 +1244,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                           <p className="break-words font-semibold text-zinc-950">{row.name}</p>
                           <p className="mt-1 break-words text-zinc-600">{row.location} · {row.group}</p>
                         </div>
-                        <div className="flex flex-wrap gap-2 sm:justify-end">
-                          <StatusPill label={row.healthLabel} tone={row.healthTone} />
-                          {row.displayTone === "warn" ? <StatusPill label={row.displayLabel} tone={row.displayTone} /> : null}
-                        </div>
+                        <StatusPill label={row.healthLabel} tone={row.healthTone} />
                       </div>
                       <p className="break-words leading-6 text-zinc-600">{row.detail}</p>
                       <div>
@@ -1442,20 +1259,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   ))}
                 </ol>
               ) : (
-                <div className={`border-t px-5 py-4 text-sm ${visualCheckNeeded ? "border-amber-200 bg-amber-50 text-amber-950" : "border-zinc-200 text-zinc-600"}`}>
-                  <p className="font-semibold">
-                    {visualCheckNeeded
-                      ? "Monitor visibility is not confirmed."
-                      : visualConfirmationLabel ?? verifiedHealthyDetail}
-                  </p>
-                  {visualCheckNeeded ? (
-                    <>
-                      <p className="mt-2 leading-6 text-amber-900">
-                        {verifiedHealthyDetail} The player link only opens the network player; it is not proof the TV is showing content.
-                      </p>
-                      <VisualConfirmationControl />
-                    </>
-                  ) : null}
+                <div className="border-t border-zinc-200 px-5 py-4 text-sm text-zinc-600">
+                  Everything Beam can see is looking good.
                 </div>
               )}
             </div>
@@ -1582,9 +1387,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             <DeviceHealthFleetPanel
               devices={inventory.devices.items}
               screens={inventory.screens.items}
-              liveDisplayDetail={displayConnectionDetail(pi)}
-              liveDisplayLabel={displayConnectionLabel(pi)}
-              liveDisplayTone={displayConnectionTone(pi)}
               liveHost={pi.host}
               livePlaybackHealthy={playbackHealthy}
               livePlaybackState={playbackLabel}
@@ -1635,8 +1437,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               </div>
               <div className="rounded-md bg-zinc-50 p-4">
                 <dt className="text-xs font-semibold uppercase text-zinc-500">Display</dt>
-                <dd className="mt-2 text-lg font-semibold">{displayConnectionLabel(pi)}</dd>
-                <dd className="mt-1 text-sm text-zinc-600">{formatDisplayMode(playerStatus?.displayMode) ?? pi.displayMode ?? "Mode unknown"}</dd>
+                <dd className="mt-2 text-lg font-semibold">{formatDisplayMode(playerStatus?.displayMode) ?? pi.displayMode ?? "Unknown"}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">{playerStatus?.displayOutput ?? "No output reported"}</dd>
               </div>
               <div className="rounded-md bg-zinc-50 p-4">
                 <dt className="text-xs font-semibold uppercase text-zinc-500">Thermals</dt>
