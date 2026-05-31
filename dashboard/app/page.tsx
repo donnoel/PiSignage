@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import { Metric, StatusPill } from "./dashboard-ui";
 import { DeviceHealthFleetPanel } from "./device-health-fleet-panel";
 import { ensureLocalDataFoundation } from "./lib/local-data-store";
-import type { DeviceStore, ScreenStore } from "./lib/local-data-store";
+import type { DeviceStore, ScreenRecord, ScreenStore } from "./lib/local-data-store";
 import { ensureInventorySeed } from "./lib/local-inventory";
 import { publishStatusPath, readLivePlaylist, repoRoot } from "./lib/local-playlist";
 import type { Playlist, PlaylistAsset } from "./lib/local-playlist";
@@ -99,6 +99,7 @@ type DashboardView =
 
 type DashboardPageProps = {
   searchParams?: Promise<{
+    screen?: string | string[];
     view?: string | string[];
   }>;
 };
@@ -119,34 +120,34 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
     title: "Dashboard"
   },
   "media-store": {
-    eyebrow: "Content library",
+    eyebrow: "Library",
     title: "Media Store",
-    description: "Upload, catalog, and maintain reusable media with searchable metadata."
+    description: "Keep reusable, Pi-safe media ready for playlists."
   },
   playlist: {
-    eyebrow: "Content operations",
+    eyebrow: "Playback loop",
     title: "Playlist",
-    description: "Content queue and publishing."
+    description: "Arrange what plays and publish the local loop."
   },
   "device-health": {
-    eyebrow: "System health",
+    eyebrow: "Health",
     title: "Device Health",
-    description: "Player and hardware diagnostics."
+    description: "Live playback, recovery, and Pi status."
   },
   screens: {
-    eyebrow: "Screen inventory",
+    eyebrow: "Inventory",
     title: "Screens",
-    description: "Status, assignments, and recovery signals."
+    description: "Match screens to devices and the active playlist."
   },
   scheduling: {
-    eyebrow: "Business hours",
+    eyebrow: "Hours",
     title: "Scheduling",
-    description: "Daily on and off windows with timezone-aware screen assignment."
+    description: "Simple on and off windows for each screen."
   },
   troubleshooting: {
-    eyebrow: "Field support",
+    eyebrow: "Support",
     title: "Troubleshooting",
-    description: "Diagnostics, access helpers, logs, publish retry, VLC restart, and recovery history."
+    description: "Fix publish, playback, and Pi access issues."
   }
 };
 
@@ -676,24 +677,119 @@ type AttentionItem = {
   tone: "good" | "warn" | "muted";
 };
 
+type FleetCommandRow = {
+  detail: string;
+  group: string;
+  healthLabel: string;
+  healthTone: "good" | "warn" | "muted";
+  host: string;
+  id: string;
+  isLive: boolean;
+  location: string;
+  name: string;
+  needsAttention: boolean;
+  playbackLabel: string;
+  screenId: string;
+  screenName: string;
+  syncLabel: string;
+  syncTone: "good" | "warn" | "muted";
+};
+
 function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
-function screenOnlineLabel(pi: PiProbe): string {
-  if (!pi.configured) {
-    return "Not configured";
-  }
-
-  return pi.reachable ? "Online" : "Offline";
+function normalizeIdentity(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase();
 }
 
-function screenOnlineTone(pi: PiProbe): "good" | "warn" | "muted" {
-  if (!pi.configured) {
-    return "muted";
+function fleetCommandRows({
+  inventory,
+  isPlaying,
+  isPlayerStatusFresh,
+  pi,
+  playbackHealthy,
+  playbackLabel,
+  playlist,
+  playlistSyncState
+}: {
+  inventory: DashboardState["inventory"];
+  isPlaying: boolean;
+  isPlayerStatusFresh: boolean;
+  pi: PiProbe;
+  playbackHealthy: boolean;
+  playbackLabel: string;
+  playlist: Playlist;
+  playlistSyncState: { detail: string; label: string; tone: "good" | "warn" | "muted" };
+}): FleetCommandRow[] {
+  const screensByDeviceId = new Map<string, ScreenRecord>();
+
+  for (const screen of inventory.screens.items) {
+    if (screen.deviceId) {
+      screensByDeviceId.set(screen.deviceId, screen);
+    }
   }
 
-  return pi.reachable ? "good" : "warn";
+  for (const screen of inventory.screens.items) {
+    const deviceId = inventory.devices.items.find((device) => device.screenId === screen.id)?.id;
+    if (deviceId && !screensByDeviceId.has(deviceId)) {
+      screensByDeviceId.set(deviceId, screen);
+    }
+  }
+
+  return inventory.devices.items
+    .slice()
+    .sort(
+      (left, right) =>
+        left.group.localeCompare(right.group, undefined, { sensitivity: "base" }) ||
+        left.location.localeCompare(right.location, undefined, { sensitivity: "base" }) ||
+        left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
+    )
+    .map((device) => {
+      const linkedScreen = screensByDeviceId.get(device.id) ?? null;
+      const hostConfigured = Boolean(device.host.trim()) && device.host !== "Not configured";
+      const isLive = Boolean(pi.host && normalizeIdentity(device.host) === normalizeIdentity(pi.host));
+      const livePlaybackStale = isLive && isPlaying && !isPlayerStatusFresh;
+      const healthLabel = !hostConfigured ? "No host" : isLive ? (pi.reachable ? "Online" : "Offline") : "Not reporting";
+      const healthTone = !hostConfigured ? "warn" : isLive ? (pi.reachable ? "good" : "warn") : "muted";
+      const deviceAssignedToPlaylist = device.playlistId === playlist.playlistId;
+      const syncLabel = !deviceAssignedToPlaylist ? "Unassigned" : isLive ? playlistSyncState.label : "Unknown";
+      const syncTone = !deviceAssignedToPlaylist ? "warn" : isLive ? playlistSyncState.tone : "muted";
+      const playback = isLive ? (playbackHealthy ? "Playing" : playbackLabel) : "Unknown";
+      const needsAttention =
+        !hostConfigured ||
+        !deviceAssignedToPlaylist ||
+        (isLive && (!pi.reachable || !playbackHealthy || livePlaybackStale || playlistSyncState.tone !== "good")) ||
+        (!isLive && hostConfigured);
+      const detail = !hostConfigured
+        ? "Add a host before this device can report."
+        : isLive
+          ? playlistSyncState.detail
+          : "This device is saved in Beam, but it is not checking in yet.";
+
+      return {
+        detail,
+        group: linkedScreen?.group ?? device.group,
+        healthLabel,
+        healthTone,
+        host: device.host,
+        id: device.id,
+        isLive,
+        location: linkedScreen?.location ?? device.location,
+        name: device.name,
+        needsAttention,
+        playbackLabel: playback,
+        screenId: linkedScreen?.id ?? device.screenId ?? device.id,
+        screenName: linkedScreen?.name ?? "No screen linked",
+        syncLabel,
+        syncTone
+      };
+    });
+}
+
+function scalarSearchParam(value: string | string[] | undefined): string | null {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  return candidate?.trim() || null;
 }
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
@@ -701,6 +797,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const selectedView = dashboardViewFrom(resolvedSearchParams?.view);
   const currentViewCopy = viewCopy[selectedView];
   const { heartbeat, inventory, playlist, publishStatus, pi } = await loadDashboardState();
+  const selectedScreenParam = scalarSearchParam(resolvedSearchParams?.screen);
   const playerStatus = pi.playerStatus;
   const playbackState = playerStatus?.state ?? (pi.reachable ? "unknown" : "unreachable");
   const isPlaying = playbackState === "playing";
@@ -770,10 +867,60 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     });
   }
 
-  const attentionSummary = attentionItems.length === 0 ? "Clear" : pluralize(attentionItems.length, "item");
-  const systemReady = pi.reachable && playbackHealthy && playlistSyncState.tone === "good" && attentionItems.length === 0;
-  const systemStatusLabel = systemReady ? "Ready" : attentionItems.length > 0 ? "Review" : "Watching";
-  const systemStatusTone = systemReady ? "good" : attentionItems.length > 0 ? "warn" : "muted";
+  const fleetRows = fleetCommandRows({
+    inventory,
+    isPlaying,
+    isPlayerStatusFresh,
+    pi,
+    playbackHealthy,
+    playbackLabel,
+    playlist,
+    playlistSyncState
+  });
+  const onlineDeviceCount = fleetRows.filter((row) => row.healthLabel === "Online").length;
+  const notReportingDeviceCount = fleetRows.filter((row) => row.healthLabel === "Not reporting").length;
+  const playingDeviceCount = fleetRows.filter((row) => row.playbackLabel === "Playing").length;
+  const staleDeviceCount = fleetRows.filter((row) => row.isLive && isPlaying && !isPlayerStatusFresh).length;
+  const syncIssueCount = fleetRows.filter((row) => row.syncTone === "warn").length;
+  const fleetAttentionCount = fleetRows.filter((row) => row.needsAttention).length;
+  const fleetExceptions = fleetRows
+    .filter((row) => row.needsAttention)
+    .sort((left, right) => Number(right.isLive) - Number(left.isLive))
+    .slice(0, 8);
+  const systemExceptions = attentionItems.filter((item) => item.label === "Publish failed");
+  const commandAttentionCount = fleetAttentionCount + systemExceptions.length;
+  const fleetAttentionSummary = commandAttentionCount === 0 ? "Clear" : pluralize(commandAttentionCount, "item");
+  const fleetAttentionDetail = fleetExceptions[0]?.name ?? systemExceptions[0]?.label ?? "No action needed";
+  const commandCenterReady = commandAttentionCount === 0 && onlineDeviceCount > 0;
+  const systemStatusLabel = commandCenterReady ? "Ready" : commandAttentionCount > 0 ? "Review" : "Watching";
+  const systemStatusTone = commandCenterReady ? "good" : commandAttentionCount > 0 ? "warn" : "muted";
+  const focusedScreen =
+    fleetRows.find((row) => row.screenId === selectedScreenParam || row.id === selectedScreenParam) ??
+    fleetRows.find((row) => row.isLive) ??
+    fleetRows[0] ??
+    null;
+  const focusedScreenIsLive = Boolean(focusedScreen?.isLive);
+  const focusedScreenName = focusedScreen?.screenName ?? localScreenName;
+  const focusedScreenLocation = focusedScreen
+    ? `${focusedScreen.location} · ${focusedScreen.group}`
+    : localLocationName;
+  const focusedScreenStatus = focusedScreen?.healthLabel ?? (pi.reachable ? "Online" : "Offline");
+  const focusedScreenStatusTone = focusedScreen?.healthTone ?? (pi.reachable ? "good" : "warn");
+  const focusedPlaybackLabel = focusedScreen?.playbackLabel ?? playbackLabel;
+  const focusedPlaybackTone = focusedPlaybackLabel === "Playing" ? "good" : "warn";
+  const focusedSyncLabel = focusedScreen?.syncLabel ?? playlistSyncState.label;
+  const focusedSyncTone = focusedScreen?.syncTone ?? playlistSyncState.tone;
+  const focusedScreenHost = focusedScreen?.host || pi.host || "No host";
+  const focusedScreenTitle = focusedScreenIsLive ? currentPlayback : "Waiting for check-in";
+  const focusedScreenDetail = focusedScreenIsLive
+    ? currentPlaybackStatus
+    : "This screen is saved in Beam. Once it checks in, its current playback will appear here.";
+  const focusedPlayerUrl =
+    focusedScreenIsLive && piPlayerUrl
+      ? piPlayerUrl
+      : focusedScreen?.host && focusedScreen.host !== "Not configured"
+        ? `http://${focusedScreen.host}:5173/?playlist=/playlist.local.json`
+        : null;
   const recoveryEvidence: EvidenceItem[] = [
     {
       label: "Playback heartbeat",
@@ -873,7 +1020,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           >
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h2 id="operations-heading" className="text-2xl font-semibold">At a glance</h2>
+                <h2 id="operations-heading" className="text-2xl font-semibold">Command center</h2>
               </div>
               <div className="self-start">
                 <StatusPill label={systemStatusLabel} tone={systemStatusTone} />
@@ -881,109 +1028,212 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             </div>
             <dl className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
-                <dt className="text-xs font-semibold uppercase text-emerald-800">Screen</dt>
-                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{screenOnlineLabel(pi)}</dd>
-                <dd className="mt-1 text-sm text-zinc-600">{pi.reachable ? localScreenName : pi.message}</dd>
+                <dt className="text-xs font-semibold uppercase text-emerald-800">Online</dt>
+                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{onlineDeviceCount}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">of {pluralize(fleetRows.length, "device")}</dd>
               </div>
               <div className="rounded-lg border border-sky-200 bg-sky-50 p-4 shadow-sm">
-                <dt className="text-xs font-semibold uppercase text-sky-800">Playback</dt>
-                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{playbackHealthy ? "Playing" : playbackLabel}</dd>
-                <dd className="mt-1 text-sm text-zinc-600">{playbackHealthy ? currentPlayback : playerFreshnessDetail}</dd>
-              </div>
-              <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 shadow-sm">
-                <dt className="text-xs font-semibold uppercase text-indigo-800">Sync</dt>
-                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{playlistSyncState.label}</dd>
-                <dd className="mt-1 text-sm text-zinc-600">Local v{playlist.version}; Pi {piPlaylistVersion ? `v${piPlaylistVersion}` : "unknown"}</dd>
+                <dt className="text-xs font-semibold uppercase text-sky-800">Playing</dt>
+                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{playingDeviceCount}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">{staleDeviceCount > 0 ? `${staleDeviceCount} stale report` : "fresh reports"}</dd>
               </div>
               <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 shadow-sm">
-                <dt className="text-xs font-semibold uppercase text-orange-800">Attention</dt>
-                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{attentionSummary}</dd>
-                <dd className="mt-1 text-sm text-zinc-600">{attentionItems[0]?.label ?? "No action needed"}</dd>
+                <dt className="text-xs font-semibold uppercase text-orange-800">Needs a look</dt>
+                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{fleetAttentionSummary}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">{fleetAttentionDetail}</dd>
+              </div>
+              <div className="rounded-lg border border-teal-200 bg-teal-50 p-4 shadow-sm">
+                <dt className="text-xs font-semibold uppercase text-teal-800">Screens</dt>
+                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{inventory.screens.items.length}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">{notReportingDeviceCount} not reporting · {syncIssueCount} sync issue</dd>
               </div>
             </dl>
           </section>
 
           <section
             aria-labelledby="now-playing-heading"
-            className={selectedView === "dashboard" ? "mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]" : "hidden"}
+            className={selectedView === "dashboard" ? "mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]" : "hidden"}
           >
-            <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+            <div className="order-2 rounded-lg border border-zinc-200 bg-white shadow-sm xl:order-2">
               <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <h2 id="now-playing-heading" className="mt-1 text-2xl font-semibold">Now playing</h2>
+                  <h2 id="now-playing-heading" className="mt-1 text-2xl font-semibold">{commandAttentionCount === 0 ? "All clear" : "Exceptions"}</h2>
+                  <p className="mt-1 text-sm text-zinc-600">
+                    {commandAttentionCount === 0
+                      ? "Beam has nothing urgent to call out."
+                      : "The items most likely to affect playback are listed first."}
+                  </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                  <StatusPill label={playbackLabel} tone={playbackHealthy ? "good" : "warn"} />
-                  {piPlayerUrl ? (
+                  <StatusPill label={fleetAttentionSummary} tone={commandAttentionCount === 0 ? "good" : "warn"} />
+                  <a
+                    href="/?view=device-health"
+                    className="inline-flex min-h-10 items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-950 ring-1 ring-zinc-200 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-teal-600"
+                  >
+                    Open Device health
+                  </a>
+                </div>
+              </div>
+              {systemExceptions.length > 0 || fleetExceptions.length > 0 ? (
+                <ol className="divide-y divide-zinc-200">
+                  {systemExceptions.map((item) => (
+                    <li key={`${item.label}-${item.detail}`} className="grid gap-3 px-5 py-4 text-sm lg:grid-cols-[minmax(180px,0.7fr)_minmax(0,1fr)_auto] lg:items-start">
+                      <div className="min-w-0">
+                        <p className="break-words font-semibold text-zinc-950">{item.label}</p>
+                        <p className="mt-1 break-words text-zinc-600">Local operation</p>
+                      </div>
+                      <div className="min-w-0">
+                        <StatusPill label="Check" tone={item.tone} />
+                        <p className="mt-2 break-words leading-6 text-zinc-600">{item.detail}</p>
+                      </div>
+                      <div className="lg:justify-self-end">
+                        <a
+                          href="/?view=playlist"
+                          className="inline-flex min-h-10 items-center rounded-md px-3 py-2 font-semibold text-teal-800 ring-1 ring-teal-200 hover:bg-teal-50 focus:outline-none focus:ring-2 focus:ring-teal-600"
+                        >
+                          Review
+                        </a>
+                      </div>
+                    </li>
+                  ))}
+                  {fleetExceptions.map((row) => (
+                    <li key={row.id} className="grid gap-3 px-5 py-4 text-sm lg:grid-cols-[minmax(180px,0.7fr)_minmax(0,1fr)_auto] lg:items-start">
+                      <div className="min-w-0">
+                        <p className="break-words font-semibold text-zinc-950">{row.name}</p>
+                        <p className="mt-1 break-words text-zinc-600">{row.location} · {row.group}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap gap-2">
+                          <StatusPill label={row.healthLabel} tone={row.healthTone} />
+                          <StatusPill label={row.playbackLabel} tone={row.playbackLabel === "Playing" ? "good" : "warn"} />
+                          <StatusPill label={row.syncLabel} tone={row.syncTone} />
+                        </div>
+                        <p className="mt-2 break-words leading-6 text-zinc-600">
+                          {row.screenName} · {row.host || "No host"} · {row.detail}
+                        </p>
+                      </div>
+                      <div className="lg:justify-self-end">
+                        <a
+                          href="/?view=screens"
+                          className="inline-flex min-h-10 items-center rounded-md px-3 py-2 font-semibold text-teal-800 ring-1 ring-teal-200 hover:bg-teal-50 focus:outline-none focus:ring-2 focus:ring-teal-600"
+                        >
+                          Manage
+                        </a>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <div className="p-5">
+                  <div className="rounded-lg bg-emerald-50 p-4 text-sm text-emerald-950 ring-1 ring-emerald-200">
+                    <p className="font-semibold">No device exceptions.</p>
+                    <p className="mt-1 text-emerald-900">Everything Beam can see is looking good.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="order-1 space-y-4 xl:order-1">
+              <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+                <div className="flex flex-col gap-4 border-b border-zinc-200 p-5">
+                  <div>
+                    <h2 className="mt-1 text-2xl font-semibold">Screen preview</h2>
+                    <p className="mt-1 text-sm text-zinc-600">{focusedScreenLocation}</p>
+                  </div>
+                  <form method="get" className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                    <label htmlFor="screen-focus" className="sr-only">Choose screen to preview</label>
+                    <select
+                      id="screen-focus"
+                      name="screen"
+                      defaultValue={focusedScreen?.screenId ?? ""}
+                      className="min-h-10 rounded-md border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-950 focus:outline-none focus:ring-2 focus:ring-teal-600"
+                    >
+                      {fleetRows.length === 0 ? (
+                        <option value="">No screens in inventory</option>
+                      ) : (
+                        fleetRows.map((row) => (
+                          <option key={row.id} value={row.screenId}>
+                            {row.screenName} · {row.location}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                    <button
+                      type="submit"
+                      className="inline-flex min-h-10 items-center justify-center rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-600"
+                    >
+                      Show
+                    </button>
+                  </form>
+                </div>
+                <div className="p-5">
+                  <div className="rounded-[1.25rem] border border-zinc-800 bg-zinc-950 p-3 shadow-xl shadow-zinc-300/60">
+                    <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-950 via-zinc-900 to-teal-950 px-4 py-5 text-white ring-1 ring-white/10">
+                      <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white/10 to-transparent" />
+                      <div className="relative flex min-h-[260px] flex-col justify-between gap-5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <StatusPill label={focusedScreenStatus} tone={focusedScreenStatusTone} />
+                          <StatusPill label={focusedPlaybackLabel} tone={focusedPlaybackTone} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold uppercase text-cyan-100/80">Showing now</p>
+                          <p className="mt-2 break-words text-3xl font-black leading-tight sm:text-4xl">{focusedScreenTitle}</p>
+                          <p className="mt-3 max-w-sm text-sm leading-6 text-cyan-50/80">{focusedScreenDetail}</p>
+                        </div>
+                        <div className="grid gap-2 text-sm sm:grid-cols-2">
+                          <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/10">
+                            <p className="font-semibold text-cyan-50/70">Screen</p>
+                            <p className="mt-1 break-words font-semibold text-white">{focusedScreenName}</p>
+                          </div>
+                          <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/10">
+                            <p className="font-semibold text-cyan-50/70">Host</p>
+                            <p className="mt-1 break-words font-semibold text-white">{focusedScreenHost}</p>
+                          </div>
+                          <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/10">
+                            <p className="font-semibold text-cyan-50/70">Loop</p>
+                            <p className="mt-1 font-semibold text-white">{playlist.assets.length} items · {totalDuration}</p>
+                          </div>
+                          <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/10">
+                            <p className="font-semibold text-cyan-50/70">Sync</p>
+                            <p className="mt-1 font-semibold text-white">{focusedSyncLabel}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mx-auto mt-3 h-2 w-24 rounded-full bg-zinc-700" aria-hidden="true" />
+                  </div>
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <StatusPill label={focusedSyncLabel} tone={focusedSyncTone} />
+                    <span className="text-sm text-zinc-600">Last report {focusedScreenIsLive ? formatStatusAge(playerStatus?.updatedAt) : "not checking in"}</span>
+                    {focusedPlayerUrl ? (
                     <a
-                      href={piPlayerUrl}
+                      href={focusedPlayerUrl}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex min-h-10 items-center rounded-md bg-zinc-950 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-teal-600"
                     >
                       Open Pi player
                     </a>
-                  ) : null}
+                    ) : null}
+                  </div>
                 </div>
               </div>
-              <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-                <div className="min-w-0">
-                  <p className="break-words text-3xl font-semibold leading-tight text-zinc-950 sm:text-4xl">{currentPlayback}</p>
-                  <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-600">{currentPlaybackStatus}</p>
-                  <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
-                    <div className="rounded-md bg-zinc-50 p-3">
-                      <dt className="font-semibold text-zinc-500">Loop</dt>
-                      <dd className="mt-1 text-zinc-950">{playlist.assets.length} items · {totalDuration}</dd>
-                    </div>
-                    <div className="rounded-md bg-zinc-50 p-3">
-                      <dt className="font-semibold text-zinc-500">Last report</dt>
-                      <dd className="mt-1 text-zinc-950">{formatStatusAge(playerStatus?.updatedAt)}</dd>
-                    </div>
-                  </dl>
-                </div>
-                <dl className="grid content-start gap-3 text-sm">
-                  <div className="rounded-md bg-zinc-50 p-3">
-                    <dt className="font-semibold text-zinc-500">Screen</dt>
-                    <dd className="mt-1 text-zinc-950">{localScreenName}</dd>
-                  </div>
-                  <div className="rounded-md bg-zinc-50 p-3">
-                    <dt className="font-semibold text-zinc-500">Heartbeat</dt>
-                    <dd className="mt-1 text-zinc-950">{playerFreshnessDetail}</dd>
-                  </div>
-                </dl>
-              </div>
-            </div>
 
-            <div className="space-y-4">
               <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
                 <div className="flex items-start justify-between gap-3 border-b border-zinc-200 p-5">
                   <div>
-                    <h2 className="mt-1 text-2xl font-semibold">{attentionItems.length === 0 ? "Evidence" : "Needs attention"}</h2>
+                    <h2 className="mt-1 text-2xl font-semibold">Evidence</h2>
                   </div>
-                  <StatusPill label={attentionSummary} tone={attentionItems.length === 0 ? "good" : "warn"} />
+                  <StatusPill label={playbackHealthy && playlistSyncState.tone === "good" ? "Clear" : "Check"} tone={playbackHealthy && playlistSyncState.tone === "good" ? "good" : "warn"} />
                 </div>
-                {attentionItems.length > 0 ? (
-                  <ol className="divide-y divide-zinc-200">
-                    {attentionItems.map((item) => (
-                      <li key={`${item.label}-${item.detail}`} className="grid gap-2 p-4 text-sm">
-                        <div className="flex items-start justify-between gap-3">
-                          <p className="font-semibold text-zinc-950">{item.label}</p>
-                          <StatusPill label="Check" tone={item.tone} />
-                        </div>
-                        <p className="leading-6 text-zinc-600">{item.detail}</p>
-                      </li>
-                    ))}
-                  </ol>
-                ) : (
-                  <dl className="grid gap-3 p-4 text-sm">
-                    {recoveryEvidence.slice(0, 3).map((item) => (
-                      <div key={item.label} className="rounded-md bg-zinc-50 p-3">
-                        <dt className="font-semibold text-zinc-500">{item.label}</dt>
-                        <dd className="mt-1 font-semibold text-zinc-950">{item.value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                )}
+                <dl className="grid gap-3 p-4 text-sm">
+                  {recoveryEvidence.slice(0, 3).map((item) => (
+                    <div key={item.label} className="rounded-md bg-zinc-50 p-3">
+                      <dt className="font-semibold text-zinc-500">{item.label}</dt>
+                      <dd className="mt-1 font-semibold text-zinc-950">{item.value}</dd>
+                    </div>
+                  ))}
+                </dl>
               </div>
             </div>
           </section>
