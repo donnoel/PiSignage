@@ -1,6 +1,9 @@
 import { promises as fs } from "node:fs";
 import { Metric, StatusPill } from "./dashboard-ui";
+import { DeviceHealthFleetPanel } from "./device-health-fleet-panel";
 import { ensureLocalDataFoundation } from "./lib/local-data-store";
+import type { DeviceStore, ScreenStore } from "./lib/local-data-store";
+import { ensureInventorySeed } from "./lib/local-inventory";
 import { publishStatusPath, readLivePlaylist, repoRoot } from "./lib/local-playlist";
 import type { Playlist, PlaylistAsset } from "./lib/local-playlist";
 import { readPiConfig, runSsh } from "./lib/pi-local";
@@ -59,6 +62,10 @@ type PiProbe = {
 
 type DashboardState = {
   heartbeat: Heartbeat | null;
+  inventory: {
+    devices: DeviceStore;
+    screens: ScreenStore;
+  };
   playlist: Playlist;
   publishStatus: PublishStatus | null;
   pi: PiProbe;
@@ -571,14 +578,23 @@ async function loadDashboardState(): Promise<DashboardState> {
 
   const root = repoRoot();
   const heartbeatPath = `${root}/device-agent/local-state/heartbeat.json`;
-  const [playlist, heartbeat, publishStatus, pi] = await Promise.all([
-    readLivePlaylist(),
+  const playlist = await readLivePlaylist();
+  const piConfig = readPiConfig();
+  const [heartbeat, inventory, publishStatus, pi] = await Promise.all([
     readJsonFile<Heartbeat>(heartbeatPath),
+    ensureInventorySeed({
+      host: piConfig?.host ?? null,
+      location: process.env.PISIGNAGE_LOCATION_NAME?.trim() || "Primary location",
+      playlistId: playlist.playlistId,
+      rootPath: piConfig?.root ?? null,
+      screenName: process.env.PISIGNAGE_SCREEN_NAME?.trim() || "Primary Screen",
+      sshUser: piConfig?.user ?? null
+    }),
     readJsonFile<PublishStatus>(publishStatusPath()),
     loadPiProbe()
   ]);
 
-  return { heartbeat, playlist, publishStatus, pi };
+  return { heartbeat, inventory, playlist, publishStatus, pi };
 }
 
 function syncState(localVersion: number, piVersion: number | undefined, piReachable: boolean) {
@@ -662,7 +678,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const resolvedSearchParams = await searchParams;
   const selectedView = dashboardViewFrom(resolvedSearchParams?.view);
   const currentViewCopy = viewCopy[selectedView];
-  const { heartbeat, playlist, publishStatus, pi } = await loadDashboardState();
+  const { heartbeat, inventory, playlist, publishStatus, pi } = await loadDashboardState();
   const playerStatus = pi.playerStatus;
   const playbackState = playerStatus?.state ?? (pi.reachable ? "unknown" : "unreachable");
   const isPlaying = playbackState === "playing";
@@ -1017,7 +1033,26 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </section>
 
           <section
-            id="recovery"
+            id="fleet-health"
+            className={selectedView === "device-health" ? "" : "hidden"}
+          >
+            <DeviceHealthFleetPanel
+              devices={inventory.devices.items}
+              screens={inventory.screens.items}
+              liveHost={pi.host}
+              livePlaybackHealthy={playbackHealthy}
+              livePlaybackState={playbackLabel}
+              livePlaylistVersion={typeof piPlaylistVersion === "number" ? piPlaylistVersion : null}
+              liveReachable={pi.reachable}
+              liveStatusStale={Boolean(pi.configured && isPlaying && !isPlayerStatusFresh)}
+              playlistId={playlist.playlistId}
+              playlistVersion={playlist.version}
+              statusAgeLabel={lastPlayerHeartbeatAge}
+              statusTimestampLabel={playerUpdatedAt}
+            />
+          </section>
+
+          <section
             aria-labelledby="recovery-heading"
             className={selectedView === "device-health" ? "mt-6 rounded-lg border border-zinc-200 bg-white p-5 shadow-sm" : "hidden"}
           >
