@@ -915,6 +915,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const focusedScreenDetail = focusedScreenIsLive
     ? currentPlaybackStatus
     : "This screen is saved in Beam. Once it checks in, its current playback will appear here.";
+  const focusedLastReportLabel = focusedScreenIsLive ? formatStatusAge(playerStatus?.updatedAt) : "not checking in";
+  const focusedLiveSummary = focusedScreenIsLive && focusedPlaybackLabel === "Playing" ? "Playing live" : focusedPlaybackLabel;
+  const focusedScreenSummary = `${focusedLiveSummary} · ${focusedSyncLabel} · Last report ${focusedLastReportLabel}`;
   const focusedPlayerUrl =
     focusedScreenIsLive && piPlayerUrl
       ? piPlayerUrl
@@ -1022,9 +1025,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <div>
                 <h2 id="operations-heading" className="text-2xl font-semibold">Command center</h2>
               </div>
-              <div className="self-start">
-                <StatusPill label={systemStatusLabel} tone={systemStatusTone} />
-              </div>
+              <p className={`text-sm font-semibold ${systemStatusTone === "good" ? "text-emerald-700" : systemStatusTone === "warn" ? "text-amber-800" : "text-zinc-600"}`}>
+                {systemStatusLabel}
+              </p>
             </div>
             <dl className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
@@ -1065,7 +1068,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                  <StatusPill label={fleetAttentionSummary} tone={commandAttentionCount === 0 ? "good" : "warn"} />
                   <a
                     href="/?view=device-health"
                     className="inline-flex min-h-10 items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-950 ring-1 ring-zinc-200 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-teal-600"
@@ -1138,7 +1140,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 <div className="flex flex-col gap-4 border-b border-zinc-200 p-5">
                   <div>
                     <h2 className="mt-1 text-2xl font-semibold">Screen preview</h2>
-                    <p className="mt-1 text-sm text-zinc-600">{focusedScreenLocation}</p>
+                    <p className="mt-1 text-sm text-zinc-600">{focusedScreenLocation} · {focusedScreenSummary}</p>
                   </div>
                   <form method="get" className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
                     <label htmlFor="screen-focus" className="sr-only">Choose screen to preview</label>
@@ -1171,10 +1173,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-950 via-zinc-900 to-teal-950 px-4 py-5 text-white ring-1 ring-white/10">
                       <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white/10 to-transparent" />
                       <div className="relative flex min-h-[260px] flex-col justify-between gap-5">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <StatusPill label={focusedScreenStatus} tone={focusedScreenStatusTone} />
-                          <StatusPill label={focusedPlaybackLabel} tone={focusedPlaybackTone} />
-                        </div>
                         <div>
                           <p className="text-sm font-semibold uppercase text-cyan-100/80">Showing now</p>
                           <p className="mt-2 break-words text-3xl font-black leading-tight sm:text-4xl">{focusedScreenTitle}</p>
@@ -1193,18 +1191,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                             <p className="font-semibold text-cyan-50/70">Loop</p>
                             <p className="mt-1 font-semibold text-white">{playlist.assets.length} items · {totalDuration}</p>
                           </div>
-                          <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/10">
-                            <p className="font-semibold text-cyan-50/70">Sync</p>
-                            <p className="mt-1 font-semibold text-white">{focusedSyncLabel}</p>
-                          </div>
                         </div>
                       </div>
                     </div>
                     <div className="mx-auto mt-3 h-2 w-24 rounded-full bg-zinc-700" aria-hidden="true" />
                   </div>
                   <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <StatusPill label={focusedSyncLabel} tone={focusedSyncTone} />
-                    <span className="text-sm text-zinc-600">Last report {focusedScreenIsLive ? formatStatusAge(playerStatus?.updatedAt) : "not checking in"}</span>
                     {focusedPlayerUrl ? (
                     <a
                       href={focusedPlayerUrl}
@@ -1217,23 +1209,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     ) : null}
                   </div>
                 </div>
-              </div>
-
-              <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
-                <div className="flex items-start justify-between gap-3 border-b border-zinc-200 p-5">
-                  <div>
-                    <h2 className="mt-1 text-2xl font-semibold">Evidence</h2>
-                  </div>
-                  <StatusPill label={playbackHealthy && playlistSyncState.tone === "good" ? "Clear" : "Check"} tone={playbackHealthy && playlistSyncState.tone === "good" ? "good" : "warn"} />
-                </div>
-                <dl className="grid gap-3 p-4 text-sm">
-                  {recoveryEvidence.slice(0, 3).map((item) => (
-                    <div key={item.label} className="rounded-md bg-zinc-50 p-3">
-                      <dt className="font-semibold text-zinc-500">{item.label}</dt>
-                      <dd className="mt-1 font-semibold text-zinc-950">{item.value}</dd>
-                    </div>
-                  ))}
-                </dl>
               </div>
             </div>
           </section>
