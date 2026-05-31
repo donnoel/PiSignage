@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import { DashboardAutoRefresh } from "./dashboard-auto-refresh";
 import { Metric, StatusPill } from "./dashboard-ui";
 import { DeviceHealthFleetPanel } from "./device-health-fleet-panel";
 import { ensureLocalDataFoundation } from "./lib/local-data-store";
@@ -941,7 +942,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const focusedScreenDetail = focusedScreenIsLive
     ? pi.reachable
       ? currentPlaybackStatus
-      : "Beam cannot reach the Pi. Cached playback may still be running locally, but this dashboard cannot confirm it until the network returns."
+      : "Beam cannot reach this screen. Cached playback may still be running locally, but this dashboard cannot confirm it until the network returns."
     : "This screen is saved in Beam. Once it checks in, its current playback will appear here.";
   const focusedLastReportLabel = focusedScreenIsLive
     ? pi.reachable
@@ -1016,6 +1017,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#f3f6f8] text-zinc-950">
+      {selectedView === "dashboard" || selectedView === "device-health" ? <DashboardAutoRefresh /> : null}
       <div className="grid min-h-screen lg:grid-cols-[220px_minmax(0,1fr)]">
         <aside className="border-b border-cyan-200 bg-gradient-to-b from-cyan-50 via-white to-slate-100 px-5 py-5 text-slate-950 lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r lg:py-6">
           <div className="flex flex-wrap items-end justify-between gap-2 lg:block">
@@ -1209,8 +1211,22 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                       <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white/10 to-transparent" />
                       <div className="relative flex min-h-[260px] flex-col justify-between gap-5">
                         <div>
-                          <p className="text-sm font-semibold uppercase text-cyan-100/80">{previewEyebrow}</p>
-                          <p className="mt-2 break-words text-3xl font-black leading-tight sm:text-4xl">{focusedScreenTitle}</p>
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold uppercase text-cyan-100/80">{previewEyebrow}</p>
+                              <p className="mt-2 break-words text-3xl font-black leading-tight sm:text-4xl">{focusedScreenTitle}</p>
+                            </div>
+                            {focusedPlayerUrl ? (
+                              <a
+                                href={focusedPlayerUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-50 focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                              >
+                                View screen
+                              </a>
+                            ) : null}
+                          </div>
                           <p className="mt-3 max-w-sm text-sm leading-6 text-cyan-50/80">{focusedScreenDetail}</p>
                         </div>
                         <div className="grid gap-2 text-sm sm:grid-cols-2">
@@ -1230,18 +1246,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                       </div>
                     </div>
                     <div className="mx-auto mt-3 h-2 w-24 rounded-full bg-zinc-700" aria-hidden="true" />
-                  </div>
-                  <div className="mt-4 flex flex-wrap items-center gap-2">
-                    {focusedPlayerUrl ? (
-                    <a
-                      href={focusedPlayerUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex min-h-10 items-center rounded-md bg-zinc-950 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-teal-600"
-                    >
-                      Open Pi player
-                    </a>
-                    ) : null}
                   </div>
                 </div>
               </div>
