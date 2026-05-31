@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { StatusPill } from "./dashboard-ui";
 
+type Tone = "good" | "muted" | "warn";
+
 type ScreenRecord = {
   deviceId: string | null;
   group: string;
@@ -11,6 +13,7 @@ type ScreenRecord = {
   location: string;
   name: string;
   playlistId: string | null;
+  updatedAt?: string;
 };
 
 type DeviceRecord = {
@@ -20,30 +23,74 @@ type DeviceRecord = {
   location: string;
   name: string;
   playlistId: string | null;
+  playerType?: "vlc";
+  rootPath?: string;
   screenId: string | null;
+  sshUser?: string;
+  updatedAt?: string;
+};
+
+type PlaylistOption = {
+  assetCount: number;
+  name: string;
+  playlistId: string;
+  version: number;
 };
 
 type InventoryResponse = {
   devices: DeviceRecord[];
   error?: string;
   playlistId: string;
-  playlistName: string;
+  playlistName?: string;
   screens: ScreenRecord[];
 };
 
 type InventoryPanelProps = {
   liveHost: string | null;
+  livePlaybackHealthy: boolean;
   livePlaybackState: string;
+  livePlaylistId: string | null;
   livePlaylistVersion: number | null;
   liveReachable: boolean;
+  liveStatusStale: boolean;
   playlistId: string;
-  playlistVersion: number;
+  playlists: PlaylistOption[];
   statusAgeLabel: string;
   statusTimestampLabel: string;
 };
 
+type ScreenRow = {
+  assignedPlaylist: PlaylistOption | null;
+  assignedPlaylistId: string | null;
+  currentPlaylistLine: string;
+  device: DeviceRecord | null;
+  devicePlaylistLine: string | null;
+  isLive: boolean;
+  lastSeenAge: string;
+  lastSeenFull: string;
+  needsAttention: boolean;
+  playbackDetail: string;
+  playbackLabel: string;
+  playbackTone: Tone;
+  screen: ScreenRecord;
+  statusDetail: string;
+  statusLabel: string;
+  statusTone: Tone;
+  syncDetail: string;
+  syncLabel: string;
+  syncTone: Tone;
+};
+
 function compareText(left: string, right: string): number {
   return left.localeCompare(right, undefined, { sensitivity: "base" });
+}
+
+function formatCount(count: number, label: string): string {
+  return `${count} ${count === 1 ? label : `${label}s`}`;
+}
+
+function normalized(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase();
 }
 
 function sortScreens(screens: ScreenRecord[]): ScreenRecord[] {
@@ -68,19 +115,40 @@ function sortDevices(devices: DeviceRecord[]): DeviceRecord[] {
     );
 }
 
+function hasLocalAddress(device: DeviceRecord): boolean {
+  return Boolean(device.host.trim()) && normalized(device.host) !== "not configured";
+}
+
+function plainPlaybackLabel(value: string): string {
+  if (value === "Stale") {
+    return "Old report";
+  }
+  if (value === "unreachable") {
+    return "Not available";
+  }
+  if (value === "unknown") {
+    return "Not confirmed";
+  }
+
+  return value || "Not reported";
+}
+
 export function ScreenDeviceInventoryPanel({
   liveHost,
+  livePlaybackHealthy,
   livePlaybackState,
+  livePlaylistId,
   livePlaylistVersion,
   liveReachable,
+  liveStatusStale,
   playlistId,
-  playlistVersion,
+  playlists,
   statusAgeLabel,
   statusTimestampLabel
 }: InventoryPanelProps) {
   const router = useRouter();
   const [inventory, setInventory] = useState<InventoryResponse | null>(null);
-  const [message, setMessage] = useState("Loading inventory...");
+  const [message, setMessage] = useState("Loading screens...");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [screenName, setScreenName] = useState("");
@@ -93,9 +161,324 @@ export function ScreenDeviceInventoryPanel({
   const [isPending, startTransition] = useTransition();
   const isBusy = isLoading || isSaving || isPending;
 
+  const screens = useMemo(() => sortScreens(inventory?.screens ?? []), [inventory?.screens]);
+  const devices = useMemo(() => sortDevices(inventory?.devices ?? []), [inventory?.devices]);
+
+  const playlistsById = useMemo(() => {
+    return new Map(playlists.map((playlist) => [playlist.playlistId, playlist]));
+  }, [playlists]);
+
   const devicesById = useMemo(() => {
-    return new Map((inventory?.devices ?? []).map((device) => [device.id, device]));
-  }, [inventory?.devices]);
+    return new Map(devices.map((device) => [device.id, device]));
+  }, [devices]);
+
+  const devicesByScreenId = useMemo(() => {
+    const next = new Map<string, DeviceRecord>();
+    for (const device of devices) {
+      if (device.screenId) {
+        next.set(device.screenId, device);
+      }
+    }
+    return next;
+  }, [devices]);
+
+  function playlistName(playlistIdValue: string | null | undefined): string {
+    if (!playlistIdValue) {
+      return "No playlist";
+    }
+
+    return playlistsById.get(playlistIdValue)?.name ?? "Playlist not found";
+  }
+
+  function deviceIsLive(device: DeviceRecord): boolean {
+    return Boolean(liveHost && normalized(device.host) === normalized(liveHost));
+  }
+
+  function linkedDeviceForScreen(screen: ScreenRecord): DeviceRecord | null {
+    if (screen.deviceId) {
+      return devicesById.get(screen.deviceId) ?? devicesByScreenId.get(screen.id) ?? null;
+    }
+
+    return devicesByScreenId.get(screen.id) ?? null;
+  }
+
+  function screenStatus(device: DeviceRecord | null): {
+    detail: string;
+    label: string;
+    tone: Tone;
+  } {
+    if (!device) {
+      return {
+        detail: "No local device is linked to this screen yet.",
+        label: "Needs setup",
+        tone: "warn"
+      };
+    }
+
+    if (!hasLocalAddress(device)) {
+      return {
+        detail: "Add the local address before Beam can check this screen.",
+        label: "Needs setup",
+        tone: "warn"
+      };
+    }
+
+    if (deviceIsLive(device)) {
+      return liveReachable
+        ? {
+            detail: "Beam can reach this screen on the local network.",
+            label: "Online",
+            tone: "good"
+          }
+        : {
+            detail: "Beam cannot reach this screen right now.",
+            label: "Offline",
+            tone: "warn"
+          };
+    }
+
+    return {
+      detail: "Saved locally, but no check-in has been seen for this address.",
+      label: "Not reporting",
+      tone: "muted"
+    };
+  }
+
+  function playbackStatus(device: DeviceRecord | null): {
+    detail: string;
+    label: string;
+    tone: Tone;
+  } {
+    if (!device || !deviceIsLive(device)) {
+      return {
+        detail: "No live playback report is available for this saved screen.",
+        label: "Not reported",
+        tone: "muted"
+      };
+    }
+
+    if (!liveReachable) {
+      return {
+        detail: "Playback may continue locally, but Beam cannot verify it until the screen is reachable.",
+        label: "Not available",
+        tone: "warn"
+      };
+    }
+
+    if (livePlaybackHealthy) {
+      return {
+        detail: "Latest local report says playback is running.",
+        label: "Playing",
+        tone: "good"
+      };
+    }
+
+    return {
+      detail: liveStatusStale
+        ? "The last playing report is old. Playback may still be running locally."
+        : "Beam has not confirmed playback yet.",
+      label: plainPlaybackLabel(livePlaybackState),
+      tone: "warn"
+    };
+  }
+
+  function syncStatus(screen: ScreenRecord, device: DeviceRecord | null): {
+    detail: string;
+    label: string;
+    tone: Tone;
+  } {
+    const assignedPlaylist = screen.playlistId ? playlistsById.get(screen.playlistId) : null;
+
+    if (!screen.playlistId) {
+      return {
+        detail: "Choose a playlist for this screen before publishing.",
+        label: "Choose playlist",
+        tone: "warn"
+      };
+    }
+
+    if (!assignedPlaylist) {
+      return {
+        detail: "This screen points to a playlist Beam cannot find locally.",
+        label: "Review",
+        tone: "warn"
+      };
+    }
+
+    if (!device || !hasLocalAddress(device)) {
+      return {
+        detail: "Link a local device before Beam can check the screen playlist.",
+        label: "Waiting",
+        tone: "muted"
+      };
+    }
+
+    if (!deviceIsLive(device)) {
+      return {
+        detail: "No live playlist report has been received for this saved screen.",
+        label: "Waiting",
+        tone: "muted"
+      };
+    }
+
+    if (!liveReachable) {
+      return {
+        detail: "Beam cannot reach this screen to confirm the playlist.",
+        label: "Waiting",
+        tone: "muted"
+      };
+    }
+
+    if (!livePlaylistId || livePlaylistVersion === null) {
+      return {
+        detail: "The screen has not reported a playlist update yet.",
+        label: "Unknown",
+        tone: "warn"
+      };
+    }
+
+    if (livePlaylistId !== assignedPlaylist.playlistId) {
+      return {
+        detail: `Assigned to ${assignedPlaylist.name}, but the screen reports ${playlistName(livePlaylistId)}.`,
+        label: "Update needed",
+        tone: "warn"
+      };
+    }
+
+    if (livePlaylistVersion === assignedPlaylist.version) {
+      return {
+        detail: `${assignedPlaylist.name} update ${assignedPlaylist.version} is on this screen.`,
+        label: "Up to date",
+        tone: "good"
+      };
+    }
+
+    if (livePlaylistVersion < assignedPlaylist.version) {
+      return {
+        detail: `Beam has update ${assignedPlaylist.version}; the screen reports update ${livePlaylistVersion}.`,
+        label: "Update needed",
+        tone: "warn"
+      };
+    }
+
+    return {
+      detail: `The screen reports update ${livePlaylistVersion}; Beam has update ${assignedPlaylist.version}.`,
+      label: "Review",
+      tone: "warn"
+    };
+  }
+
+  function statusForDevice(device: DeviceRecord): {
+    detail: string;
+    label: string;
+    tone: Tone;
+  } {
+    if (!hasLocalAddress(device)) {
+      return {
+        detail: "No local address saved.",
+        label: "Needs setup",
+        tone: "warn"
+      };
+    }
+
+    if (deviceIsLive(device)) {
+      return liveReachable
+        ? {
+            detail: "Reachable on the local network.",
+            label: "Online",
+            tone: "good"
+          }
+        : {
+            detail: "Not reachable right now.",
+            label: "Offline",
+            tone: "warn"
+          };
+    }
+
+    return {
+      detail: "No live check-in for this saved device.",
+      label: "Not reporting",
+      tone: "muted"
+    };
+  }
+
+  const screenRows = useMemo<ScreenRow[]>(() => {
+    return screens.map((screen) => {
+      const device = linkedDeviceForScreen(screen);
+      const status = screenStatus(device);
+      const playback = playbackStatus(device);
+      const sync = syncStatus(screen, device);
+      const assignedPlaylist = screen.playlistId ? playlistsById.get(screen.playlistId) ?? null : null;
+      const isLive = Boolean(device && deviceIsLive(device));
+      const devicePlaylistLine =
+        device?.playlistId && device.playlistId !== screen.playlistId
+          ? `Device saved as ${playlistName(device.playlistId)}.`
+          : null;
+      const currentPlaylistLine =
+        isLive && livePlaylistId
+          ? `Screen reports ${playlistName(livePlaylistId)}${
+              livePlaylistVersion === null ? "" : ` update ${livePlaylistVersion}`
+            }.`
+          : "No current playlist report.";
+
+      return {
+        assignedPlaylist,
+        assignedPlaylistId: screen.playlistId ?? null,
+        currentPlaylistLine,
+        device,
+        devicePlaylistLine,
+        isLive,
+        lastSeenAge: isLive ? statusAgeLabel : "Not seen yet",
+        lastSeenFull: isLive ? statusTimestampLabel : "No live report yet",
+        needsAttention:
+          status.tone === "warn" ||
+          playback.tone === "warn" ||
+          sync.tone === "warn",
+        playbackDetail: playback.detail,
+        playbackLabel: playback.label,
+        playbackTone: playback.tone,
+        screen,
+        statusDetail: status.detail,
+        statusLabel: status.label,
+        statusTone: status.tone,
+        syncDetail: sync.detail,
+        syncLabel: sync.label,
+        syncTone: sync.tone
+      };
+    });
+  }, [
+    devicesById,
+    devicesByScreenId,
+    liveHost,
+    livePlaylistId,
+    livePlaylistVersion,
+    livePlaybackHealthy,
+    livePlaybackState,
+    liveReachable,
+    liveStatusStale,
+    playlistsById,
+    screens,
+    statusAgeLabel,
+    statusTimestampLabel
+  ]);
+
+  const linkedDeviceIds = useMemo(() => {
+    const next = new Set<string>();
+    for (const screen of screens) {
+      const device = linkedDeviceForScreen(screen);
+      if (device) {
+        next.add(device.id);
+      }
+    }
+    return next;
+  }, [screens, devicesById, devicesByScreenId]);
+
+  const unlinkedDevices = devices.filter((device) => !linkedDeviceIds.has(device.id));
+  const onlineCount = screenRows.filter((row) => row.statusLabel === "Online").length;
+  const playingCount = screenRows.filter((row) => row.playbackLabel === "Playing").length;
+  const assignedCount = screenRows.filter((row) => row.assignedPlaylistId).length;
+  const upToDateCount = screenRows.filter((row) => row.syncLabel === "Up to date").length;
+  const attentionCount = screenRows.filter((row) => row.needsAttention).length;
 
   async function loadInventory() {
     setIsLoading(true);
@@ -106,16 +489,12 @@ export function ScreenDeviceInventoryPanel({
       });
       const result = (await response.json()) as InventoryResponse;
       if (!response.ok || result.error) {
-        throw new Error(result.error ?? "Could not load inventory.");
+        throw new Error(result.error ?? "Could not load screens.");
       }
-      setInventory({
-        ...result,
-        devices: sortDevices(result.devices),
-        screens: sortScreens(result.screens)
-      });
-      setMessage("Inventory loaded.");
+      setInventory(result);
+      setMessage("Screens loaded.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not load inventory.");
+      setMessage(error instanceof Error ? error.message : "Could not load screens.");
       setInventory(null);
     } finally {
       setIsLoading(false);
@@ -125,95 +504,6 @@ export function ScreenDeviceInventoryPanel({
   useEffect(() => {
     void loadInventory();
   }, []);
-
-  function deviceIsLive(device: DeviceRecord): boolean {
-    if (!liveHost) {
-      return false;
-    }
-
-    return device.host.trim().toLowerCase() === liveHost.trim().toLowerCase();
-  }
-
-  function statusForDevice(device: DeviceRecord): {
-    detail: string;
-    label: string;
-    tone: "good" | "muted" | "warn";
-  } {
-    if (!device.host || device.host === "Not configured") {
-      return {
-        detail: "Host not configured",
-        label: "Not configured",
-        tone: "muted"
-      };
-    }
-
-    if (deviceIsLive(device)) {
-      return liveReachable
-        ? {
-            detail: "Probe reachable",
-            label: "Online",
-            tone: "good"
-          }
-        : {
-            detail: "Probe unavailable",
-            label: "Offline",
-            tone: "warn"
-          };
-    }
-
-    return {
-      detail: "No live probe for this host",
-      label: "Unknown",
-      tone: "muted"
-    };
-  }
-
-  function lastSeenForDevice(device: DeviceRecord): string {
-    if (deviceIsLive(device)) {
-      return `${statusAgeLabel} (${statusTimestampLabel})`;
-    }
-
-    return "Not seen yet";
-  }
-
-  function playbackForDevice(device: DeviceRecord): string {
-    if (!deviceIsLive(device)) {
-      return "Unknown";
-    }
-
-    return livePlaybackState;
-  }
-
-  function syncForDevice(device: DeviceRecord): {
-    label: string;
-    tone: "good" | "muted" | "warn";
-  } {
-    if (device.playlistId !== playlistId) {
-      return {
-        label: "Unassigned",
-        tone: "warn"
-      };
-    }
-
-    if (!deviceIsLive(device) || !liveReachable || livePlaylistVersion === null) {
-      return {
-        label: "Unknown",
-        tone: "muted"
-      };
-    }
-
-    if (livePlaylistVersion === playlistVersion) {
-      return {
-        label: "In sync",
-        tone: "good"
-      };
-    }
-
-    return {
-      label: livePlaylistVersion < playlistVersion ? "Pi behind" : "Mismatch",
-      tone: "warn"
-    };
-  }
 
   async function postInventory(body: unknown) {
     const response = await fetch("/api/local-inventory", {
@@ -227,15 +517,20 @@ export function ScreenDeviceInventoryPanel({
     if (!response.ok || result.error) {
       throw new Error(result.error ?? "Inventory update failed.");
     }
-    setInventory({
-      ...result,
-      devices: sortDevices(result.devices),
-      screens: sortScreens(result.screens)
-    });
+    setInventory(result);
   }
 
   async function removeInventory(targetType: "screen" | "device", id: string, label: string) {
     if (isBusy) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      targetType === "screen"
+        ? `Remove ${label}? Media, playlists, and devices stay saved.`
+        : `Remove ${label}? Screens, media, and playlists stay saved.`
+    );
+    if (!confirmed) {
       return;
     }
 
@@ -251,58 +546,51 @@ export function ScreenDeviceInventoryPanel({
       });
       const result = (await response.json()) as InventoryResponse;
       if (!response.ok || result.error) {
-        throw new Error(result.error ?? "Could not remove inventory item.");
+        throw new Error(result.error ?? "Could not remove this item.");
       }
-      setInventory({
-        ...result,
-        devices: sortDevices(result.devices),
-        screens: sortScreens(result.screens)
-      });
+      setInventory(result);
       setMessage(`${label} removed.`);
       startTransition(() => router.refresh());
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not remove inventory item.");
+      setMessage(error instanceof Error ? error.message : "Could not remove this item.");
     } finally {
       setIsSaving(false);
     }
   }
 
-  async function setAssignedPlaylist(
+  async function savePlaylistAssignment(
     targetType: "screen" | "device",
-    id: string,
-    assign: boolean
+    targetId: string,
+    nextPlaylistId: string | null
   ) {
     if (isBusy) {
       return;
     }
 
     setIsSaving(true);
-    setMessage("Saving assignment...");
+    setMessage(nextPlaylistId ? "Saving playlist assignment..." : "Removing playlist assignment...");
     try {
-      const response = await fetch("/api/local-inventory", {
-        method: "PATCH",
+      const response = await fetch("/api/local-playlist/assign", {
+        method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          id,
-          playlistId: assign ? playlistId : null,
+          assigned: Boolean(nextPlaylistId),
+          playlistId: nextPlaylistId ?? playlistId,
+          targetId,
           targetType
         })
       });
       const result = (await response.json()) as InventoryResponse;
       if (!response.ok || result.error) {
-        throw new Error(result.error ?? "Could not save assignment.");
+        throw new Error(result.error ?? "Could not save playlist assignment.");
       }
-      setInventory({
-        ...result,
-        devices: sortDevices(result.devices),
-        screens: sortScreens(result.screens)
-      });
-      setMessage("Assignment saved.");
+      setInventory(result);
+      setMessage("Playlist assignment saved.");
       startTransition(() => router.refresh());
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not save assignment.");
+      setMessage(error instanceof Error ? error.message : "Could not save playlist assignment.");
     } finally {
       setIsSaving(false);
     }
@@ -346,7 +634,7 @@ export function ScreenDeviceInventoryPanel({
       return;
     }
     if (!deviceName.trim() || !deviceHost.trim()) {
-      setMessage("Device name and host are required.");
+      setMessage("Device name and local address are required.");
       return;
     }
 
@@ -374,154 +662,161 @@ export function ScreenDeviceInventoryPanel({
     }
   }
 
-  const screens = inventory?.screens ?? [];
-  const devices = inventory?.devices ?? [];
-
   return (
     <div className="min-w-0 space-y-4">
-      <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-        <div className="grid gap-4 lg:grid-cols-2">
-          <form onSubmit={addScreen} className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
-            <h3 className="text-base font-semibold">Add screen</h3>
-            <div className="mt-3 grid gap-2">
-              <input
-                value={screenName}
-                onChange={(event) => setScreenName(event.currentTarget.value)}
-                placeholder="Screen name"
-                className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-              />
-              <input
-                value={screenLocation}
-                onChange={(event) => setScreenLocation(event.currentTarget.value)}
-                placeholder="Location"
-                className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-              />
-              <input
-                value={screenGroup}
-                onChange={(event) => setScreenGroup(event.currentTarget.value)}
-                placeholder="Group"
-                className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-              />
-              <button
-                type="submit"
-                disabled={isBusy}
-                className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
-              >
-                Add screen
-              </button>
-            </div>
-          </form>
-
-          <form onSubmit={addDevice} className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
-            <h3 className="text-base font-semibold">Add device</h3>
-            <div className="mt-3 grid gap-2">
-              <input
-                value={deviceName}
-                onChange={(event) => setDeviceName(event.currentTarget.value)}
-                placeholder="Device name"
-                className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-              />
-              <input
-                value={deviceHost}
-                onChange={(event) => setDeviceHost(event.currentTarget.value)}
-                placeholder="Host or IP"
-                className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-              />
-              <input
-                value={deviceLocation}
-                onChange={(event) => setDeviceLocation(event.currentTarget.value)}
-                placeholder="Location"
-                className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-              />
-              <input
-                value={deviceGroup}
-                onChange={(event) => setDeviceGroup(event.currentTarget.value)}
-                placeholder="Group"
-                className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-              />
-              <button
-                type="submit"
-                disabled={isBusy}
-                className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
-              >
-                Add device
-              </button>
-            </div>
-          </form>
-        </div>
-        <p className="mt-3 text-sm text-zinc-600">{message}</p>
-      </section>
-
       <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
-        <div className="border-b border-zinc-200 p-5">
-          <h3 className="text-lg font-semibold">Screens</h3>
+        <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h3 className="text-xl font-semibold">Screen operations</h3>
+            <p className="mt-1 text-sm text-zinc-600">
+              {formatCount(screenRows.length, "screen")} saved locally.
+            </p>
+          </div>
+          <div className="self-start">
+            <StatusPill
+              label={attentionCount === 0 ? "No open issues" : `${attentionCount} need attention`}
+              tone={attentionCount === 0 ? "good" : "warn"}
+            />
+          </div>
         </div>
-        <div className="max-w-full overflow-x-auto">
-          <table className="w-full min-w-[1240px] text-left text-sm">
+
+        <div className="overflow-x-auto p-4">
+          <dl className="grid min-w-[520px] grid-cols-5 gap-2">
+            <div className="rounded-md bg-emerald-50 p-3 ring-1 ring-emerald-100">
+              <dt className="text-xs font-semibold uppercase text-emerald-800">Online</dt>
+              <dd className="mt-1 text-xl font-semibold">{onlineCount}</dd>
+            </div>
+            <div className="rounded-md bg-sky-50 p-3 ring-1 ring-sky-100">
+              <dt className="text-xs font-semibold uppercase text-sky-800">Playing</dt>
+              <dd className="mt-1 text-xl font-semibold">{playingCount}</dd>
+            </div>
+            <div className="rounded-md bg-teal-50 p-3 ring-1 ring-teal-100">
+              <dt className="text-xs font-semibold uppercase text-teal-800">Assigned</dt>
+              <dd className="mt-1 text-xl font-semibold">{assignedCount}</dd>
+            </div>
+            <div className="rounded-md bg-indigo-50 p-3 ring-1 ring-indigo-100">
+              <dt className="text-xs font-semibold uppercase text-indigo-800">Up to date</dt>
+              <dd className="mt-1 text-xl font-semibold">{upToDateCount}</dd>
+            </div>
+            <div className="rounded-md bg-amber-50 p-3 ring-1 ring-amber-100">
+              <dt className="text-xs font-semibold uppercase text-amber-900">Needs attention</dt>
+              <dd className="mt-1 text-xl font-semibold">{attentionCount}</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div className="max-w-full overflow-x-auto border-t border-zinc-200">
+          <table className="w-full min-w-[1120px] text-left text-sm">
             <thead className="bg-zinc-50 text-xs uppercase text-zinc-500">
               <tr>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Location</th>
-                <th className="px-4 py-3">Group</th>
-                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Screen</th>
                 <th className="px-4 py-3">Assigned playlist</th>
-                <th className="px-4 py-3">Device host</th>
-                <th className="px-4 py-3">Last seen</th>
-                <th className="px-4 py-3">Playback state</th>
-                <th className="px-4 py-3">Sync state</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Now playing</th>
+                <th className="px-4 py-3">Playlist update</th>
+                <th className="px-4 py-3">Device</th>
+                <th className="px-4 py-3">Last check-in</th>
                 <th className="px-4 py-3">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200">
-              {screens.map((screen) => {
-                const device = screen.deviceId ? devicesById.get(screen.deviceId) ?? null : null;
-                const status = device ? statusForDevice(device) : { detail: "No linked device", label: "Unknown", tone: "muted" as const };
-                const sync = device ? syncForDevice(device) : { label: "Unknown", tone: "muted" as const };
-                return (
-                  <tr key={screen.id}>
-                    <td className="px-4 py-3 font-semibold text-zinc-950">{screen.name}</td>
-                    <td className="px-4 py-3 text-zinc-700">{screen.location}</td>
-                    <td className="px-4 py-3 text-zinc-700">{screen.group}</td>
-                    <td className="px-4 py-3">
-                      <StatusPill label={status.label} tone={status.tone} />
-                      <p className="mt-1 text-xs text-zinc-600">{status.detail}</p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <label className="inline-flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={screen.playlistId === playlistId}
-                          disabled={isBusy}
-                          onChange={(event) => {
-                            void setAssignedPlaylist("screen", screen.id, event.currentTarget.checked);
-                          }}
-                          className="h-4 w-4 accent-teal-700"
-                        />
-                        <span className="text-zinc-700">{screen.playlistId === playlistId ? "Assigned" : "Unassigned"}</span>
-                      </label>
-                    </td>
-                    <td className="px-4 py-3 text-zinc-700">{device?.host ?? "No linked device"}</td>
-                    <td className="px-4 py-3 text-zinc-700">{device ? lastSeenForDevice(device) : "Not seen yet"}</td>
-                    <td className="px-4 py-3 text-zinc-700">{device ? playbackForDevice(device) : "Unknown"}</td>
-                    <td className="px-4 py-3">
-                      <StatusPill label={sync.label} tone={sync.tone} />
-                    </td>
-                    <td className="px-4 py-3">
+              {screenRows.map((row) => (
+                <tr key={row.screen.id} className={row.needsAttention ? "bg-amber-50/35" : undefined}>
+                  <td className="px-4 py-3">
+                    <p className="font-semibold text-zinc-950">{row.screen.name}</p>
+                    <p className="mt-1 text-xs text-zinc-600">
+                      {row.screen.location} · {row.screen.group}
+                    </p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <label htmlFor={`screen-playlist-${row.screen.id}`} className="sr-only">
+                      Playlist for {row.screen.name}
+                    </label>
+                    <select
+                      id={`screen-playlist-${row.screen.id}`}
+                      value={row.assignedPlaylistId ?? ""}
+                      disabled={isBusy}
+                      onChange={(event) => {
+                        void savePlaylistAssignment("screen", row.screen.id, event.currentTarget.value || null);
+                      }}
+                      className="min-h-10 w-full min-w-48 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-950 disabled:cursor-not-allowed disabled:bg-zinc-100"
+                    >
+                      <option value="">No playlist</option>
+                      {row.assignedPlaylistId && !row.assignedPlaylist ? (
+                        <option value={row.assignedPlaylistId}>Playlist not found</option>
+                      ) : null}
+                      {playlists.map((option) => (
+                        <option key={option.playlistId} value={option.playlistId}>
+                          {option.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-zinc-600">
+                      {row.assignedPlaylist
+                        ? `${formatCount(row.assignedPlaylist.assetCount, "item")} · update ${row.assignedPlaylist.version}`
+                        : "Choose a saved playlist."}
+                    </p>
+                    {row.devicePlaylistLine ? (
+                      <p className="mt-1 text-xs text-amber-800">{row.devicePlaylistLine}</p>
+                    ) : (
+                      <p className="mt-1 text-xs text-zinc-500">{row.currentPlaylistLine}</p>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusPill label={row.statusLabel} tone={row.statusTone} />
+                    <p className="mt-1 text-xs leading-5 text-zinc-600">{row.statusDetail}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusPill label={row.playbackLabel} tone={row.playbackTone} />
+                    <p className="mt-1 text-xs leading-5 text-zinc-600">{row.playbackDetail}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusPill label={row.syncLabel} tone={row.syncTone} />
+                    <p className="mt-1 text-xs leading-5 text-zinc-600">{row.syncDetail}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <p className="font-semibold text-zinc-950">{row.device?.name ?? "No device linked"}</p>
+                    <p className="mt-1 break-words text-xs text-zinc-600">
+                      {row.device?.host ?? "Add a local device"}
+                    </p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <p className="font-semibold text-zinc-950">{row.lastSeenAge}</p>
+                    <p className="mt-1 text-xs text-zinc-600">{row.lastSeenFull}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-2">
+                      <a
+                        href={`/?view=device-health&screen=${encodeURIComponent(row.screen.id)}`}
+                        className="min-h-9 rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-50"
+                      >
+                        Status
+                      </a>
+                      {row.assignedPlaylistId ? (
+                        <a
+                          href={`/?view=playlist&playlist=${encodeURIComponent(row.assignedPlaylistId)}`}
+                          className="min-h-9 rounded-md border border-teal-200 bg-white px-3 py-2 text-xs font-semibold text-teal-800 hover:bg-teal-50"
+                        >
+                          Playlist
+                        </a>
+                      ) : null}
                       <button
                         type="button"
-                        onClick={() => void removeInventory("screen", screen.id, screen.name)}
+                        onClick={() => void removeInventory("screen", row.screen.id, row.screen.name)}
                         disabled={isBusy}
                         className="min-h-9 rounded-md border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         Remove
                       </button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {screens.length === 0 ? (
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {screenRows.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-4 text-zinc-600" colSpan={10}>No screens recorded.</td>
+                  <td className="px-4 py-5 text-zinc-600" colSpan={8}>
+                    No screens saved yet.
+                  </td>
                 </tr>
               ) : null}
             </tbody>
@@ -529,58 +824,131 @@ export function ScreenDeviceInventoryPanel({
         </div>
       </section>
 
-      <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
-        <div className="border-b border-zinc-200 p-5">
-          <h3 className="text-lg font-semibold">Devices</h3>
+      <details className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+        <summary className="cursor-pointer border-b border-zinc-200 p-5 text-lg font-semibold">
+          Add screen or device
+        </summary>
+        <div className="grid gap-6 p-5 lg:grid-cols-2">
+          <form onSubmit={addScreen} className="space-y-3">
+            <h3 className="text-base font-semibold">Add screen</h3>
+            <label className="block text-sm font-semibold text-zinc-700">
+              Screen name
+              <input
+                value={screenName}
+                onChange={(event) => setScreenName(event.currentTarget.value)}
+                className="mt-1 min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+              />
+            </label>
+            <label className="block text-sm font-semibold text-zinc-700">
+              Location
+              <input
+                value={screenLocation}
+                onChange={(event) => setScreenLocation(event.currentTarget.value)}
+                className="mt-1 min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+              />
+            </label>
+            <label className="block text-sm font-semibold text-zinc-700">
+              Group
+              <input
+                value={screenGroup}
+                onChange={(event) => setScreenGroup(event.currentTarget.value)}
+                className="mt-1 min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={isBusy}
+              className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
+            >
+              Add screen
+            </button>
+          </form>
+
+          <form onSubmit={addDevice} className="space-y-3">
+            <h3 className="text-base font-semibold">Add device</h3>
+            <label className="block text-sm font-semibold text-zinc-700">
+              Device name
+              <input
+                value={deviceName}
+                onChange={(event) => setDeviceName(event.currentTarget.value)}
+                className="mt-1 min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+              />
+            </label>
+            <label className="block text-sm font-semibold text-zinc-700">
+              Local address or IP
+              <input
+                value={deviceHost}
+                onChange={(event) => setDeviceHost(event.currentTarget.value)}
+                className="mt-1 min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+              />
+            </label>
+            <label className="block text-sm font-semibold text-zinc-700">
+              Location
+              <input
+                value={deviceLocation}
+                onChange={(event) => setDeviceLocation(event.currentTarget.value)}
+                className="mt-1 min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+              />
+            </label>
+            <label className="block text-sm font-semibold text-zinc-700">
+              Group
+              <input
+                value={deviceGroup}
+                onChange={(event) => setDeviceGroup(event.currentTarget.value)}
+                className="mt-1 min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={isBusy}
+              className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
+            >
+              Add device
+            </button>
+          </form>
         </div>
+      </details>
+
+      <details className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+        <summary className="cursor-pointer border-b border-zinc-200 p-5 text-lg font-semibold">
+          Device details
+        </summary>
         <div className="max-w-full overflow-x-auto">
-          <table className="w-full min-w-[1160px] text-left text-sm">
+          <table className="w-full min-w-[900px] text-left text-sm">
             <thead className="bg-zinc-50 text-xs uppercase text-zinc-500">
               <tr>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Host</th>
-                <th className="px-4 py-3">Location</th>
-                <th className="px-4 py-3">Group</th>
+                <th className="px-4 py-3">Device</th>
+                <th className="px-4 py-3">Linked screen</th>
+                <th className="px-4 py-3">Local address</th>
+                <th className="px-4 py-3">Saved playlist</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Assigned playlist</th>
-                <th className="px-4 py-3">Last seen</th>
-                <th className="px-4 py-3">Playback state</th>
-                <th className="px-4 py-3">Sync state</th>
                 <th className="px-4 py-3">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200">
               {devices.map((device) => {
+                const linkedScreen = screens.find(
+                  (screen) => screen.deviceId === device.id || device.screenId === screen.id
+                );
                 const status = statusForDevice(device);
-                const sync = syncForDevice(device);
                 return (
                   <tr key={device.id}>
-                    <td className="px-4 py-3 font-semibold text-zinc-950">{device.name}</td>
-                    <td className="px-4 py-3 text-zinc-700">{device.host}</td>
-                    <td className="px-4 py-3 text-zinc-700">{device.location}</td>
-                    <td className="px-4 py-3 text-zinc-700">{device.group}</td>
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-zinc-950">{device.name}</p>
+                      <p className="mt-1 text-xs text-zinc-600">
+                        {device.location} · {device.group}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3 text-zinc-700">
+                      {linkedScreen?.name ?? (unlinkedDevices.some((item) => item.id === device.id) ? "No screen linked" : "Linked")}
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="break-words text-zinc-700">{device.host}</p>
+                    </td>
+                    <td className="px-4 py-3 text-zinc-700">{playlistName(device.playlistId)}</td>
                     <td className="px-4 py-3">
                       <StatusPill label={status.label} tone={status.tone} />
                       <p className="mt-1 text-xs text-zinc-600">{status.detail}</p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <label className="inline-flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={device.playlistId === playlistId}
-                          disabled={isBusy}
-                          onChange={(event) => {
-                            void setAssignedPlaylist("device", device.id, event.currentTarget.checked);
-                          }}
-                          className="h-4 w-4 accent-teal-700"
-                        />
-                        <span className="text-zinc-700">{device.playlistId === playlistId ? "Assigned" : "Unassigned"}</span>
-                      </label>
-                    </td>
-                    <td className="px-4 py-3 text-zinc-700">{lastSeenForDevice(device)}</td>
-                    <td className="px-4 py-3 text-zinc-700">{playbackForDevice(device)}</td>
-                    <td className="px-4 py-3">
-                      <StatusPill label={sync.label} tone={sync.tone} />
                     </td>
                     <td className="px-4 py-3">
                       <button
@@ -597,13 +965,21 @@ export function ScreenDeviceInventoryPanel({
               })}
               {devices.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-4 text-zinc-600" colSpan={10}>No devices recorded.</td>
+                  <td className="px-4 py-5 text-zinc-600" colSpan={6}>
+                    No devices saved yet.
+                  </td>
                 </tr>
               ) : null}
             </tbody>
           </table>
         </div>
-      </section>
+      </details>
+
+      {message ? (
+        <p className="text-sm font-medium text-zinc-700" role="status" aria-live="polite">
+          {message}
+        </p>
+      ) : null}
     </div>
   );
 }

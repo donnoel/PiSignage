@@ -152,7 +152,7 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
   screens: {
     eyebrow: "Inventory",
     title: "Screens",
-    description: "Match screens to devices and the active playlist."
+    description: "Local screens, assigned playlists, and live playback status."
   },
   scheduling: {
     eyebrow: "Hours",
@@ -1598,22 +1598,23 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             aria-labelledby="screens-heading"
             className={selectedView === "screens" ? "mt-6" : "hidden"}
           >
-            <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-              <div>
-                <h2 id="screens-heading" className="text-xl font-semibold">Screens</h2>
-                <p className="mt-1 text-sm text-zinc-600">
-                  Add and manage screen and device inventory with live status and playlist assignment visibility.
-                </p>
-              </div>
-            </div>
-            <div className="mt-4">
+            <h2 id="screens-heading" className="sr-only">Screens</h2>
+            <div>
               <ScreenDeviceInventoryPanel
                 liveHost={pi.host}
+                livePlaybackHealthy={playbackHealthy}
                 livePlaybackState={playbackLabel}
+                livePlaylistId={playerStatus?.playlistId ?? null}
                 livePlaylistVersion={typeof piPlaylistVersion === "number" ? piPlaylistVersion : null}
                 liveReachable={pi.reachable}
+                liveStatusStale={Boolean(pi.configured && isPlaying && !isPlayerStatusFresh)}
                 playlistId={playlist.playlistId}
-                playlistVersion={playlist.version}
+                playlists={playlistStore.items.map((item) => ({
+                  assetCount: item.assets.length,
+                  name: item.name,
+                  playlistId: item.playlistId,
+                  version: item.version
+                }))}
                 statusAgeLabel={lastPlayerHeartbeatAge}
                 statusTimestampLabel={playerUpdatedAt}
               />
