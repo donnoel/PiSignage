@@ -60,7 +60,7 @@ export function LocalPlaylistItemEditor({
     }
 
     setIsSaving(true);
-    setMessage("Saving item details...");
+    setMessage("Saving...");
     try {
       const response = await fetch("/api/local-playlist/items", {
         method: "POST",
@@ -90,23 +90,23 @@ export function LocalPlaylistItemEditor({
   }
 
   return (
-    <form onSubmit={saveItemDetails} className="grid gap-2 rounded-md bg-zinc-50 p-3 ring-1 ring-zinc-200">
-      <div className="grid gap-2 md:grid-cols-[1fr_160px_auto] md:items-end">
+    <form onSubmit={saveItemDetails} className="grid gap-2">
+      <div className="grid gap-2 md:grid-cols-[minmax(180px,1fr)_100px_auto] md:items-center">
         <div>
-          <label htmlFor={`item-title-${assetId}`} className="text-xs font-semibold uppercase text-zinc-500">
+          <label htmlFor={`item-title-${assetId}`} className="sr-only">
             Name
           </label>
           <input
             id={`item-title-${assetId}`}
             value={title}
             onChange={(event) => setTitle(event.currentTarget.value)}
-            className="mt-1 min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+            className="min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
             disabled={isBusy}
           />
         </div>
         <div>
-          <label htmlFor={`item-duration-${assetId}`} className="text-xs font-semibold uppercase text-zinc-500">
-            Duration
+          <label htmlFor={`item-duration-${assetId}`} className="sr-only">
+            Seconds
           </label>
           <input
             id={`item-duration-${assetId}`}
@@ -115,8 +115,9 @@ export function LocalPlaylistItemEditor({
             max="3600"
             value={durationSeconds}
             onChange={(event) => setDurationSeconds(event.currentTarget.value)}
-            className="mt-1 min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+            className="min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
             disabled={isBusy}
+            aria-label="Seconds"
           />
         </div>
         <button
@@ -127,7 +128,7 @@ export function LocalPlaylistItemEditor({
           {isBusy ? "Saving..." : "Save"}
         </button>
       </div>
-      {message ? <p className="text-xs text-zinc-600">{message}</p> : null}
+      {message ? <p className="text-xs text-zinc-600" role="status" aria-live="polite">{message}</p> : null}
     </form>
   );
 }

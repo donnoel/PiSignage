@@ -64,7 +64,7 @@ export function LocalPlaylistTimeline({ assets, piAssetIds, playlistId }: Playli
   const [items, setItems] = useState(assets);
   const [draggedAssetId, setDraggedAssetId] = useState<string | null>(null);
   const [dropAssetId, setDropAssetId] = useState<string | null>(null);
-  const [message, setMessage] = useState("Arrange the loop in playback order.");
+  const [message, setMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isPending, startTransition] = useTransition();
   const piAssetSet = useMemo(() => new Set(piAssetIds), [piAssetIds]);
@@ -78,7 +78,7 @@ export function LocalPlaylistTimeline({ assets, piAssetIds, playlistId }: Playli
     const orderedAssetIds = nextItems.map((asset) => asset.assetId);
 
     setIsSaving(true);
-    setMessage("Saving order...");
+    setMessage("Saving...");
 
     try {
       const response = await fetch("/api/local-playlist/items", {
@@ -134,8 +134,7 @@ export function LocalPlaylistTimeline({ assets, piAssetIds, playlistId }: Playli
     <div className="border-b border-zinc-200 bg-zinc-950 px-5 py-5 text-white">
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h3 className="text-lg font-semibold">Play order</h3>
-          <p className="mt-1 text-sm text-zinc-300">First frames from this loop.</p>
+          <h3 className="text-lg font-semibold">Preview</h3>
         </div>
         <div className="flex flex-col gap-2 sm:items-end">
           <div className="flex gap-2">
@@ -158,9 +157,11 @@ export function LocalPlaylistTimeline({ assets, piAssetIds, playlistId }: Playli
               →
             </button>
           </div>
-          <p className="text-sm text-zinc-300" role="status" aria-live="polite">
-            {message}
-          </p>
+          {message ? (
+            <p className="text-sm text-zinc-300" role="status" aria-live="polite">
+              {message}
+            </p>
+          ) : null}
         </div>
       </div>
       <div

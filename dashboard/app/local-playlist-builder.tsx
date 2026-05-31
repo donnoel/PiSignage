@@ -81,9 +81,9 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
   const playlistAssetKey = playlistAssetFileNames.join("\n");
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [mediaQuery, setMediaQuery] = useState("");
-  const [mediaMessage, setMediaMessage] = useState("Loading media library...");
+  const [mediaMessage, setMediaMessage] = useState("Loading media...");
   const [assignments, setAssignments] = useState<AssignmentResponse | null>(null);
-  const [assignmentMessage, setAssignmentMessage] = useState("Loading assignments...");
+  const [assignmentMessage, setAssignmentMessage] = useState("");
   const [isLoadingMedia, setIsLoadingMedia] = useState(false);
   const [isLoadingAssignments, setIsLoadingAssignments] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -111,8 +111,8 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
       setMediaItems(readyItems);
       setMediaMessage(
         readyItems.length === 0
-          ? "No available media for this playlist."
-          : `${readyItems.length} ready item${readyItems.length === 1 ? "" : "s"} available.`
+          ? "Everything available is already in this playlist."
+          : `${readyItems.length} available`
       );
     } catch (error) {
       setMediaMessage(error instanceof Error ? error.message : "Could not load media.");
@@ -136,7 +136,7 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
       }
 
       setAssignments(result);
-      setAssignmentMessage("Assignments loaded.");
+      setAssignmentMessage("");
     } catch (error) {
       setAssignments(null);
       setAssignmentMessage(error instanceof Error ? error.message : "Could not load playlist assignments.");
@@ -209,7 +209,7 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
       }
 
       setAssignments(result);
-      setAssignmentMessage("Assignment saved.");
+      setAssignmentMessage("Saved.");
       startTransition(() => router.refresh());
     } catch (error) {
       setAssignmentMessage(error instanceof Error ? error.message : "Could not save playlist assignment.");
@@ -221,11 +221,13 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
   return (
     <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
       <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
-        <div className="border-b border-zinc-200 p-5">
-          <h3 className="text-lg font-semibold">Add media</h3>
-          <p className="mt-1 text-sm text-zinc-600">Choose ready local media for this playlist.</p>
+        <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h3 className="text-lg font-semibold">Add media</h3>
+            <p className="mt-1 text-sm text-zinc-600">Pick from ready local media.</p>
+          </div>
           <form
-            className="mt-3 flex flex-wrap items-center gap-3"
+            className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:justify-end"
             onSubmit={(event) => {
               event.preventDefault();
               void loadMedia(mediaQuery);
@@ -234,70 +236,53 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
             <input
               value={mediaQuery}
               onChange={(event) => setMediaQuery(event.currentTarget.value)}
-              placeholder="Search media by title, file, or tag"
-              className="min-h-11 min-w-72 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+              placeholder="Search media"
+              className="min-h-10 min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 lg:w-64"
             />
             <button
               type="submit"
               disabled={isBusy}
-              className="min-h-11 rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100"
+              className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100"
             >
               {isLoadingMedia ? "Searching..." : "Search"}
             </button>
           </form>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[780px] text-left text-sm">
-            <thead className="bg-zinc-50 text-xs uppercase text-zinc-500">
-              <tr>
-                <th className="px-4 py-3">Media</th>
-                <th className="px-4 py-3">Duration</th>
-                <th className="px-4 py-3">Tags</th>
-                <th className="px-4 py-3">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-200">
-              {mediaItems.map((item) => (
-                <tr key={item.id}>
-                  <td className="px-4 py-3">
-                    <p className="font-semibold text-zinc-950">{item.title}</p>
-                    <p className="mt-1 text-xs text-zinc-600">{item.playbackFileName}</p>
-                  </td>
-                  <td className="px-4 py-3 text-zinc-700">{item.durationSeconds ?? 30}s</td>
-                  <td className="px-4 py-3 text-zinc-700">
-                    {item.tags.length > 0 ? item.tags.join(", ") : "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() => void addMediaToPlaylist(item.id, item.title)}
-                      disabled={isBusy}
-                      className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
-                    >
-                      Add
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {mediaItems.length === 0 ? (
-                <tr>
-                  <td className="px-4 py-4 text-zinc-600" colSpan={4}>{mediaMessage}</td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
+        <div className="divide-y divide-zinc-200">
+          {mediaItems.map((item) => (
+            <div key={item.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="break-words font-semibold text-zinc-950">{item.title}</p>
+                <p className="mt-1 truncate text-sm text-zinc-600" title={item.playbackFileName}>
+                  {item.durationSeconds ?? 30}s · {item.playbackFileName}
+                </p>
+                {item.tags.length > 0 ? (
+                  <p className="mt-1 text-xs font-medium text-zinc-500">{item.tags.join(", ")}</p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={() => void addMediaToPlaylist(item.id, item.title)}
+                disabled={isBusy}
+                className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
+              >
+                Add
+              </button>
+            </div>
+          ))}
+          {mediaItems.length === 0 ? (
+            <p className="px-5 py-4 text-sm text-zinc-600">{isLoadingMedia ? "Loading media..." : mediaMessage}</p>
+          ) : null}
         </div>
-        <p className="border-t border-zinc-200 px-4 py-3 text-sm text-zinc-600">{mediaMessage}</p>
       </section>
 
       <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-lg font-semibold">Plays on</h3>
         </div>
-        <p className="mt-1 text-sm text-zinc-600">Screens are the client-facing targets. Devices are the local playback hardware behind them.</p>
 
         <div className="mt-4 space-y-3">
-          <h4 className="text-sm font-semibold uppercase text-zinc-500">Screens</h4>
+          <h4 className="text-sm font-semibold text-zinc-500">Screens</h4>
           {(assignments?.screens ?? []).map((screen) => {
             const assigned = screen.playlistId === playlistId;
             return (
@@ -324,7 +309,7 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
         </div>
 
         <div className="mt-5 space-y-3">
-          <h4 className="text-sm font-semibold uppercase text-zinc-500">Devices</h4>
+          <h4 className="text-sm font-semibold text-zinc-500">Devices</h4>
           {(assignments?.devices ?? []).map((device) => {
             const assigned = (device.playlistId ?? null) === playlistId;
             return (
@@ -350,7 +335,9 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
           ) : null}
         </div>
 
-        <p className="mt-4 text-sm text-zinc-600">{assignmentMessage}</p>
+        {assignmentMessage ? (
+          <p className="mt-4 text-sm text-zinc-600" role="status" aria-live="polite">{assignmentMessage}</p>
+        ) : null}
       </section>
     </div>
   );

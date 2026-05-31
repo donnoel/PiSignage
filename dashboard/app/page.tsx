@@ -143,7 +143,7 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
   playlist: {
     eyebrow: "Loops",
     title: "Playlists",
-    description: "Build playback loops and choose which screens use them."
+    description: "Create a playlist, choose screens, then publish."
   },
   "device-health": {
     eyebrow: "Health",
@@ -803,12 +803,31 @@ function publishStateTone(publishStatus: PublishStatus | null): "good" | "warn" 
   return publishStatus.ok ? "good" : "warn";
 }
 
-function publishStateDetail(publishStatus: PublishStatus | null): string {
+function shortPublishDetail(publishStatus: PublishStatus | null): string {
   if (!publishStatus) {
-    return "No publish has been recorded from this dashboard yet.";
+    return "Not sent yet";
   }
 
-  return `${actionLabel(publishStatus.action)} at ${formatTimestamp(publishStatus.timestamp)}. ${publishStatus.message}`;
+  return publishStatus.ok ? `Sent ${formatTimestamp(publishStatus.timestamp)}` : "Needs attention";
+}
+
+function shortScreenDetail(
+  playlistSyncState: { detail: string; label: string; tone: "good" | "warn" | "muted" },
+  assignedScreensLabel: string
+): string {
+  if (assignedScreensLabel === "No screens assigned") {
+    return "Choose a screen before publishing.";
+  }
+
+  if (playlistSyncState.tone === "good") {
+    return "Screens are up to date.";
+  }
+
+  if (playlistSyncState.label === "Not live") {
+    return "Publish when ready.";
+  }
+
+  return playlistSyncState.detail;
 }
 
 type EvidenceItem = {
@@ -1006,16 +1025,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       );
   }
 
-  function playlistDevices(playlistId: string) {
-    return inventory.devices.items
-      .filter((device) => device.playlistId === playlistId)
-      .slice()
-      .sort((left, right) =>
-        left.location.localeCompare(right.location, undefined, { sensitivity: "base" }) ||
-        left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
-      );
-  }
-
   function publishStatusForPlaylist(option: Playlist): PublishStatus | null {
     if (!publishStatus) {
       return null;
@@ -1043,9 +1052,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   }
 
   const assignedScreens = playlistScreens(playlist.playlistId);
-  const assignedDevices = playlistDevices(playlist.playlistId);
   const assignedScreensLabel = nameList(assignedScreens, (screen) => screen.name, "No screens assigned");
-  const assignedDevicesLabel = nameList(assignedDevices, (device) => device.name, "No devices assigned");
   const playlistAssetFileNames = playlist.assets.map((asset) => fileNameFromUri(asset.uri));
   const attentionItems: AttentionItem[] = [];
 
@@ -1665,95 +1672,83 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
               <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
-                  <h2 id="playlist-heading" className="text-xl font-semibold">Playlist library</h2>
-                  <p className="mt-1 text-sm text-zinc-600">Saved loops for different screens and locations.</p>
+                  <h2 id="playlist-heading" className="text-xl font-semibold">Choose playlist</h2>
+                  <p className="mt-1 text-sm text-zinc-600">{pluralize(playlistOptions.length, "playlist")} saved.</p>
                 </div>
                 <div className="w-full max-w-xl sm:w-auto">
                   <LocalPlaylistCreateForm />
                 </div>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[860px] text-left text-sm">
-                  <thead className="bg-zinc-50 text-xs uppercase text-zinc-500">
-                    <tr>
-                      <th className="px-4 py-3">Playlist</th>
-                      <th className="px-4 py-3">Screens</th>
-                      <th className="px-4 py-3">Loop</th>
-                      <th className="px-4 py-3">Publish</th>
-                      <th className="px-4 py-3">Sync</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-200">
-                    {playlistOptions.map((option) => {
-                      const rowScreens = playlistScreens(option.playlistId);
-                      const rowScreensLabel = nameList(rowScreens, (screen) => screen.name, "No screens assigned");
-                      const rowPublishStatus = publishStatusForPlaylist(option);
-                      const rowSyncState = syncStateForPlaylist(option);
-                      const isSelected = option.playlistId === playlist.playlistId;
+              <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
+                {playlistOptions.map((option) => {
+                  const rowScreens = playlistScreens(option.playlistId);
+                  const rowScreensLabel = nameList(rowScreens, (screen) => screen.name, "No screens assigned");
+                  const rowPublishStatus = publishStatusForPlaylist(option);
+                  const rowSyncState = syncStateForPlaylist(option);
+                  const isSelected = option.playlistId === playlist.playlistId;
 
-                      return (
-                        <tr key={option.playlistId} className={isSelected ? "bg-teal-50/60" : ""}>
-                          <td className="px-4 py-4">
-                            <a
-                              href={`/?view=playlist&playlist=${encodeURIComponent(option.playlistId)}`}
-                              className="font-semibold text-teal-800 hover:text-teal-900"
-                            >
-                              {option.name}
-                            </a>
-                            <p className="mt-1 text-xs text-zinc-600">{isSelected ? "Selected" : "Open to edit"}</p>
-                          </td>
-                          <td className="max-w-[260px] px-4 py-4 text-zinc-700">
-                            <span className="block truncate" title={rowScreensLabel}>{rowScreensLabel}</span>
-                          </td>
-                          <td className="px-4 py-4 text-zinc-700">{option.assets.length} items · {formatDuration(option.assets)}</td>
-                          <td className="px-4 py-4">
-                            <StatusPill label={publishStateLabel(rowPublishStatus)} tone={publishStateTone(rowPublishStatus)} />
-                            <p className="mt-2 text-xs text-zinc-600">
-                              {rowPublishStatus
-                                ? `${actionLabel(rowPublishStatus.action)} · ${formatTimestamp(rowPublishStatus.timestamp)}`
-                                : "No publish recorded"}
-                            </p>
-                          </td>
-                          <td className="px-4 py-4">
-                            <StatusPill label={rowSyncState.label} tone={rowSyncState.tone} />
-                            <p className="mt-2 text-xs text-zinc-600">{rowSyncState.detail}</p>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                  return (
+                    <a
+                      key={option.playlistId}
+                      href={`/?view=playlist&playlist=${encodeURIComponent(option.playlistId)}`}
+                      aria-current={isSelected ? "page" : undefined}
+                      className={`rounded-lg border p-4 text-sm transition focus:outline-none focus:ring-2 focus:ring-teal-600 ${
+                        isSelected
+                          ? "border-teal-300 bg-teal-50 text-teal-950"
+                          : "border-zinc-200 bg-white hover:border-teal-200 hover:bg-teal-50/40"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold" title={option.name}>{option.name}</p>
+                          <p className="mt-1 text-zinc-600">{option.assets.length} items · {formatDuration(option.assets)}</p>
+                        </div>
+                        <StatusPill label={isSelected ? "Editing" : publishStateLabel(rowPublishStatus)} tone={isSelected ? "good" : publishStateTone(rowPublishStatus)} />
+                      </div>
+                      <p className="mt-3 truncate text-zinc-700" title={rowScreensLabel}>{rowScreensLabel}</p>
+                      <p className="mt-1 text-xs text-zinc-500">{rowSyncState.tone === "good" ? "Up to date" : shortPublishDetail(rowPublishStatus)}</p>
+                    </a>
+                  );
+                })}
               </div>
             </div>
+
+            <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-teal-700">Now editing</p>
+                  <h3 className="mt-1 text-2xl font-semibold">{playlist.name}</h3>
+                  <p className="mt-1 text-sm text-zinc-600">
+                    {playlist.assets.length} items · {totalDuration} · {assignedScreens.length === 0 ? "no screens yet" : assignedScreensLabel}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 sm:justify-end">
+                  <StatusPill label={`${playlist.assets.length} items`} tone="muted" />
+                  <StatusPill label={totalDuration} tone="muted" />
+                  <StatusPill label={assignedScreens.length === 0 ? "No screens" : "Has screens"} tone={assignedScreens.length === 0 ? "warn" : "good"} />
+                </div>
+              </div>
+            </div>
+
+            <LocalPlaylistBuilder
+              playlistAssetFileNames={playlistAssetFileNames}
+              playlistId={playlist.playlistId}
+            />
 
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
               <div className="min-w-0 rounded-lg border border-zinc-200 bg-white shadow-sm">
                 <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <h3 className="text-xl font-semibold">{playlist.name}</h3>
+                    <h3 className="text-xl font-semibold">Arrange</h3>
                     <p className="mt-1 text-sm text-zinc-600">
-                      {playlist.assets.length} items · {totalDuration} · {assignedScreens.length === 0 ? "not assigned to a screen" : `plays on ${assignedScreensLabel}`}
+                      Set the order and timing.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2 sm:justify-end">
                     <StatusPill label={`${playlist.assets.length} items`} tone="muted" />
-                    <StatusPill label={`${totalDuration} loop`} tone="muted" />
+                    <StatusPill label={totalDuration} tone="muted" />
                     <StatusPill label={`${videoAssetCount} ready`} tone="good" />
                     {imageAssetCount > 0 ? <StatusPill label={`${imageAssetCount} needs review`} tone="warn" /> : null}
-                  </div>
-                </div>
-                <div className="grid gap-3 border-b border-zinc-200 bg-zinc-50 px-5 py-4 text-sm md:grid-cols-3">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-zinc-950">Screens</p>
-                    <p className="mt-1 truncate text-zinc-600" title={assignedScreensLabel}>{assignedScreensLabel}</p>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-semibold text-zinc-950">Devices</p>
-                    <p className="mt-1 truncate text-zinc-600" title={assignedDevicesLabel}>{assignedDevicesLabel}</p>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-semibold text-zinc-950">Publish</p>
-                    <p className="mt-1 text-zinc-600">{publishStateDetail(publishStatusForSelected)}</p>
                   </div>
                 </div>
                 {playlist.assets.length > 0 ? (
@@ -1776,51 +1771,36 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     return (
                     <li
                       key={asset.assetId}
-                      className={`grid gap-4 px-5 py-5 text-sm lg:grid-cols-[56px_minmax(0,1fr)] ${
+                      className={`grid gap-3 px-5 py-4 text-sm lg:grid-cols-[44px_minmax(0,1fr)_auto] lg:items-start ${
                         piAssetIds.has(asset.assetId) ? "bg-emerald-50/35" : ""
                       }`}
                     >
-                      <div className="flex items-start gap-3 lg:block">
-                        <span className="flex h-11 w-11 items-center justify-center rounded-md bg-zinc-100 text-sm font-bold text-zinc-700">
+                      <div>
+                        <span className="flex h-10 w-10 items-center justify-center rounded-md bg-zinc-100 text-sm font-bold text-zinc-700">
                           {index + 1}
                         </span>
-                        <div className="lg:hidden">
-                          <StatusPill label={assetTypeLabel(asset)} tone={assetTypeTone(asset)} />
-                        </div>
                       </div>
-                      <div className="min-w-0 space-y-3">
-                        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="min-w-0 break-words text-base font-semibold leading-6 text-zinc-950">{assetName}</p>
-                              <span className="hidden lg:inline-flex">
-                                <StatusPill label={assetTypeLabel(asset)} tone={assetTypeTone(asset)} />
-                              </span>
-                              {piPlaybackLabel ? <StatusPill label={piPlaybackLabel} tone="good" /> : null}
-                            </div>
-                            <p className="mt-2 break-words text-sm leading-6 text-zinc-600">{fileName}</p>
-                          </div>
-                          <div className="flex flex-wrap gap-2 xl:justify-end">
-                            <span className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-950 ring-1 ring-zinc-200">
-                              {formatSeconds(asset.durationSeconds ?? 0)}
-                            </span>
-                            <LocalPlaylistControls
-                              assetId={asset.assetId}
-                              assetLabel={assetName}
-                              isFirst={index === 0}
-                              isLast={index === playlist.assets.length - 1}
-                              isOnlyItem={playlist.assets.length === 1}
-                              playlistId={playlist.playlistId}
-                            />
-                          </div>
-                        </div>
+                      <div className="min-w-0">
                         <LocalPlaylistItemEditor
                           assetId={asset.assetId}
                           defaultDurationSeconds={asset.durationSeconds ?? 30}
                           defaultTitle={assetName}
                           playlistId={playlist.playlistId}
                         />
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-zinc-600">
+                          <span className="truncate" title={fileName}>{fileName}</span>
+                          <StatusPill label={assetTypeLabel(asset)} tone={assetTypeTone(asset)} />
+                          {piPlaybackLabel ? <StatusPill label={piPlaybackLabel} tone="good" /> : null}
+                        </div>
                       </div>
+                      <LocalPlaylistControls
+                        assetId={asset.assetId}
+                        assetLabel={assetName}
+                        isFirst={index === 0}
+                        isLast={index === playlist.assets.length - 1}
+                        isOnlyItem={playlist.assets.length === 1}
+                        playlistId={playlist.playlistId}
+                      />
                     </li>
                     );
                   })}
@@ -1832,18 +1812,18 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h3 className="text-lg font-semibold">Publish</h3>
-                      <p className="mt-1 text-sm text-zinc-600">{playlistSyncState.detail}</p>
+                      <p className="mt-1 text-sm text-zinc-600">{shortScreenDetail(playlistSyncState, assignedScreensLabel)}</p>
                     </div>
                     <StatusPill label={playlistSyncState.label} tone={playlistSyncState.tone} />
                   </div>
-                  <dl className="mt-4 grid gap-3 text-sm">
+                  <dl className="mt-4 grid gap-2 text-sm">
                     <div className="rounded-md bg-zinc-50 p-3">
-                      <dt className="font-semibold text-zinc-500">Last publish</dt>
+                      <dt className="font-semibold text-zinc-500">Last sent</dt>
                       <dd className="mt-1 font-semibold text-zinc-950">{publishStateLabel(publishStatusForSelected)}</dd>
-                      <dd className="mt-1 text-zinc-600">{publishStateDetail(publishStatusForSelected)}</dd>
+                      <dd className="mt-1 text-zinc-600">{shortPublishDetail(publishStatusForSelected)}</dd>
                     </div>
                     <div className="rounded-md bg-zinc-50 p-3">
-                      <dt className="font-semibold text-zinc-500">Assigned screens</dt>
+                      <dt className="font-semibold text-zinc-500">Screens</dt>
                       <dd className="mt-1 text-zinc-700">{assignedScreensLabel}</dd>
                     </div>
                   </dl>
@@ -1852,11 +1832,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               </aside>
             </div>
 
-            <h2 id="playlist-builder-heading" className="sr-only">Playlist builder</h2>
-            <LocalPlaylistBuilder
-              playlistAssetFileNames={playlistAssetFileNames}
-              playlistId={playlist.playlistId}
-            />
           </section>
 
         </div>

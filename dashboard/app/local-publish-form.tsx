@@ -30,13 +30,13 @@ export function LocalPublishForm({ assetCount, playlistId }: LocalPublishFormPro
   async function publishNow() {
     if (isBusy || !canPublish) {
       if (!canPublish) {
-        setMessage("Add media before publishing this playlist.");
+        setMessage("Add media first.");
         setMessageKind("warning");
       }
       return;
     }
 
-    setMessage("Publishing changes...");
+    setMessage("Publishing...");
     setMessageKind("idle");
     setIsPublishing(true);
 
@@ -54,8 +54,8 @@ export function LocalPublishForm({ assetCount, playlistId }: LocalPublishFormPro
         throw new Error(result.error ?? "Publish failed.");
       }
 
-      const publishMessage = result.piPublish?.message ?? "Publish recorded locally.";
-      setMessage(result.piPublish?.ok ? "Published to the assigned Pi." : publishMessage);
+      const publishMessage = result.piPublish?.message ?? "Publish saved.";
+      setMessage(result.piPublish?.ok ? "Published." : publishMessage);
       setMessageKind(result.piPublish && !result.piPublish.ok ? "warning" : "success");
       startTransition(() => router.refresh());
     } catch (error) {
@@ -76,24 +76,20 @@ export function LocalPublishForm({ assetCount, playlistId }: LocalPublishFormPro
           : "mt-2 text-xs font-medium text-zinc-600";
 
   return (
-    <div className="mt-5 flex flex-col gap-3 border-t border-zinc-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <h3 className="text-sm font-semibold text-zinc-950">Publish changes</h3>
-        <p className="mt-1 text-sm text-zinc-600">Send this playlist to the assigned local Pi.</p>
-        {message ? (
-          <p className={messageClassName} role="status" aria-live="polite">
-            {message}
-          </p>
-        ) : null}
-      </div>
+    <div className="mt-4 border-t border-zinc-200 pt-4">
       <button
         type="button"
         disabled={isBusy || !canPublish}
         onClick={publishNow}
-        className="min-h-11 rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
+        className="min-h-11 w-full rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
       >
         {isBusy ? "Publishing..." : "Publish"}
       </button>
+      {message ? (
+        <p className={messageClassName} role="status" aria-live="polite">
+          {message}
+        </p>
+      ) : null}
     </div>
   );
 }
