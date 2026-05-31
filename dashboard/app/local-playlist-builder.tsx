@@ -46,6 +46,7 @@ type AssignmentResponse = {
 
 type PlaylistActionResponse = {
   error?: string;
+  message?: string;
   piPublish?: {
     message: string;
     ok: boolean;
@@ -54,11 +55,12 @@ type PlaylistActionResponse = {
 };
 
 type PlaylistBuilderProps = {
+  playlistAssetFileNames: string[];
   playlistId: string;
 };
 
-function isPlaylistSafeMedia(item: MediaItem): boolean {
-  return item.status === "ready" && item.origin !== "playlist" && (item.playlistUseCount ?? 0) === 0 && /\.mp4$/i.test(item.playbackFileName);
+function isPlaylistSafeMedia(item: MediaItem, selectedFileNames: Set<string>): boolean {
+  return item.status === "ready" && !selectedFileNames.has(item.playbackFileName) && /\.mp4$/i.test(item.playbackFileName);
 }
 
 function savedMessage(piPublish: PlaylistActionResponse["piPublish"]): string {
@@ -73,8 +75,10 @@ function savedMessage(piPublish: PlaylistActionResponse["piPublish"]): string {
   return `Added to playlist. ${piPublish.message}`;
 }
 
-export function LocalPlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
+export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: PlaylistBuilderProps) {
   const router = useRouter();
+  const selectedFileNames = new Set(playlistAssetFileNames);
+  const playlistAssetKey = playlistAssetFileNames.join("\n");
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [mediaQuery, setMediaQuery] = useState("");
   const [mediaMessage, setMediaMessage] = useState("Loading media library...");
@@ -103,11 +107,11 @@ export function LocalPlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
         throw new Error(result.error ?? "Could not load media.");
       }
 
-      const readyItems = result.items.filter(isPlaylistSafeMedia);
+      const readyItems = result.items.filter((item) => isPlaylistSafeMedia(item, selectedFileNames));
       setMediaItems(readyItems);
       setMediaMessage(
         readyItems.length === 0
-          ? "No ready media found. Upload media in Media Store first."
+          ? "No available media for this playlist."
           : `${readyItems.length} ready item${readyItems.length === 1 ? "" : "s"} available.`
       );
     } catch (error) {
@@ -121,7 +125,8 @@ export function LocalPlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
   async function loadAssignments() {
     setIsLoadingAssignments(true);
     try {
-      const response = await fetch("/api/local-playlist/assign", {
+      const params = new URLSearchParams({ playlistId });
+      const response = await fetch(`/api/local-playlist/assign?${params.toString()}`, {
         cache: "no-store",
         method: "GET"
       });
@@ -143,7 +148,7 @@ export function LocalPlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
   useEffect(() => {
     void loadMedia("");
     void loadAssignments();
-  }, []);
+  }, [playlistAssetKey, playlistId]);
 
   async function addMediaToPlaylist(mediaId: string, mediaLabel: string) {
     if (isBusy) {
@@ -160,7 +165,8 @@ export function LocalPlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
         },
         body: JSON.stringify({
           action: "add-media",
-          mediaId
+          mediaId,
+          playlistId
         })
       });
       const result = (await response.json()) as PlaylistActionResponse;
@@ -168,7 +174,7 @@ export function LocalPlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
         throw new Error(result.error ?? "Could not add media to playlist.");
       }
 
-      setMediaMessage(savedMessage(result.piPublish));
+      setMediaMessage(result.message ?? savedMessage(result.piPublish));
       startTransition(() => router.refresh());
     } catch (error) {
       setMediaMessage(error instanceof Error ? error.message : "Could not add media to playlist.");
@@ -191,7 +197,8 @@ export function LocalPlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          playlistId: assigned ? playlistId : null,
+          assigned,
+          playlistId,
           targetId,
           targetType
         })
@@ -216,7 +223,7 @@ export function LocalPlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
       <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-200 p-5">
           <h3 className="text-lg font-semibold">Add media</h3>
-          <p className="mt-1 text-sm text-zinc-600">Choose ready media from the library.</p>
+          <p className="mt-1 text-sm text-zinc-600">Choose ready local media for this playlist.</p>
           <form
             className="mt-3 flex flex-wrap items-center gap-3"
             onSubmit={(event) => {

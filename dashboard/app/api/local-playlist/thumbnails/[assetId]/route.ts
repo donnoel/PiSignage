@@ -4,7 +4,7 @@ import { access, mkdir, readFile, rename, stat, rm } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { NextResponse } from "next/server";
-import { localStateDirectory, readLivePlaylist, sampleAssetsDirectory } from "../../../../lib/local-playlist";
+import { localStateDirectory, readStoredPlaylist, sampleAssetsDirectory } from "../../../../lib/local-playlist";
 import { slugify } from "../../../../lib/media-processing";
 
 export const runtime = "nodejs";
@@ -87,10 +87,11 @@ async function ensureThumbnail(sourcePath: string, thumbnailPath: string): Promi
   }
 }
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   try {
     const { assetId } = await context.params;
-    const playlist = await readLivePlaylist();
+    const url = new URL(request.url);
+    const { playlist } = await readStoredPlaylist(url.searchParams.get("playlistId"));
     const asset = playlist.assets.find((candidate) => candidate.assetId === assetId);
 
     if (!asset) {
@@ -104,7 +105,7 @@ export async function GET(_request: Request, context: RouteContext) {
 
     await access(sourcePath, fsConstants.R_OK);
 
-    const thumbnailName = `${slugify(asset.assetId) || "playlist-item"}.jpg`;
+    const thumbnailName = `${slugify(playlist.playlistId) || "playlist"}-${slugify(asset.assetId) || "playlist-item"}.jpg`;
     const thumbnailPath = path.join(localStateDirectory(), "thumbnails", thumbnailName);
     await ensureThumbnail(sourcePath, thumbnailPath);
 

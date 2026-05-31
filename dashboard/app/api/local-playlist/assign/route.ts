@@ -8,7 +8,7 @@ import {
   writeScreenStore
 } from "../../../lib/local-data-store";
 import { ensureInventorySeed } from "../../../lib/local-inventory";
-import { readLivePlaylist } from "../../../lib/local-playlist";
+import { readPlaylistStore, readStoredPlaylist, selectPlaylist } from "../../../lib/local-playlist";
 import { readPiConfig } from "../../../lib/pi-local";
 
 export const runtime = "nodejs";
@@ -20,8 +20,9 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-export async function GET() {
-  const [playlist, piConfig] = await Promise.all([readLivePlaylist(), Promise.resolve(readPiConfig())]);
+async function assignmentResponse(playlistId?: string | null) {
+  const [store, piConfig] = await Promise.all([readPlaylistStore(), Promise.resolve(readPiConfig())]);
+  const playlist = selectPlaylist(store, playlistId);
   const inventory = await ensureInventorySeed({
     host: piConfig?.host ?? null,
     location: process.env.PISIGNAGE_LOCATION_NAME?.trim() || "Primary location",
@@ -38,9 +39,15 @@ export async function GET() {
   });
 }
 
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  return assignmentResponse(url.searchParams.get("playlistId"));
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as {
+      assigned?: boolean;
       playlistId?: string | null;
       targetId?: string;
       targetType?: AssignmentTarget;
@@ -54,10 +61,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing assignment target." }, { status: 400 });
     }
 
-    const playlist = await readLivePlaylist();
-    const playlistId = body.playlistId === null ? null : body.playlistId;
-    if (playlistId !== null && playlistId !== playlist.playlistId) {
-      return NextResponse.json({ error: "Only the local playlist can be assigned right now." }, { status: 400 });
+    const selectedPlaylistId = body.playlistId ?? undefined;
+    const { playlist } = await readStoredPlaylist(selectedPlaylistId);
+    const shouldAssign = body.assigned ?? body.playlistId !== null;
+    const assignmentPlaylistId = shouldAssign ? playlist.playlistId : null;
+    if (shouldAssign && !selectedPlaylistId) {
+      return NextResponse.json({ error: "Choose a playlist to assign." }, { status: 400 });
+    }
+
+    if (assignmentPlaylistId !== null && playlist.assets.length === 0) {
+      return NextResponse.json(
+        { error: "Add media before assigning this playlist to a screen or device." },
+        { status: 400 }
+      );
     }
 
     const timestamp = nowIso();
@@ -71,7 +87,7 @@ export async function POST(request: Request) {
       const nextItems = [...screenStore.items];
       nextItems[index] = {
         ...nextItems[index],
-        playlistId,
+        playlistId: assignmentPlaylistId,
         updatedAt: timestamp
       };
 
@@ -91,7 +107,7 @@ export async function POST(request: Request) {
       const nextItems = [...deviceStore.items];
       nextItems[index] = {
         ...nextItems[index],
-        playlistId,
+        playlistId: assignmentPlaylistId,
         updatedAt: timestamp
       };
 
@@ -110,14 +126,14 @@ export async function POST(request: Request) {
       entityId: body.targetId,
       entityType: body.targetType,
       message:
-        playlistId === null
+        assignmentPlaylistId === null
           ? `Unassigned playlist from ${body.targetType} ${body.targetId}.`
-          : `Assigned playlist ${playlist.playlistId} to ${body.targetType} ${body.targetId}.`,
+          : `Assigned playlist ${playlist.name} to ${body.targetType} ${body.targetId}.`,
       result: "success",
       timestamp
     });
 
-    return GET();
+    return assignmentResponse(playlist.playlistId);
   } catch (error) {
     console.error("playlist assignment failed", error);
     return NextResponse.json(

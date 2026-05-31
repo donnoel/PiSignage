@@ -7,10 +7,12 @@ type PlaylistItemEditorProps = {
   assetId: string;
   defaultDurationSeconds: number;
   defaultTitle: string;
+  playlistId: string;
 };
 
 type PlaylistEditResponse = {
   error?: string;
+  message?: string;
   piPublish?: {
     enabled: boolean;
     message: string;
@@ -34,7 +36,8 @@ function savedMessage(piPublish: PlaylistEditResponse["piPublish"]): string {
 export function LocalPlaylistItemEditor({
   assetId,
   defaultDurationSeconds,
-  defaultTitle
+  defaultTitle,
+  playlistId
 }: PlaylistItemEditorProps) {
   const router = useRouter();
   const [title, setTitle] = useState(defaultTitle);
@@ -68,7 +71,8 @@ export function LocalPlaylistItemEditor({
           action: "update-item",
           altText: title,
           assetId,
-          durationSeconds: duration
+          durationSeconds: duration,
+          playlistId
         })
       });
       const result = (await response.json()) as PlaylistEditResponse;
@@ -76,7 +80,7 @@ export function LocalPlaylistItemEditor({
         throw new Error(result.error ?? "Could not save item details.");
       }
 
-      setMessage(savedMessage(result.piPublish));
+      setMessage(result.message ?? savedMessage(result.piPublish));
       startTransition(() => router.refresh());
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save item details.");

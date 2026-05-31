@@ -28,7 +28,7 @@ function normalizeScreen(screen: ScreenRecord, fallbackPlaylistId: string): Scre
     location: typeof screen.location === "string" && screen.location.trim() ? screen.location.trim() : "Unassigned",
     name: typeof screen.name === "string" && screen.name.trim() ? screen.name.trim() : "Unnamed Screen",
     notes: typeof screen.notes === "string" ? screen.notes : "",
-    playlistId: screen.playlistId ?? fallbackPlaylistId
+    playlistId: screen.playlistId === undefined ? fallbackPlaylistId : screen.playlistId
   };
 }
 
@@ -39,7 +39,7 @@ function normalizeDevice(device: DeviceRecord, fallbackPlaylistId: string): Devi
     location: typeof device.location === "string" && device.location.trim() ? device.location.trim() : "Unassigned",
     name: typeof device.name === "string" && device.name.trim() ? device.name.trim() : "Unnamed Device",
     notes: typeof device.notes === "string" ? device.notes : "",
-    playlistId: device.playlistId ?? fallbackPlaylistId,
+    playlistId: device.playlistId === undefined ? fallbackPlaylistId : device.playlistId,
     host: typeof device.host === "string" && device.host.trim() ? device.host.trim() : "Not configured",
     rootPath: typeof device.rootPath === "string" && device.rootPath.trim() ? device.rootPath.trim() : "~",
     sshUser: typeof device.sshUser === "string" && device.sshUser.trim() ? device.sshUser.trim() : "pi"

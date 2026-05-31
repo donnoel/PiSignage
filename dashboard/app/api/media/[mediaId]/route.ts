@@ -10,7 +10,7 @@ import {
   writeMediaFolderStore,
   writeMediaStore
 } from "../../../lib/local-data-store";
-import { readLivePlaylist, sampleAssetsDirectory } from "../../../lib/local-playlist";
+import { readPlaylistStore, sampleAssetsDirectory } from "../../../lib/local-playlist";
 import type { PlaylistAsset } from "../../../lib/local-playlist";
 
 type RouteContext = {
@@ -46,8 +46,10 @@ function playlistAssetFileName(asset: PlaylistAsset): string | null {
 }
 
 async function playlistUsesFile(fileName: string): Promise<boolean> {
-  const playlist = await readLivePlaylist();
-  return playlist.assets.some((asset) => playlistAssetFileName(asset) === fileName);
+  const playlistStore = await readPlaylistStore();
+  return playlistStore.items.some((playlist) =>
+    playlist.assets.some((asset) => playlistAssetFileName(asset) === fileName)
+  );
 }
 
 export async function GET(_request: Request, context: RouteContext) {

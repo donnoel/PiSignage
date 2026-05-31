@@ -1,13 +1,30 @@
 import { NextResponse } from "next/server";
-import { ensureLivePlaylistPath, readPlaylist, writePublishStatus } from "../../../lib/local-playlist";
+import {
+  ensureLivePlaylistPath,
+  readStoredPlaylist,
+  writePlaylist,
+  writePublishStatus
+} from "../../../lib/local-playlist";
 import { publishPlaylistToPi } from "../../../lib/pi-local";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
+    const body = (await request.json().catch(() => ({}))) as {
+      playlistId?: string;
+    };
+    const { playlist } = await readStoredPlaylist(body.playlistId);
+    if (playlist.assets.length === 0) {
+      return NextResponse.json(
+        { error: "Add media before publishing this playlist." },
+        { status: 400 }
+      );
+    }
+
     const playlistPath = await ensureLivePlaylistPath();
-    const playlist = await readPlaylist(playlistPath);
+    await writePlaylist(playlistPath, playlist);
     const piPublish = await publishPlaylistToPi(playlistPath, playlist, {
       notConfigured: "Pi publish is not configured; playlist stayed local.",
       failure: "Manual publish needs attention."

@@ -17,6 +17,12 @@ export type Playlist = {
   assets: PlaylistAsset[];
 };
 
+export type PlaylistStore = {
+  items: Playlist[];
+  updatedAt: string;
+  version: number;
+};
+
 export type PiPublishResult = {
   enabled: boolean;
   ok: boolean;
@@ -39,6 +45,10 @@ export function livePlaylistPath(): string {
   return path.join(localStateDirectory(), "playlist.local.json");
 }
 
+export function playlistStorePath(): string {
+  return path.join(localStateDirectory(), "playlists.local.json");
+}
+
 export function sampleAssetsDirectory(): string {
   return path.join(repoRoot(), "sample-content", "assets");
 }
@@ -56,6 +66,10 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
+function isoNow(): string {
+  return new Date().toISOString();
+}
+
 export async function writeFileAtomic(filePath: string, value: Buffer | string): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`;
@@ -67,6 +81,24 @@ export async function writeFileAtomic(filePath: string, value: Buffer | string):
     await fs.rm(temporaryPath, { force: true });
     throw error;
   }
+}
+
+function normalizePlaylist(playlist: Playlist): Playlist {
+  return {
+    ...playlist,
+    assets: Array.isArray(playlist.assets) ? playlist.assets : [],
+    updatedAt: typeof playlist.updatedAt === "string" ? playlist.updatedAt : isoNow(),
+    version: typeof playlist.version === "number" ? playlist.version : 1
+  };
+}
+
+function normalizePlaylistStore(store: PlaylistStore): PlaylistStore {
+  return {
+    ...store,
+    items: store.items.map(normalizePlaylist),
+    updatedAt: typeof store.updatedAt === "string" ? store.updatedAt : isoNow(),
+    version: typeof store.version === "number" ? store.version : 1
+  };
 }
 
 export async function ensureLivePlaylistPath(): Promise<string> {
@@ -100,6 +132,96 @@ export async function readLivePlaylist(): Promise<Playlist> {
   return readPlaylist(await ensureLivePlaylistPath());
 }
 
+export async function readPlaylistStore(): Promise<PlaylistStore> {
+  const [livePlaylist, playlistStoreExists] = await Promise.all([
+    readLivePlaylist(),
+    fileExists(playlistStorePath())
+  ]);
+
+  if (!playlistStoreExists) {
+    const seededStore = {
+      items: [livePlaylist],
+      updatedAt: isoNow(),
+      version: 1
+    };
+    await writePlaylistStore(seededStore);
+    return seededStore;
+  }
+
+  const store = JSON.parse(await fs.readFile(playlistStorePath(), "utf8")) as Partial<PlaylistStore>;
+  if (
+    typeof store.version !== "number" ||
+    typeof store.updatedAt !== "string" ||
+    !Array.isArray(store.items)
+  ) {
+    throw new Error("Playlist library is malformed.");
+  }
+
+  let nextStore = normalizePlaylistStore(store as PlaylistStore);
+  if (!nextStore.items.some((playlist) => playlist.playlistId === livePlaylist.playlistId)) {
+    nextStore = {
+      ...nextStore,
+      items: [livePlaylist, ...nextStore.items],
+      updatedAt: isoNow(),
+      version: nextStore.version + 1
+    };
+    await writePlaylistStore(nextStore);
+  }
+
+  return nextStore;
+}
+
+export async function writePlaylistStore(store: PlaylistStore): Promise<void> {
+  const normalizedStore = normalizePlaylistStore(store);
+  if (normalizedStore.items.length === 0) {
+    throw new Error("Playlist library must contain at least one playlist.");
+  }
+
+  await writeFileAtomic(playlistStorePath(), `${JSON.stringify(normalizedStore, null, 2)}\n`);
+}
+
+export function selectPlaylist(store: PlaylistStore, playlistId?: string | null): Playlist {
+  const playlist = playlistId
+    ? store.items.find((candidate) => candidate.playlistId === playlistId)
+    : store.items[0];
+
+  if (!playlist) {
+    throw new Error("Playlist was not found.");
+  }
+
+  return playlist;
+}
+
+export async function readStoredPlaylist(playlistId?: string | null): Promise<{
+  playlist: Playlist;
+  store: PlaylistStore;
+}> {
+  const store = await readPlaylistStore();
+  return {
+    playlist: selectPlaylist(store, playlistId),
+    store
+  };
+}
+
+export async function writeStoredPlaylist(playlist: Playlist): Promise<PlaylistStore> {
+  const store = await readPlaylistStore();
+  const index = store.items.findIndex((candidate) => candidate.playlistId === playlist.playlistId);
+  if (index === -1) {
+    throw new Error("Playlist was not found.");
+  }
+
+  const nextItems = [...store.items];
+  nextItems[index] = normalizePlaylist(playlist);
+  const nextStore = {
+    ...store,
+    items: nextItems,
+    updatedAt: isoNow(),
+    version: store.version + 1
+  };
+  await writePlaylistStore(nextStore);
+  return nextStore;
+}
+
 export async function writePlaylist(playlistPath: string, playlist: Playlist): Promise<void> {
   await writeFileAtomic(playlistPath, `${JSON.stringify(playlist, null, 2)}\n`);
 }
@@ -118,8 +240,10 @@ export async function writePublishStatus(
         message: piPublish.message,
         ok: piPublish.ok,
         piPublishEnabled: piPublish.enabled,
+        playlistId: playlist.playlistId,
+        playlistName: playlist.name,
         playlistVersion: playlist.version,
-        timestamp: new Date().toISOString()
+        timestamp: isoNow()
       },
       null,
       2

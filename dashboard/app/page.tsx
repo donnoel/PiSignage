@@ -5,11 +5,12 @@ import { DeviceHealthFleetPanel } from "./device-health-fleet-panel";
 import { ensureLocalDataFoundation } from "./lib/local-data-store";
 import type { DeviceStore, ScreenRecord, ScreenStore } from "./lib/local-data-store";
 import { ensureInventorySeed } from "./lib/local-inventory";
-import { localStateDirectory, publishStatusPath, readLivePlaylist, repoRoot, writeFileAtomic } from "./lib/local-playlist";
-import type { Playlist, PlaylistAsset } from "./lib/local-playlist";
+import { localStateDirectory, publishStatusPath, readPlaylistStore, repoRoot, selectPlaylist, writeFileAtomic } from "./lib/local-playlist";
+import type { Playlist, PlaylistAsset, PlaylistStore } from "./lib/local-playlist";
 import { readPiConfig, runSsh } from "./lib/pi-local";
 import { MediaStorePanel } from "./media-store-panel";
 import { LocalPlaylistBuilder } from "./local-playlist-builder";
+import { LocalPlaylistCreateForm } from "./local-playlist-create-form";
 import { LocalPublishForm } from "./local-publish-form";
 import { LocalPlaylistControls } from "./local-playlist-controls";
 import { LocalPlaylistItemEditor } from "./local-playlist-item-editor";
@@ -81,6 +82,7 @@ type DashboardState = {
   };
   lastKnownPlayback: LastKnownPlayback | null;
   playlist: Playlist;
+  playlistStore: PlaylistStore;
   publishStatus: PublishStatus | null;
   pi: PiProbe;
 };
@@ -91,6 +93,8 @@ type PublishStatus = {
   message: string;
   ok: boolean;
   piPublishEnabled: boolean;
+  playlistId?: string;
+  playlistName?: string;
   playlistVersion: number;
   timestamp: string;
 };
@@ -110,6 +114,7 @@ type DashboardView =
 
 type DashboardPageProps = {
   searchParams?: Promise<{
+    playlist?: string | string[];
     screen?: string | string[];
     view?: string | string[];
   }>;
@@ -692,19 +697,21 @@ function textBetween(value: string, start: string, end: string): string {
   return value.slice(startIndex + start.length, endIndex).trim();
 }
 
-async function loadDashboardState(): Promise<DashboardState> {
+async function loadDashboardState(selectedPlaylistId?: string | null): Promise<DashboardState> {
   await ensureLocalDataFoundation();
 
   const root = repoRoot();
   const heartbeatPath = `${root}/device-agent/local-state/heartbeat.json`;
-  const playlist = await readLivePlaylist();
+  const playlistStore = await readPlaylistStore();
+  const playlist = selectPlaylist(playlistStore, selectedPlaylistId);
+  const seedPlaylistId = playlistStore.items[0]?.playlistId ?? playlist.playlistId;
   const piConfig = readPiConfig();
   const [heartbeat, inventory, publishStatus, pi] = await Promise.all([
     readJsonFile<Heartbeat>(heartbeatPath),
     ensureInventorySeed({
       host: piConfig?.host ?? null,
       location: process.env.PISIGNAGE_LOCATION_NAME?.trim() || "Primary location",
-      playlistId: playlist.playlistId,
+      playlistId: seedPlaylistId,
       rootPath: piConfig?.root ?? null,
       screenName: process.env.PISIGNAGE_SCREEN_NAME?.trim() || "Primary Screen",
       sshUser: piConfig?.user ?? null
@@ -714,7 +721,7 @@ async function loadDashboardState(): Promise<DashboardState> {
   ]);
   const lastKnownPlayback = await resolveLastKnownPlayback(pi);
 
-  return { heartbeat, inventory, lastKnownPlayback, playlist, publishStatus, pi };
+  return { heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi };
 }
 
 function syncState(localVersion: number, piVersion: number | undefined, piReachable: boolean) {
@@ -763,6 +770,7 @@ function actionLabel(action: string | undefined): string {
     "move-down": "Move down",
     "move-up": "Move up",
     publish: "Publish now",
+    "playlist-create": "Create playlist",
     reorder: "Reorder",
     remove: "Remove",
     "restore-baseline": "Restore baseline",
@@ -939,8 +947,10 @@ function scalarSearchParam(value: string | string[] | undefined): string | null 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const resolvedSearchParams = await searchParams;
   const selectedView = dashboardViewFrom(resolvedSearchParams?.view);
+  const selectedPlaylistParam = scalarSearchParam(resolvedSearchParams?.playlist);
   const currentViewCopy = viewCopy[selectedView];
-  const { heartbeat, inventory, lastKnownPlayback, playlist, publishStatus, pi } = await loadDashboardState();
+  const { heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi } =
+    await loadDashboardState(selectedPlaylistParam);
   const selectedScreenParam = scalarSearchParam(resolvedSearchParams?.screen);
   const playerStatus = pi.playerStatus;
   const playbackState = playerStatus?.state ?? (pi.reachable ? "unknown" : "unreachable");
@@ -960,33 +970,83 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const playerUpdatedAt = formatTimestamp(playerStatus?.updatedAt);
   const lastPlayerHeartbeatAge = formatStatusAge(playerStatus?.updatedAt);
   const totalDuration = formatDuration(playlist.assets);
+  const playlistOptions = playlistStore.items;
+  const firstPlaylistId = playlistOptions[0]?.playlistId ?? playlist.playlistId;
+  const publishStatusForSelected = publishStatus?.playlistId
+    ? publishStatus.playlistId === playlist.playlistId
+      ? publishStatus
+      : null
+    : playlist.playlistId === firstPlaylistId
+      ? publishStatus
+      : null;
   const piPlaylistVersion = playerStatus?.playlistVersion;
-  const playlistSyncState = syncState(playlist.version, piPlaylistVersion, pi.reachable);
-  const lastPublishLabel = publishStatus
-    ? `${actionLabel(publishStatus.action)} · ${formatTimestamp(publishStatus.timestamp)}`
-    : "No publish recorded";
+  const playlistReportedByPi = playerStatus?.playlistId
+    ? playerStatus.playlistId === playlist.playlistId
+    : playlist.playlistId === firstPlaylistId;
+  const playlistSyncState = playlistReportedByPi
+    ? syncState(playlist.version, piPlaylistVersion, pi.reachable)
+    : {
+        detail: "This playlist has not been reported by the Pi. Publish it when it is ready for the screen.",
+        label: "Not live",
+        tone: "muted" as const
+      };
   const piPlayerUrl =
     process.env.PISIGNAGE_PLAYER_URL?.trim() ||
     (pi.host ? `http://${pi.host}:5173/?playlist=/playlist.local.json` : null);
   const videoAssetCount = playlist.assets.filter((asset) => asset.type === "video").length;
   const imageAssetCount = playlist.assets.length - videoAssetCount;
-  const piAssetIds = new Set(playerStatus?.assetIds ?? []);
-  const assignedScreens = inventory.screens.items
-    .filter((screen) => screen.playlistId === playlist.playlistId)
-    .slice()
-    .sort((left, right) =>
-      left.location.localeCompare(right.location, undefined, { sensitivity: "base" }) ||
-      left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
-    );
-  const assignedDevices = inventory.devices.items
-    .filter((device) => device.playlistId === playlist.playlistId)
-    .slice()
-    .sort((left, right) =>
-      left.location.localeCompare(right.location, undefined, { sensitivity: "base" }) ||
-      left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
-    );
+  const piAssetIds = new Set(playlistReportedByPi ? (playerStatus?.assetIds ?? []) : []);
+  function playlistScreens(playlistId: string) {
+    return inventory.screens.items
+      .filter((screen) => screen.playlistId === playlistId)
+      .slice()
+      .sort((left, right) =>
+        left.location.localeCompare(right.location, undefined, { sensitivity: "base" }) ||
+        left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
+      );
+  }
+
+  function playlistDevices(playlistId: string) {
+    return inventory.devices.items
+      .filter((device) => device.playlistId === playlistId)
+      .slice()
+      .sort((left, right) =>
+        left.location.localeCompare(right.location, undefined, { sensitivity: "base" }) ||
+        left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
+      );
+  }
+
+  function publishStatusForPlaylist(option: Playlist): PublishStatus | null {
+    if (!publishStatus) {
+      return null;
+    }
+
+    if (publishStatus.playlistId) {
+      return publishStatus.playlistId === option.playlistId ? publishStatus : null;
+    }
+
+    return option.playlistId === firstPlaylistId ? publishStatus : null;
+  }
+
+  function syncStateForPlaylist(option: Playlist) {
+    const reportsThisPlaylist = playerStatus?.playlistId
+      ? playerStatus.playlistId === option.playlistId
+      : option.playlistId === firstPlaylistId;
+
+    return reportsThisPlaylist
+      ? syncState(option.version, piPlaylistVersion, pi.reachable)
+      : {
+          detail: "Publish this playlist when it is ready for a screen.",
+          label: "Not live",
+          tone: "muted" as const
+        };
+  }
+
+  const assignedScreens = playlistScreens(playlist.playlistId);
+  const assignedDevices = playlistDevices(playlist.playlistId);
   const assignedScreensLabel = nameList(assignedScreens, (screen) => screen.name, "No screens assigned");
   const assignedDevicesLabel = nameList(assignedDevices, (device) => device.name, "No devices assigned");
+  const playlistAssetFileNames = playlist.assets.map((asset) => fileNameFromUri(asset.uri));
   const attentionItems: AttentionItem[] = [];
 
   if (!pi.configured) {
@@ -1019,9 +1079,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     });
   }
 
-  if (publishStatus && !publishStatus.ok) {
+  if (publishStatusForSelected && !publishStatusForSelected.ok) {
     attentionItems.push({
-      detail: publishStatus.message,
+      detail: publishStatusForSelected.message,
       label: "Publish failed",
       tone: "warn"
     });
@@ -1145,12 +1205,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     },
     {
       label: "Last publish",
-      value: publishStatus ? (publishStatus.ok ? "Succeeded" : "Needs attention") : "Not recorded",
-      detail: publishStatus
-        ? `${actionLabel(publishStatus.action)} wrote playlist v${publishStatus.playlistVersion}. ${publishStatus.message}`
+      value: publishStatusForSelected ? (publishStatusForSelected.ok ? "Succeeded" : "Needs attention") : "Not recorded",
+      detail: publishStatusForSelected
+        ? `${actionLabel(publishStatusForSelected.action)} wrote playlist v${publishStatusForSelected.playlistVersion}. ${publishStatusForSelected.message}`
         : "No local publish status file has been written yet.",
-      tone: publishStatus ? (publishStatus.ok ? "good" : "warn") : "muted",
-      timestamp: publishStatus?.timestamp
+      tone: publishStatusForSelected ? (publishStatusForSelected.ok ? "good" : "warn") : "muted",
+      timestamp: publishStatusForSelected?.timestamp
     },
     {
       label: "Display",
@@ -1606,9 +1666,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <h2 id="playlist-heading" className="text-xl font-semibold">Playlist library</h2>
-                  <p className="mt-1 text-sm text-zinc-600">Saved loops ready to assign to screens.</p>
+                  <p className="mt-1 text-sm text-zinc-600">Saved loops for different screens and locations.</p>
                 </div>
-                <StatusPill label="1 local playlist" tone="muted" />
+                <div className="w-full max-w-xl sm:w-auto">
+                  <LocalPlaylistCreateForm />
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[860px] text-left text-sm">
@@ -1621,25 +1683,44 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                       <th className="px-4 py-3">Sync</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    <tr>
-                      <td className="px-4 py-4">
-                        <p className="font-semibold text-zinc-950">{playlist.name}</p>
-                        <p className="mt-1 text-xs text-zinc-600">Selected</p>
-                      </td>
-                      <td className="max-w-[260px] px-4 py-4 text-zinc-700">
-                        <span className="block truncate" title={assignedScreensLabel}>{assignedScreensLabel}</span>
-                      </td>
-                      <td className="px-4 py-4 text-zinc-700">{playlist.assets.length} items · {totalDuration}</td>
-                      <td className="px-4 py-4">
-                        <StatusPill label={publishStateLabel(publishStatus)} tone={publishStateTone(publishStatus)} />
-                        <p className="mt-2 text-xs text-zinc-600">{lastPublishLabel}</p>
-                      </td>
-                      <td className="px-4 py-4">
-                        <StatusPill label={playlistSyncState.label} tone={playlistSyncState.tone} />
-                        <p className="mt-2 text-xs text-zinc-600">{playlistSyncState.detail}</p>
-                      </td>
-                    </tr>
+                  <tbody className="divide-y divide-zinc-200">
+                    {playlistOptions.map((option) => {
+                      const rowScreens = playlistScreens(option.playlistId);
+                      const rowScreensLabel = nameList(rowScreens, (screen) => screen.name, "No screens assigned");
+                      const rowPublishStatus = publishStatusForPlaylist(option);
+                      const rowSyncState = syncStateForPlaylist(option);
+                      const isSelected = option.playlistId === playlist.playlistId;
+
+                      return (
+                        <tr key={option.playlistId} className={isSelected ? "bg-teal-50/60" : ""}>
+                          <td className="px-4 py-4">
+                            <a
+                              href={`/?view=playlist&playlist=${encodeURIComponent(option.playlistId)}`}
+                              className="font-semibold text-teal-800 hover:text-teal-900"
+                            >
+                              {option.name}
+                            </a>
+                            <p className="mt-1 text-xs text-zinc-600">{isSelected ? "Selected" : "Open to edit"}</p>
+                          </td>
+                          <td className="max-w-[260px] px-4 py-4 text-zinc-700">
+                            <span className="block truncate" title={rowScreensLabel}>{rowScreensLabel}</span>
+                          </td>
+                          <td className="px-4 py-4 text-zinc-700">{option.assets.length} items · {formatDuration(option.assets)}</td>
+                          <td className="px-4 py-4">
+                            <StatusPill label={publishStateLabel(rowPublishStatus)} tone={publishStateTone(rowPublishStatus)} />
+                            <p className="mt-2 text-xs text-zinc-600">
+                              {rowPublishStatus
+                                ? `${actionLabel(rowPublishStatus.action)} · ${formatTimestamp(rowPublishStatus.timestamp)}`
+                                : "No publish recorded"}
+                            </p>
+                          </td>
+                          <td className="px-4 py-4">
+                            <StatusPill label={rowSyncState.label} tone={rowSyncState.tone} />
+                            <p className="mt-2 text-xs text-zinc-600">{rowSyncState.detail}</p>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1672,10 +1753,20 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   </div>
                   <div className="min-w-0">
                     <p className="font-semibold text-zinc-950">Publish</p>
-                    <p className="mt-1 text-zinc-600">{publishStateDetail(publishStatus)}</p>
+                    <p className="mt-1 text-zinc-600">{publishStateDetail(publishStatusForSelected)}</p>
                   </div>
                 </div>
-                <LocalPlaylistTimeline assets={playlist.assets} piAssetIds={Array.from(piAssetIds)} />
+                {playlist.assets.length > 0 ? (
+                  <LocalPlaylistTimeline
+                    assets={playlist.assets}
+                    piAssetIds={Array.from(piAssetIds)}
+                    playlistId={playlist.playlistId}
+                  />
+                ) : (
+                  <div className="px-5 py-5 text-sm text-zinc-600">
+                    Add local media below before assigning or publishing this playlist.
+                  </div>
+                )}
                 <ul className="divide-y divide-zinc-200">
                   {playlist.assets.map((asset, index) => {
                     const piPlaybackLabel = assetPlaybackLabel(asset, playerStatus);
@@ -1719,6 +1810,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                               isFirst={index === 0}
                               isLast={index === playlist.assets.length - 1}
                               isOnlyItem={playlist.assets.length === 1}
+                              playlistId={playlist.playlistId}
                             />
                           </div>
                         </div>
@@ -1726,6 +1818,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                           assetId={asset.assetId}
                           defaultDurationSeconds={asset.durationSeconds ?? 30}
                           defaultTitle={assetName}
+                          playlistId={playlist.playlistId}
                         />
                       </div>
                     </li>
@@ -1746,21 +1839,24 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   <dl className="mt-4 grid gap-3 text-sm">
                     <div className="rounded-md bg-zinc-50 p-3">
                       <dt className="font-semibold text-zinc-500">Last publish</dt>
-                      <dd className="mt-1 font-semibold text-zinc-950">{publishStateLabel(publishStatus)}</dd>
-                      <dd className="mt-1 text-zinc-600">{publishStateDetail(publishStatus)}</dd>
+                      <dd className="mt-1 font-semibold text-zinc-950">{publishStateLabel(publishStatusForSelected)}</dd>
+                      <dd className="mt-1 text-zinc-600">{publishStateDetail(publishStatusForSelected)}</dd>
                     </div>
                     <div className="rounded-md bg-zinc-50 p-3">
                       <dt className="font-semibold text-zinc-500">Assigned screens</dt>
                       <dd className="mt-1 text-zinc-700">{assignedScreensLabel}</dd>
                     </div>
                   </dl>
-                  <LocalPublishForm />
+                  <LocalPublishForm assetCount={playlist.assets.length} playlistId={playlist.playlistId} />
                 </div>
               </aside>
             </div>
 
             <h2 id="playlist-builder-heading" className="sr-only">Playlist builder</h2>
-            <LocalPlaylistBuilder playlistId={playlist.playlistId} />
+            <LocalPlaylistBuilder
+              playlistAssetFileNames={playlistAssetFileNames}
+              playlistId={playlist.playlistId}
+            />
           </section>
 
         </div>

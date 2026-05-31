@@ -13,7 +13,7 @@ import {
   writeMediaFolderStore,
   writeMediaStore
 } from "../../lib/local-data-store";
-import { readLivePlaylist, sampleAssetsDirectory, writeFileAtomic } from "../../lib/local-playlist";
+import { readPlaylistStore, sampleAssetsDirectory, writeFileAtomic } from "../../lib/local-playlist";
 import type { PlaylistAsset } from "../../lib/local-playlist";
 import {
   createStillVideoClip,
@@ -173,19 +173,21 @@ async function mediaItemsWithPlaylistAssets(
   mediaStoreItems: MediaRecord[],
   folderStore: MediaFolderStore
 ): Promise<MediaApiItem[]> {
-  const playlist = await readLivePlaylist();
+  const playlistStore = await readPlaylistStore();
   const playlistAssetsByFileName = new Map<string, PlaylistAsset[]>();
   const folderById = new Map(folderStore.items.map((folder) => [folder.id, folder.name]));
 
-  for (const asset of playlist.assets) {
-    const fileName = playlistAssetFileName(asset);
-    if (!fileName) {
-      continue;
-    }
+  for (const playlist of playlistStore.items) {
+    for (const asset of playlist.assets) {
+      const fileName = playlistAssetFileName(asset);
+      if (!fileName) {
+        continue;
+      }
 
-    const assets = playlistAssetsByFileName.get(fileName) ?? [];
-    assets.push(asset);
-    playlistAssetsByFileName.set(fileName, assets);
+      const assets = playlistAssetsByFileName.get(fileName) ?? [];
+      assets.push(asset);
+      playlistAssetsByFileName.set(fileName, assets);
+    }
   }
 
   const storeFileNames = new Set(mediaStoreItems.map((item) => item.playbackFileName));
@@ -217,7 +219,7 @@ async function mediaItemsWithPlaylistAssets(
         return playlistAssetRecord(
           fileName,
           assets,
-          playlist.updatedAt,
+          playlistStore.updatedAt,
           fileState.sizeBytes,
           fileState.missingFile,
           folderStore,

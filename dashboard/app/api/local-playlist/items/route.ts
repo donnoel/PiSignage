@@ -4,17 +4,21 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { appendActivityRecord, readMediaStore } from "../../../lib/local-data-store";
 import {
-  ensureLivePlaylistPath,
-  readPlaylist,
+  readPlaylistStore,
   sampleAssetsDirectory,
-  writePlaylist,
-  writePublishStatus
+  readStoredPlaylist,
+  writeStoredPlaylist
 } from "../../../lib/local-playlist";
 import type { Playlist, PlaylistAsset } from "../../../lib/local-playlist";
-import { publishPlaylistToPi } from "../../../lib/pi-local";
 import { defaultDurationSeconds, slugify } from "../../../lib/media-processing";
 
 type PlaylistEditAction = "move-up" | "move-down" | "remove" | "update-item" | "add-media" | "reorder";
+
+type PlaylistAppendSource = {
+  durationSeconds: number | null;
+  playbackFileName: string;
+  title: string;
+};
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -152,30 +156,61 @@ function updatePlaylistItemDetails(
 async function appendMediaStoreItemToPlaylist(playlist: Playlist, mediaId: string): Promise<Playlist> {
   const mediaStore = await readMediaStore();
   const media = mediaStore.items.find((item) => item.id === mediaId);
-  if (!media) {
+  let source: PlaylistAppendSource | null = null;
+
+  if (media) {
+    source = {
+      durationSeconds: media.durationSeconds,
+      playbackFileName: media.playbackFileName,
+      title: media.title
+    };
+  } else if (mediaId.startsWith("playlist:")) {
+    const sourceAssetId = mediaId.replace(/^playlist:/, "");
+    const playlistStore = await readPlaylistStore();
+    for (const storedPlaylist of playlistStore.items) {
+      const sourceAsset = storedPlaylist.assets.find((asset) => asset.assetId === sourceAssetId);
+      if (!sourceAsset) {
+        continue;
+      }
+
+      const playbackFileName = playlistAssetFileName(sourceAsset);
+      if (!playbackFileName) {
+        throw new Error("Only local playlist media can be reused.");
+      }
+
+      source = {
+        durationSeconds: sourceAsset.durationSeconds ?? null,
+        playbackFileName,
+        title: sourceAsset.altText ?? playbackFileName
+      };
+      break;
+    }
+  }
+
+  if (!source) {
     throw new Error("Media item was not found.");
   }
 
-  if (media.status !== "ready") {
+  if (media && media.status !== "ready") {
     throw new Error("Only ready media can be added to the playlist.");
   }
 
-  if (path.extname(media.playbackFileName).toLowerCase() !== ".mp4") {
+  if (path.extname(source.playbackFileName).toLowerCase() !== ".mp4") {
     throw new Error("Only MP4 playback files can be added to the Pi playlist. Convert this media before using it.");
   }
 
-  if (playlist.assets.some((asset) => playlistAssetFileName(asset) === media.playbackFileName)) {
-    throw new Error("That media is already in the local playlist.");
+  if (playlist.assets.some((asset) => playlistAssetFileName(asset) === source.playbackFileName)) {
+    throw new Error("That media is already in this playlist.");
   }
 
-  const playbackPath = path.join(sampleAssetsDirectory(), media.playbackFileName);
+  const playbackPath = path.join(sampleAssetsDirectory(), source.playbackFileName);
   try {
     await fs.access(playbackPath);
   } catch {
-    throw new Error(`Media file ${media.playbackFileName} is unavailable on disk.`);
+    throw new Error(`Media file ${source.playbackFileName} is unavailable on disk.`);
   }
 
-  const assetId = nextAssetId(playlist, media.playbackFileName);
+  const assetId = nextAssetId(playlist, source.playbackFileName);
   return {
     ...playlist,
     version: playlist.version + 1,
@@ -185,9 +220,9 @@ async function appendMediaStoreItemToPlaylist(playlist: Playlist, mediaId: strin
       {
         assetId,
         type: "video",
-        uri: `assets/${media.playbackFileName}`,
-        durationSeconds: media.durationSeconds ?? defaultDurationSeconds,
-        altText: media.title
+        uri: `assets/${source.playbackFileName}`,
+        durationSeconds: source.durationSeconds ?? defaultDurationSeconds,
+        altText: source.title
       }
     ]
   };
@@ -202,6 +237,7 @@ export async function POST(request: Request) {
       durationSeconds?: number;
       mediaId?: string;
       orderedAssetIds?: string[];
+      playlistId?: string;
     };
 
     if (
@@ -223,8 +259,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing media selection." }, { status: 400 });
     }
 
-    const playlistPath = await ensureLivePlaylistPath();
-    const playlist = await readPlaylist(playlistPath);
+    const { playlist } = await readStoredPlaylist(body.playlistId);
     let nextPlaylist = playlist;
     if (body.action === "add-media") {
       nextPlaylist = await appendMediaStoreItemToPlaylist(playlist, body.mediaId as string);
@@ -239,19 +274,14 @@ export async function POST(request: Request) {
       nextPlaylist = updatePlaylistOrder(playlist, body.action, body.assetId as string);
     }
 
-    await writePlaylist(playlistPath, nextPlaylist);
-    const piPublish = await publishPlaylistToPi(playlistPath, nextPlaylist, {
-      notConfigured: "Pi publish is not configured; playlist was updated locally only.",
-      failure: "Playlist was updated locally, but Pi publish needs attention."
-    });
-    await writePublishStatus(body.action, nextPlaylist, piPublish);
+    await writeStoredPlaylist(nextPlaylist);
     await appendActivityRecord({
       id: randomUUID(),
       action: `playlist-${body.action}`,
       actor: "local-operator",
       entityId: body.assetId ?? body.mediaId ?? nextPlaylist.playlistId,
       entityType: "playlist",
-      message: `Playlist action ${body.action} applied to ${body.assetId ?? body.mediaId ?? nextPlaylist.playlistId}.`,
+      message: `Playlist action ${body.action} applied to ${nextPlaylist.name}.`,
       result: "success",
       timestamp: new Date().toISOString()
     });
@@ -259,7 +289,10 @@ export async function POST(request: Request) {
     return NextResponse.json({
       playlistVersion: nextPlaylist.version,
       assetCount: nextPlaylist.assets.length,
-      piPublish
+      message:
+        body.action === "add-media"
+          ? "Added to this playlist. Publish when it is ready for the screen."
+          : "Saved locally. Publish when this playlist is ready for the screen."
     });
   } catch (error) {
     console.error("local playlist edit failed", error);

@@ -11,10 +11,12 @@ type PlaylistControlsProps = {
   isFirst: boolean;
   isLast: boolean;
   isOnlyItem: boolean;
+  playlistId: string;
 };
 
 type PlaylistEditResponse = {
   error?: string;
+  message?: string;
   playlistVersion?: number;
   piPublish?: {
     enabled: boolean;
@@ -40,7 +42,8 @@ export function LocalPlaylistControls({
   assetLabel,
   isFirst,
   isLast,
-  isOnlyItem
+  isOnlyItem,
+  playlistId
 }: PlaylistControlsProps) {
   const router = useRouter();
   const [message, setMessage] = useState("");
@@ -68,7 +71,7 @@ export function LocalPlaylistControls({
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ action, assetId })
+        body: JSON.stringify({ action, assetId, playlistId })
       });
       const result = (await response.json()) as PlaylistEditResponse;
 
@@ -76,7 +79,7 @@ export function LocalPlaylistControls({
         throw new Error(result.error ?? "Playlist edit failed.");
       }
 
-      setMessage(savedMessage(result.piPublish));
+      setMessage(result.message ?? savedMessage(result.piPublish));
       startTransition(() => router.refresh());
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Playlist edit failed.");

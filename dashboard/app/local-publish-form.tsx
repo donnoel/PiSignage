@@ -13,16 +13,26 @@ type PublishResponse = {
   };
 };
 
-export function LocalPublishForm() {
+type LocalPublishFormProps = {
+  assetCount: number;
+  playlistId: string;
+};
+
+export function LocalPublishForm({ assetCount, playlistId }: LocalPublishFormProps) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [messageKind, setMessageKind] = useState<"idle" | "success" | "warning" | "error">("idle");
   const [isPublishing, setIsPublishing] = useState(false);
   const [isPending, startTransition] = useTransition();
   const isBusy = isPublishing || isPending;
+  const canPublish = assetCount > 0;
 
   async function publishNow() {
-    if (isBusy) {
+    if (isBusy || !canPublish) {
+      if (!canPublish) {
+        setMessage("Add media before publishing this playlist.");
+        setMessageKind("warning");
+      }
       return;
     }
 
@@ -32,7 +42,11 @@ export function LocalPublishForm() {
 
     try {
       const response = await fetch("/api/local-playlist/publish", {
-        method: "POST"
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ playlistId })
       });
       const result = (await response.json()) as PublishResponse;
 
@@ -74,7 +88,7 @@ export function LocalPublishForm() {
       </div>
       <button
         type="button"
-        disabled={isBusy}
+        disabled={isBusy || !canPublish}
         onClick={publishNow}
         className="min-h-11 rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
       >

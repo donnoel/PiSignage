@@ -8,7 +8,7 @@ import {
   readMediaStore,
   writeMediaFolderStore
 } from "../../lib/local-data-store";
-import { readLivePlaylist } from "../../lib/local-playlist";
+import { readPlaylistStore } from "../../lib/local-playlist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,12 +26,14 @@ function normalizeFolderId(value: unknown): string | null {
 }
 
 async function knownMediaIds(): Promise<Set<string>> {
-  const [mediaStore, playlist] = await Promise.all([readMediaStore(), readLivePlaylist()]);
+  const [mediaStore, playlistStore] = await Promise.all([readMediaStore(), readPlaylistStore()]);
   const ids = new Set(mediaStore.items.map((item) => item.id));
 
-  for (const asset of playlist.assets) {
-    if (asset.uri.startsWith("assets/")) {
-      ids.add(`playlist:${asset.assetId}`);
+  for (const playlist of playlistStore.items) {
+    for (const asset of playlist.assets) {
+      if (asset.uri.startsWith("assets/")) {
+        ids.add(`playlist:${asset.assetId}`);
+      }
     }
   }
 

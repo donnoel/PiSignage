@@ -7,10 +7,12 @@ import type { PlaylistAsset } from "./lib/local-playlist";
 type PlaylistTimelineProps = {
   assets: PlaylistAsset[];
   piAssetIds: string[];
+  playlistId: string;
 };
 
 type PlaylistEditResponse = {
   error?: string;
+  message?: string;
   playlistVersion?: number;
   piPublish?: {
     enabled: boolean;
@@ -56,7 +58,7 @@ function moveItem(items: PlaylistAsset[], fromIndex: number, toIndex: number): P
   return nextItems;
 }
 
-export function LocalPlaylistTimeline({ assets, piAssetIds }: PlaylistTimelineProps) {
+export function LocalPlaylistTimeline({ assets, piAssetIds, playlistId }: PlaylistTimelineProps) {
   const router = useRouter();
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [items, setItems] = useState(assets);
@@ -86,7 +88,8 @@ export function LocalPlaylistTimeline({ assets, piAssetIds }: PlaylistTimelinePr
         },
         body: JSON.stringify({
           action: "reorder",
-          orderedAssetIds
+          orderedAssetIds,
+          playlistId
         })
       });
       const result = (await response.json()) as PlaylistEditResponse;
@@ -95,7 +98,7 @@ export function LocalPlaylistTimeline({ assets, piAssetIds }: PlaylistTimelinePr
         throw new Error(result.error ?? "Could not save playlist order.");
       }
 
-      setMessage(savedMessage(result.piPublish));
+      setMessage(result.message ?? savedMessage(result.piPublish));
       startTransition(() => router.refresh());
     } catch (error) {
       setItems(assets);
@@ -176,7 +179,7 @@ export function LocalPlaylistTimeline({ assets, piAssetIds }: PlaylistTimelinePr
         <ol className="flex min-h-[178px] gap-3">
           {items.map((asset, index) => {
             const assetName = asset.altText ?? asset.assetId;
-            const thumbnailUrl = `/api/local-playlist/thumbnails/${encodeURIComponent(asset.assetId)}`;
+            const thumbnailUrl = `/api/local-playlist/thumbnails/${encodeURIComponent(asset.assetId)}?playlistId=${encodeURIComponent(playlistId)}`;
             const isDragging = draggedAssetId === asset.assetId;
             const isDropTarget = dropAssetId === asset.assetId && draggedAssetId !== asset.assetId;
 
