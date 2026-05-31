@@ -1183,6 +1183,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       : focusedScreen?.host && focusedScreen.host !== "Not configured"
         ? `http://${focusedScreen.host}:5173/?playlist=/playlist.local.json`
         : null;
+  const setupLocationName = focusedScreen?.location ?? localLocationName;
+  const setupScreenName = focusedScreen?.screenName ?? localScreenName;
+  const setupDeviceIdentifier =
+    focusedScreen?.host && focusedScreen.host !== "No host" ? focusedScreen.host : localDeviceIdentifier;
   const recoveryEvidence: EvidenceItem[] = [
     {
       label: "Playback report",
@@ -1231,6 +1235,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       tone: pi.temp && pi.throttled ? "good" : "warn"
     }
   ];
+  const supportEvidence = recoveryEvidence
+    .slice()
+    .sort((left, right) => {
+      const rank = { warn: 0, muted: 1, good: 2 };
+      return rank[left.tone] - rank[right.tone];
+    });
+  const supportAttentionCount = recoveryEvidence.filter((item) => item.tone === "warn").length;
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#f3f6f8] text-zinc-950">
@@ -1490,16 +1501,24 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             className={selectedView === "device-health" ? "mt-6 rounded-lg border border-zinc-200 bg-white shadow-sm" : "hidden"}
           >
             <details>
-              <summary className="cursor-pointer border-b border-zinc-200 p-5 text-xl font-semibold" id="recovery-history-heading">
-                Technical status details
+              <summary className="flex cursor-pointer items-center justify-between gap-3 border-b border-zinc-200 p-5 text-xl font-semibold" id="recovery-history-heading">
+                <span>Playback evidence</span>
+                <StatusPill
+                  label={
+                    supportAttentionCount === 0
+                      ? "All clear"
+                      : `${supportAttentionCount} ${supportAttentionCount === 1 ? "item needs" : "items need"} attention`
+                  }
+                  tone={supportAttentionCount === 0 ? "good" : "warn"}
+                />
               </summary>
               <div className="px-5 pb-2 pt-4">
                 <p className="text-sm text-zinc-600">
-                  Latest local evidence from the connected Pi. These details stay secondary so the main screen remains readable for clients.
+                  Detailed local evidence from the connected Pi. Items that need attention appear first.
                 </p>
               </div>
               <ol className="divide-y divide-zinc-200">
-                {recoveryEvidence.map((item) => (
+                {supportEvidence.map((item) => (
                   <li key={item.label} className="grid gap-3 px-5 py-4 text-sm md:grid-cols-[180px_1fr_auto] md:items-start">
                     <div>
                       <p className="font-semibold text-zinc-950">{item.label}</p>
@@ -1532,7 +1551,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   <div className="border-b border-zinc-200 p-5">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
-                        <h2 className="text-lg font-semibold">{localLocationName}</h2>
+                        <h2 className="text-lg font-semibold">{setupLocationName}</h2>
                         <p className="mt-1 text-sm text-zinc-600">Local setup from saved configuration and the latest Pi check.</p>
                       </div>
                       <StatusPill label={pi.reachable ? "Online" : "Offline"} tone={pi.reachable ? "good" : "warn"} />
@@ -1541,8 +1560,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   <dl className="grid gap-0 divide-y divide-zinc-200 text-sm sm:grid-cols-2 sm:divide-x sm:divide-y-0">
                     <div className="p-5">
                       <dt className="font-semibold text-zinc-500">Screen</dt>
-                      <dd className="mt-2 text-lg font-semibold">{localScreenName}</dd>
-                      <dd className="mt-1 text-zinc-600">Device ID: {localDeviceIdentifier}</dd>
+                      <dd className="mt-2 text-lg font-semibold">{setupScreenName}</dd>
+                      <dd className="mt-1 text-zinc-600">Device ID: {setupDeviceIdentifier}</dd>
                     </div>
                     <div className="p-5">
                       <dt className="font-semibold text-zinc-500">Last local status</dt>

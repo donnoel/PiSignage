@@ -49,12 +49,14 @@ type FilterKey = "all" | "attention" | "offline" | "stale" | "sync" | "waiting";
 type RowState = {
   assignedPlaylistId: string | null;
   assignedPlaylistName: string;
+  attentionReason: string;
   device: DeviceRecord;
   healthDetail: string;
   healthLabel: string;
   healthTone: Tone;
   isLive: boolean;
-  lastSeen: string;
+  lastSeenAge: string;
+  lastSeenFull: string;
   linkedScreen: ScreenRecord | null;
   needsAttention: boolean;
   playbackDetail: string;
@@ -238,16 +240,29 @@ export function DeviceHealthFleetPanel({
           isStale ||
           syncTone === "warn" ||
           (isLive && !livePlaybackHealthy);
+        const attentionReason = !hostConfigured
+          ? "setup needed"
+          : isOffline
+            ? "screen offline"
+            : isStale
+              ? "old check-in"
+              : syncTone === "warn"
+                ? "playlist update pending"
+                : isLive && !livePlaybackHealthy
+                  ? "playback not confirmed"
+                  : "no action needed";
 
         return {
           device,
           assignedPlaylistId: assignedPlaylistId ?? null,
           assignedPlaylistName: assignedPlaylist?.name ?? "No playlist assigned",
+          attentionReason,
           healthDetail,
           healthLabel,
           healthTone,
           isLive,
-          lastSeen: isLive ? `${statusAgeLabel} (${statusTimestampLabel})` : "Not seen yet",
+          lastSeenAge: isLive ? statusAgeLabel : "Not seen yet",
+          lastSeenFull: isLive ? statusTimestampLabel : "No live report yet",
           linkedScreen,
           needsAttention,
           playbackDetail,
@@ -451,9 +466,123 @@ export function DeviceHealthFleetPanel({
           </div>
         </dl>
 
+        {selectedRow ? (
+          <section className="border-t border-zinc-200 p-5" aria-label="Selected screen details">
+            <div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 className="text-2xl font-semibold">{selectedRow.linkedScreen?.name ?? selectedRow.device.name}</h3>
+                  <p className="mt-1 text-sm text-zinc-600">
+                    {selectedRow.device.name} at {selectedRow.device.host} / {selectedRow.linkedScreen?.location ?? selectedRow.device.location}
+                  </p>
+                </div>
+                <StatusPill
+                  label={selectedRow.needsAttention ? `Needs attention: ${selectedRow.attentionReason}` : "Looks good"}
+                  tone={selectedRow.needsAttention ? "warn" : "good"}
+                />
+              </div>
+
+              <dl className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-md bg-zinc-50 p-4">
+                  <dt className="text-xs font-semibold uppercase text-zinc-500">Screen status</dt>
+                  <dd className="mt-2 font-semibold text-zinc-950">{selectedRow.healthLabel}</dd>
+                  <dd className="mt-1 text-sm text-zinc-600">{selectedRow.healthDetail}</dd>
+                </div>
+                <div className="rounded-md bg-zinc-50 p-4">
+                  <dt className="text-xs font-semibold uppercase text-zinc-500">Now playing</dt>
+                  <dd className="mt-2 font-semibold text-zinc-950">{selectedRow.playbackLabel}</dd>
+                  <dd className="mt-1 text-sm text-zinc-600">{selectedRow.playbackDetail}</dd>
+                </div>
+                <div
+                  className={`rounded-md p-4 ${
+                    selectedRow.syncTone === "warn" ? "bg-amber-50 ring-1 ring-amber-100" : "bg-zinc-50"
+                  }`}
+                >
+                  <dt className={`text-xs font-semibold uppercase ${selectedRow.syncTone === "warn" ? "text-amber-800" : "text-zinc-500"}`}>Playlist update</dt>
+                  <dd className="mt-2 font-semibold text-zinc-950">{selectedRow.syncLabel}</dd>
+                  <dd className="mt-1 text-sm text-zinc-700">{selectedRow.syncDetail}</dd>
+                </div>
+                <div className="rounded-md bg-zinc-50 p-4">
+                  <dt className="text-xs font-semibold uppercase text-zinc-500">Last check-in</dt>
+                  <dd className="mt-2 font-semibold text-zinc-950">{selectedRow.lastSeenAge}</dd>
+                  <dd className="mt-1 text-sm text-zinc-600">{selectedRow.isLive ? selectedRow.lastSeenFull : "No live report yet."}</dd>
+                </div>
+              </dl>
+
+              <div className="mt-5 rounded-md border border-zinc-200 bg-zinc-50 p-4">
+                <h4 className="text-sm font-semibold text-zinc-950">Actions for this screen</h4>
+                <p className="mt-1 text-sm text-zinc-600">
+                  Retry sync sends the saved playlist again. Playback controls use the connected local Pi.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={!selectedRow.isLive || !selectedRow.assignedPlaylistId || isBusy}
+                    onClick={() => void runAction("publish", selectedRow)}
+                    className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                  >
+                    {busyAction === "publish" ? "Syncing..." : "Retry sync"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={refreshStatus}
+                    className="min-h-10 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busyAction === "refresh" ? "Refreshing..." : "Refresh status"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!selectedRow.isLive || isBusy}
+                    onClick={() => void runAction("restart", selectedRow)}
+                    className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busyAction === "restart" ? "Restarting..." : "Restart playback"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!selectedRow.isLive || isBusy}
+                    onClick={() => void runAction("recover", selectedRow)}
+                    className="min-h-10 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busyAction === "recover" ? "Recovering..." : "Run recovery"}
+                  </button>
+                </div>
+              </div>
+
+              <details className="mt-4 rounded-md border border-zinc-200 bg-white p-4">
+                <summary className="cursor-pointer text-sm font-semibold text-zinc-900">More details</summary>
+                <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
+                  <div>
+                    <dt className="font-semibold text-zinc-500">Device host</dt>
+                    <dd className="mt-1 break-words text-zinc-800">{selectedRow.device.host}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-zinc-500">Group</dt>
+                    <dd className="mt-1 break-words text-zinc-800">{selectedRow.linkedScreen?.group ?? selectedRow.device.group}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-zinc-500">Assigned playlist</dt>
+                    <dd className="mt-1 break-words text-zinc-800">{selectedRow.assignedPlaylistName}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-zinc-500">Playlist versions</dt>
+                    <dd className="mt-1 break-words text-zinc-800">{selectedRow.syncVersionDetail}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-zinc-500">Live target</dt>
+                    <dd className="mt-1 break-words text-zinc-800">{selectedRow.isLive ? "Configured Pi" : "Inventory only"}</dd>
+                  </div>
+                </dl>
+              </details>
+            </div>
+          </section>
+        ) : null}
+
         <div className="border-t border-zinc-200 p-5">
+          <h3 className="text-base font-semibold text-zinc-950">All screens</h3>
           <label htmlFor="device-health-search" className="text-sm font-semibold text-zinc-800">
-            Search screens
+            <span className="mt-4 block">Search screens</span>
           </label>
           <input
             id="device-health-search"
@@ -477,7 +606,7 @@ export function DeviceHealthFleetPanel({
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Now playing</th>
                 <th className="px-4 py-3">Playlist update</th>
-                <th className="px-4 py-3">Last check-in</th>
+                <th className="px-4 py-3">Checked in</th>
                 <th className="px-4 py-3">Actions</th>
               </tr>
             </thead>
@@ -505,7 +634,7 @@ export function DeviceHealthFleetPanel({
                     <StatusPill label={row.syncLabel} tone={row.syncTone} />
                     <p className="mt-1 text-xs text-zinc-600">{row.syncDetail}</p>
                   </td>
-                  <td className="px-4 py-3 text-zinc-700">{row.lastSeen}</td>
+                  <td className="px-4 py-3 text-zinc-700">{row.lastSeenAge}</td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-2">
                       <button
@@ -543,109 +672,6 @@ export function DeviceHealthFleetPanel({
         <p className="text-sm font-medium text-zinc-700" role="status" aria-live="polite">
           {message}
         </p>
-      ) : null}
-
-      {selectedRow ? (
-        <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm" aria-label="Selected device details">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h3 className="text-lg font-semibold">{selectedRow.linkedScreen?.name ?? selectedRow.device.name}</h3>
-              <p className="mt-1 text-sm text-zinc-600">
-                {selectedRow.device.name} at {selectedRow.device.host} / {selectedRow.linkedScreen?.location ?? selectedRow.device.location}
-              </p>
-            </div>
-            <StatusPill label={selectedRow.needsAttention ? "Needs attention" : "Looks good"} tone={selectedRow.needsAttention ? "warn" : "good"} />
-          </div>
-          <dl className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-md bg-zinc-50 p-4">
-              <dt className="text-xs font-semibold uppercase text-zinc-500">Screen status</dt>
-              <dd className="mt-2 font-semibold text-zinc-950">{selectedRow.healthLabel}</dd>
-              <dd className="mt-1 text-sm text-zinc-600">{selectedRow.healthDetail}</dd>
-            </div>
-            <div className="rounded-md bg-zinc-50 p-4">
-              <dt className="text-xs font-semibold uppercase text-zinc-500">Now playing</dt>
-              <dd className="mt-2 font-semibold text-zinc-950">{selectedRow.playbackLabel}</dd>
-              <dd className="mt-1 text-sm text-zinc-600">{selectedRow.playbackDetail}</dd>
-            </div>
-            <div className="rounded-md bg-zinc-50 p-4">
-              <dt className="text-xs font-semibold uppercase text-zinc-500">Playlist update</dt>
-              <dd className="mt-2 font-semibold text-zinc-950">{selectedRow.syncLabel}</dd>
-              <dd className="mt-1 text-sm text-zinc-600">{selectedRow.syncDetail}</dd>
-            </div>
-            <div className="rounded-md bg-zinc-50 p-4">
-              <dt className="text-xs font-semibold uppercase text-zinc-500">Last check-in</dt>
-              <dd className="mt-2 font-semibold text-zinc-950">{selectedRow.lastSeen}</dd>
-              <dd className="mt-1 text-sm text-zinc-600">{selectedRow.isLive ? "From the connected local Pi." : "No live report yet."}</dd>
-            </div>
-          </dl>
-
-          <div className="mt-5 rounded-md border border-zinc-200 bg-zinc-50 p-4">
-            <h4 className="text-sm font-semibold text-zinc-950">Actions for this screen</h4>
-            <p className="mt-1 text-sm text-zinc-600">
-              These actions use the connected local Pi. Inventory-only screens show status until they check in.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={isBusy}
-                onClick={refreshStatus}
-                className="min-h-10 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {busyAction === "refresh" ? "Refreshing..." : "Refresh status"}
-              </button>
-              <button
-                type="button"
-                disabled={!selectedRow.isLive || !selectedRow.assignedPlaylistId || isBusy}
-                onClick={() => void runAction("publish", selectedRow)}
-                className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
-              >
-                {busyAction === "publish" ? "Syncing..." : "Retry sync"}
-              </button>
-              <button
-                type="button"
-                disabled={!selectedRow.isLive || isBusy}
-                onClick={() => void runAction("restart", selectedRow)}
-                className="min-h-10 rounded-md bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
-              >
-                {busyAction === "restart" ? "Restarting..." : "Restart playback"}
-              </button>
-              <button
-                type="button"
-                disabled={!selectedRow.isLive || isBusy}
-                onClick={() => void runAction("recover", selectedRow)}
-                className="min-h-10 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
-              >
-                {busyAction === "recover" ? "Recovering..." : "Run recovery"}
-              </button>
-            </div>
-          </div>
-
-          <details className="mt-4 rounded-md border border-zinc-200 bg-white p-4">
-            <summary className="cursor-pointer text-sm font-semibold text-zinc-900">More details</summary>
-            <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
-              <div>
-                <dt className="font-semibold text-zinc-500">Device host</dt>
-                <dd className="mt-1 break-words text-zinc-800">{selectedRow.device.host}</dd>
-              </div>
-              <div>
-                <dt className="font-semibold text-zinc-500">Group</dt>
-                <dd className="mt-1 break-words text-zinc-800">{selectedRow.linkedScreen?.group ?? selectedRow.device.group}</dd>
-              </div>
-              <div>
-                <dt className="font-semibold text-zinc-500">Assigned playlist</dt>
-                <dd className="mt-1 break-words text-zinc-800">{selectedRow.assignedPlaylistName}</dd>
-              </div>
-              <div>
-                <dt className="font-semibold text-zinc-500">Playlist versions</dt>
-                <dd className="mt-1 break-words text-zinc-800">{selectedRow.syncVersionDetail}</dd>
-              </div>
-              <div>
-                <dt className="font-semibold text-zinc-500">Live target</dt>
-                <dd className="mt-1 break-words text-zinc-800">{selectedRow.isLive ? "Configured Pi" : "Inventory only"}</dd>
-              </div>
-            </dl>
-          </details>
-        </section>
       ) : null}
     </section>
   );
