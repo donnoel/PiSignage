@@ -123,7 +123,7 @@ const navigationItems: Array<{ label: string; view: DashboardView }> = [
   { label: "Dashboard", view: "dashboard" },
   { label: "Media Store", view: "media-store" },
   { label: "Playlists", view: "playlist" },
-  { label: "Device health", view: "device-health" },
+  { label: "Screen Status", view: "device-health" },
   { label: "Screens", view: "screens" },
   { label: "Scheduling", view: "scheduling" },
   { label: "Troubleshooting", view: "troubleshooting" }
@@ -145,9 +145,9 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
     description: "Create a playlist, choose screens, then publish."
   },
   "device-health": {
-    eyebrow: "Health",
+    eyebrow: "Status",
     title: "Screen Status",
-    description: "See what is online, what is playing, and what needs attention."
+    description: "Connection, playback, playlist update, and recovery evidence for local screens."
   },
   screens: {
     eyebrow: "Inventory",
@@ -255,7 +255,7 @@ function assetPlaybackLabel(asset: PlaylistAsset, playerStatus: PlayerStatus | n
     return null;
   }
 
-  return "On device";
+  return "On Pi";
 }
 
 function assetLabel(playlist: Playlist, assetId: string | null | undefined): string {
@@ -388,7 +388,7 @@ function currentPlaybackDetail(
   playbackHealthy: boolean
 ): string {
   if (isHeartbeatFresh && heartbeat?.currentAssetId) {
-    return `Device agent updated ${formatStatusAge(heartbeat?.timestamp)}.`;
+    return `Local agent updated ${formatStatusAge(heartbeat?.timestamp)}.`;
   }
 
   if (playbackHealthy) {
@@ -424,7 +424,7 @@ function deviceIdentifier(pi: PiProbe, heartbeat: Heartbeat | null, isHeartbeatF
     return heartbeat.deviceId;
   }
 
-  return pi.host ?? "Device not configured";
+  return pi.host ?? "Pi not configured";
 }
 
 function statusFreshnessDetail(
@@ -930,12 +930,12 @@ function fleetCommandRows({
         (isLive && (!pi.reachable || !playbackHealthy || livePlaybackStale || playlistSyncState.tone !== "good")) ||
         (!isLive && hostConfigured);
       const detail = !hostConfigured
-        ? "Add a host before this device can report."
+        ? "Add a local address before this Pi can report."
         : isLive
           ? pi.reachable
             ? playlistSyncState.detail
             : offlinePlaybackDetail(lastKnownPlayback)
-          : "This device is saved in Beam, but it is not checking in yet.";
+          : "This Pi is saved in Beam, but it is not checking in yet.";
 
       return {
         detail,
@@ -1229,7 +1229,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       tone: playerStatus?.displayMode || pi.displayMode ? "good" : "warn"
     },
     {
-      label: "Device temperature",
+      label: "Pi temperature",
       value: formatTemperature(pi.temp),
       detail: `Throttle ${formatThrottle(pi.throttled)}.`,
       tone: pi.temp && pi.throttled ? "good" : "warn"
@@ -1304,7 +1304,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <div className={`rounded-lg border p-4 shadow-sm ${onlineDeviceCount > 0 ? "border-emerald-200 bg-emerald-50" : "border-zinc-200 bg-white"}`}>
                 <dt className="text-xs font-semibold uppercase text-emerald-800">Online</dt>
                 <dd className="mt-2 text-2xl font-semibold text-zinc-950">{onlineDeviceCount}</dd>
-                <dd className="mt-1 text-sm text-zinc-600">of {pluralize(fleetRows.length, "device")}</dd>
+                <dd className="mt-1 text-sm text-zinc-600">of {pluralize(fleetRows.length, "screen")}</dd>
               </div>
               <div className={`rounded-lg border p-4 shadow-sm ${playingDeviceCount > 0 ? "border-sky-200 bg-sky-50" : "border-zinc-200 bg-white"}`}>
                 <dt className="text-xs font-semibold uppercase text-sky-800">Live signal</dt>
@@ -1338,7 +1338,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     href="/?view=device-health"
                     className="inline-flex min-h-10 items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-950 ring-1 ring-zinc-200 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-teal-600"
                   >
-                    Device health
+                    Screen Status
                   </a>
                 </div>
               </div>
@@ -1544,7 +1544,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           >
             <details>
               <summary className="cursor-pointer border-b border-zinc-200 p-5 text-xl font-semibold" id="field-setup-heading">
-                Setup and device details
+                Setup and Pi details
               </summary>
               <div className="grid gap-4 p-5 xl:grid-cols-[1.1fr_0.9fr]">
                 <div className="rounded-md border border-zinc-200 bg-zinc-50">
@@ -1561,7 +1561,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     <div className="p-5">
                       <dt className="font-semibold text-zinc-500">Screen</dt>
                       <dd className="mt-2 text-lg font-semibold">{setupScreenName}</dd>
-                      <dd className="mt-1 text-zinc-600">Device ID: {setupDeviceIdentifier}</dd>
+                      <dd className="mt-1 text-zinc-600">Pi: {setupDeviceIdentifier}</dd>
                     </div>
                     <div className="p-5">
                       <dt className="font-semibold text-zinc-500">Last local status</dt>
@@ -1572,7 +1572,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 </div>
 
                 <div id="device-health" className="rounded-md border border-zinc-200 bg-zinc-50 p-5">
-                  <h2 className="text-lg font-semibold">Device readings</h2>
+                  <h2 className="text-lg font-semibold">Pi readings</h2>
                   <dl className="mt-5 grid gap-3 sm:grid-cols-2">
                     <Metric label="Temperature" value={formatTemperature(pi.temp)} />
                     <Metric label="Throttle" value={formatThrottle(pi.throttled)} />

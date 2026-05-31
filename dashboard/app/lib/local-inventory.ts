@@ -185,6 +185,76 @@ export async function createScreen(input: {
   return next;
 }
 
+export async function createScreenWithDevice(input: {
+  group?: string;
+  host: string;
+  location?: string;
+  name: string;
+  playlistId?: string | null;
+  sshUser?: string;
+}): Promise<{
+  device: DeviceRecord;
+  screen: ScreenRecord;
+}> {
+  const [screenStore, deviceStore] = await Promise.all([readScreenStore(), readDeviceStore()]);
+  const timestamp = isoNow();
+  const screenId = `screen-${randomUUID()}`;
+  const deviceId = `device-${randomUUID()}`;
+  const screenName = input.name.trim();
+  const group = input.group?.trim() || "General";
+  const location = input.location?.trim() || "Unassigned";
+  const screen: ScreenRecord = {
+    deviceId,
+    group,
+    id: screenId,
+    location,
+    name: screenName,
+    notes: "",
+    playlistId: input.playlistId ?? null,
+    updatedAt: timestamp
+  };
+  const device: DeviceRecord = {
+    group,
+    host: input.host.trim(),
+    id: deviceId,
+    location,
+    name: `${screenName} Pi`,
+    notes: "",
+    playlistId: input.playlistId ?? null,
+    playerType: "vlc",
+    rootPath: "~",
+    screenId,
+    sshUser: input.sshUser?.trim() || "pi",
+    updatedAt: timestamp
+  };
+
+  await writeScreenStore({
+    ...screenStore,
+    items: [...screenStore.items, screen],
+    updatedAt: timestamp,
+    version: screenStore.version + 1
+  });
+  await writeDeviceStore({
+    ...deviceStore,
+    items: [...deviceStore.items, device],
+    updatedAt: timestamp,
+    version: deviceStore.version + 1
+  });
+
+  await appendActivityRecord({
+    id: randomUUID(),
+    action: "screen-add",
+    actor: "local-operator",
+    entityId: screen.id,
+    entityType: "screen",
+    message: `Added screen ${screen.name} with Pi at ${device.host}.`,
+    result: "success",
+    timestamp
+  });
+
+  return { device, screen };
+}
+
 export async function createDevice(input: {
   group?: string;
   host: string;

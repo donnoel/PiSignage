@@ -133,6 +133,14 @@ function plainPlaybackLabel(value: string): string {
   return value || "Not reported";
 }
 
+function piLabel(device: DeviceRecord | null, screen?: ScreenRecord): string {
+  if (!device) {
+    return "No Pi linked";
+  }
+
+  return screen ? `${screen.name} Pi` : device.name;
+}
+
 export function ScreenDeviceInventoryPanel({
   liveHost,
   livePlaybackHealthy,
@@ -154,10 +162,7 @@ export function ScreenDeviceInventoryPanel({
   const [screenName, setScreenName] = useState("");
   const [screenLocation, setScreenLocation] = useState("");
   const [screenGroup, setScreenGroup] = useState("");
-  const [deviceName, setDeviceName] = useState("");
   const [deviceHost, setDeviceHost] = useState("");
-  const [deviceLocation, setDeviceLocation] = useState("");
-  const [deviceGroup, setDeviceGroup] = useState("");
   const [isPending, startTransition] = useTransition();
   const isBusy = isLoading || isSaving || isPending;
 
@@ -209,7 +214,7 @@ export function ScreenDeviceInventoryPanel({
   } {
     if (!device) {
       return {
-        detail: "No local device is linked to this screen yet.",
+        detail: "No local Pi is linked to this screen yet.",
         label: "Needs setup",
         tone: "warn"
       };
@@ -307,7 +312,7 @@ export function ScreenDeviceInventoryPanel({
 
     if (!device || !hasLocalAddress(device)) {
       return {
-        detail: "Link a local device before Beam can check the screen playlist.",
+        detail: "Link a local Pi before Beam can check the screen playlist.",
         label: "Waiting",
         tone: "muted"
       };
@@ -396,7 +401,7 @@ export function ScreenDeviceInventoryPanel({
     }
 
     return {
-      detail: "No live check-in for this saved device.",
+      detail: "No live check-in for this saved Pi.",
       label: "Not reporting",
       tone: "muted"
     };
@@ -412,7 +417,7 @@ export function ScreenDeviceInventoryPanel({
       const isLive = Boolean(device && deviceIsLive(device));
       const devicePlaylistLine =
         device?.playlistId && device.playlistId !== screen.playlistId
-          ? `Device saved as ${playlistName(device.playlistId)}.`
+          ? `Pi saved as ${playlistName(device.playlistId)}.`
           : null;
       const currentPlaylistLine =
         isLive && livePlaylistId
@@ -527,7 +532,7 @@ export function ScreenDeviceInventoryPanel({
 
     const confirmed = window.confirm(
       targetType === "screen"
-        ? `Remove ${label}? Media, playlists, and devices stay saved.`
+        ? `Remove ${label}? Media, playlists, and linked Pi records stay saved.`
         : `Remove ${label}? Screens, media, and playlists stay saved.`
     );
     if (!confirmed) {
@@ -601,8 +606,8 @@ export function ScreenDeviceInventoryPanel({
     if (isBusy) {
       return;
     }
-    if (!screenName.trim()) {
-      setMessage("Screen name is required.");
+    if (!screenName.trim() || !deviceHost.trim()) {
+      setMessage("Screen name and Pi address are required.");
       return;
     }
 
@@ -611,6 +616,7 @@ export function ScreenDeviceInventoryPanel({
     try {
       await postInventory({
         group: screenGroup,
+        host: deviceHost,
         location: screenLocation,
         name: screenName,
         playlistId,
@@ -619,44 +625,11 @@ export function ScreenDeviceInventoryPanel({
       setScreenName("");
       setScreenLocation("");
       setScreenGroup("");
-      setMessage("Screen added.");
+      setDeviceHost("");
+      setMessage("Screen added with its linked Pi.");
       startTransition(() => router.refresh());
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not add screen.");
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function addDevice(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (isBusy) {
-      return;
-    }
-    if (!deviceName.trim() || !deviceHost.trim()) {
-      setMessage("Device name and local address are required.");
-      return;
-    }
-
-    setIsSaving(true);
-    setMessage("Adding device...");
-    try {
-      await postInventory({
-        group: deviceGroup,
-        host: deviceHost,
-        location: deviceLocation,
-        name: deviceName,
-        playlistId,
-        targetType: "device"
-      });
-      setDeviceName("");
-      setDeviceHost("");
-      setDeviceLocation("");
-      setDeviceGroup("");
-      setMessage("Device added.");
-      startTransition(() => router.refresh());
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not add device.");
     } finally {
       setIsSaving(false);
     }
@@ -714,7 +687,7 @@ export function ScreenDeviceInventoryPanel({
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Now playing</th>
                 <th className="px-4 py-3">Playlist update</th>
-                <th className="px-4 py-3">Device</th>
+                <th className="px-4 py-3">Pi</th>
                 <th className="px-4 py-3">Last check-in</th>
                 <th className="px-4 py-3">Actions</th>
               </tr>
@@ -775,9 +748,9 @@ export function ScreenDeviceInventoryPanel({
                     <p className="mt-1 text-xs leading-5 text-zinc-600">{row.syncDetail}</p>
                   </td>
                   <td className="px-4 py-3">
-                    <p className="font-semibold text-zinc-950">{row.device?.name ?? "No device linked"}</p>
+                    <p className="font-semibold text-zinc-950">{piLabel(row.device, row.screen)}</p>
                     <p className="mt-1 break-words text-xs text-zinc-600">
-                      {row.device?.host ?? "Add a local device"}
+                      {row.device?.host ?? "Add a local Pi"}
                     </p>
                   </td>
                   <td className="px-4 py-3">
@@ -826,16 +799,29 @@ export function ScreenDeviceInventoryPanel({
 
       <details className="rounded-lg border border-zinc-200 bg-white shadow-sm">
         <summary className="cursor-pointer border-b border-zinc-200 p-5 text-lg font-semibold">
-          Add screen or device
+          Add screen
         </summary>
-        <div className="grid gap-6 p-5 lg:grid-cols-2">
-          <form onSubmit={addScreen} className="space-y-3">
-            <h3 className="text-base font-semibold">Add screen</h3>
+        <div className="p-5">
+          <form onSubmit={addScreen} className="grid gap-4 lg:grid-cols-2">
+            <div className="lg:col-span-2">
+              <h3 className="text-base font-semibold">Add a screen and linked Pi</h3>
+              <p className="mt-1 text-sm text-zinc-600">
+                Beam saves one screen record and one linked local Pi record for health checks.
+              </p>
+            </div>
             <label className="block text-sm font-semibold text-zinc-700">
               Screen name
               <input
                 value={screenName}
                 onChange={(event) => setScreenName(event.currentTarget.value)}
+                className="mt-1 min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+              />
+            </label>
+            <label className="block text-sm font-semibold text-zinc-700">
+              Pi local address or IP
+              <input
+                value={deviceHost}
+                onChange={(event) => setDeviceHost(event.currentTarget.value)}
                 className="mt-1 min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
               />
             </label>
@@ -855,69 +841,28 @@ export function ScreenDeviceInventoryPanel({
                 className="mt-1 min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
               />
             </label>
-            <button
-              type="submit"
-              disabled={isBusy}
-              className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
-            >
-              Add screen
-            </button>
-          </form>
-
-          <form onSubmit={addDevice} className="space-y-3">
-            <h3 className="text-base font-semibold">Add device</h3>
-            <label className="block text-sm font-semibold text-zinc-700">
-              Device name
-              <input
-                value={deviceName}
-                onChange={(event) => setDeviceName(event.currentTarget.value)}
-                className="mt-1 min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-              />
-            </label>
-            <label className="block text-sm font-semibold text-zinc-700">
-              Local address or IP
-              <input
-                value={deviceHost}
-                onChange={(event) => setDeviceHost(event.currentTarget.value)}
-                className="mt-1 min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-              />
-            </label>
-            <label className="block text-sm font-semibold text-zinc-700">
-              Location
-              <input
-                value={deviceLocation}
-                onChange={(event) => setDeviceLocation(event.currentTarget.value)}
-                className="mt-1 min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-              />
-            </label>
-            <label className="block text-sm font-semibold text-zinc-700">
-              Group
-              <input
-                value={deviceGroup}
-                onChange={(event) => setDeviceGroup(event.currentTarget.value)}
-                className="mt-1 min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={isBusy}
-              className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
-            >
-              Add device
-            </button>
+            <div className="lg:col-span-2">
+              <button
+                type="submit"
+                disabled={isBusy}
+                className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
+              >
+                Add screen
+              </button>
+            </div>
           </form>
         </div>
       </details>
 
       <details className="rounded-lg border border-zinc-200 bg-white shadow-sm">
         <summary className="cursor-pointer border-b border-zinc-200 p-5 text-lg font-semibold">
-          Device details
+          Pi details
         </summary>
         <div className="max-w-full overflow-x-auto">
           <table className="w-full min-w-[900px] text-left text-sm">
             <thead className="bg-zinc-50 text-xs uppercase text-zinc-500">
               <tr>
-                <th className="px-4 py-3">Device</th>
+                <th className="px-4 py-3">Pi</th>
                 <th className="px-4 py-3">Linked screen</th>
                 <th className="px-4 py-3">Local address</th>
                 <th className="px-4 py-3">Saved playlist</th>
@@ -934,7 +879,7 @@ export function ScreenDeviceInventoryPanel({
                 return (
                   <tr key={device.id}>
                     <td className="px-4 py-3">
-                      <p className="font-semibold text-zinc-950">{device.name}</p>
+                      <p className="font-semibold text-zinc-950">{piLabel(device, linkedScreen)}</p>
                       <p className="mt-1 text-xs text-zinc-600">
                         {device.location} · {device.group}
                       </p>
@@ -966,7 +911,7 @@ export function ScreenDeviceInventoryPanel({
               {devices.length === 0 ? (
                 <tr>
                   <td className="px-4 py-5 text-zinc-600" colSpan={6}>
-                    No devices saved yet.
+                    No Pi records saved yet.
                   </td>
                 </tr>
               ) : null}

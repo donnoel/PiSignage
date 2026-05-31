@@ -108,6 +108,10 @@ function plainPlaybackLabel(value: string): string {
   return value || "Not reported";
 }
 
+function piLabel(device: DeviceRecord, linkedScreen: ScreenRecord | null): string {
+  return linkedScreen ? `${linkedScreen.name} Pi` : device.name;
+}
+
 export function DeviceHealthFleetPanel({
   devices,
   screens,
@@ -172,7 +176,7 @@ export function DeviceHealthFleetPanel({
 
         if (!hostConfigured) {
           healthLabel = "Set up needed";
-          healthDetail = "Add the device host before Beam can check this screen.";
+          healthDetail = "Add the Pi address before Beam can check this screen.";
           healthTone = "warn";
         } else if (isLive) {
           healthLabel = liveReachable ? "Online" : "Offline";
@@ -416,9 +420,9 @@ export function DeviceHealthFleetPanel({
       <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
         <div className="flex flex-col gap-4 border-b border-zinc-200 p-5 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <h2 id="fleet-health-heading" className="text-xl font-semibold">Screen status</h2>
+            <h2 id="fleet-health-heading" className="text-xl font-semibold">Screen Status</h2>
             <p className="mt-1 text-sm text-zinc-600">
-              Status comes from saved local screens and the connected Pi.
+              Check connection, playback, playlist update, and recovery actions for each screen.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -439,32 +443,34 @@ export function DeviceHealthFleetPanel({
           </div>
         </div>
 
-        <dl className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-5">
-          <div className="rounded-md bg-emerald-50 p-4 ring-1 ring-emerald-100">
-            <dt className="text-xs font-semibold uppercase text-emerald-800">Online</dt>
-            <dd className="mt-2 text-2xl font-semibold">{onlineCount}</dd>
-          </div>
-          <div className="rounded-md bg-rose-50 p-4 ring-1 ring-rose-100">
-            <dt className="text-xs font-semibold uppercase text-rose-800">Offline</dt>
-            <dd className="mt-2 text-2xl font-semibold">{offlineCount}</dd>
-          </div>
-          <div className="rounded-md bg-amber-50 p-4 ring-1 ring-amber-100">
-            <dt className="text-xs font-semibold uppercase text-amber-900">Old check-in</dt>
-            <dd className="mt-2 text-2xl font-semibold">{staleCount}</dd>
-          </div>
-          <div className="rounded-md bg-sky-50 p-4 ring-1 ring-sky-100">
-            <dt className="text-xs font-semibold uppercase text-sky-800">Playing now</dt>
-            <dd className="mt-2 text-2xl font-semibold">{playingCount}</dd>
-          </div>
-          <div className="rounded-md bg-orange-50 p-4 ring-1 ring-orange-100">
-            <dt className="text-xs font-semibold uppercase text-orange-800">Needs attention</dt>
-            <dd className="mt-2 text-2xl font-semibold">{attentionCount}</dd>
-          </div>
-          <div className="rounded-md bg-zinc-50 p-4 ring-1 ring-zinc-200">
-            <dt className="text-xs font-semibold uppercase text-zinc-600">Saved screens</dt>
-            <dd className="mt-2 text-2xl font-semibold">{rows.length}</dd>
-          </div>
-        </dl>
+        <div className="overflow-x-auto p-4">
+          <dl className="grid min-w-[640px] grid-cols-6 gap-2">
+            <div className="rounded-md bg-emerald-50 p-3 ring-1 ring-emerald-100">
+              <dt className="text-xs font-semibold uppercase text-emerald-800">Online</dt>
+              <dd className="mt-1 text-xl font-semibold">{onlineCount}</dd>
+            </div>
+            <div className="rounded-md bg-rose-50 p-3 ring-1 ring-rose-100">
+              <dt className="text-xs font-semibold uppercase text-rose-800">Offline</dt>
+              <dd className="mt-1 text-xl font-semibold">{offlineCount}</dd>
+            </div>
+            <div className="rounded-md bg-amber-50 p-3 ring-1 ring-amber-100">
+              <dt className="text-xs font-semibold uppercase text-amber-900">Old check-in</dt>
+              <dd className="mt-1 text-xl font-semibold">{staleCount}</dd>
+            </div>
+            <div className="rounded-md bg-sky-50 p-3 ring-1 ring-sky-100">
+              <dt className="text-xs font-semibold uppercase text-sky-800">Playing now</dt>
+              <dd className="mt-1 text-xl font-semibold">{playingCount}</dd>
+            </div>
+            <div className="rounded-md bg-orange-50 p-3 ring-1 ring-orange-100">
+              <dt className="text-xs font-semibold uppercase text-orange-800">Needs attention</dt>
+              <dd className="mt-1 text-xl font-semibold">{attentionCount}</dd>
+            </div>
+            <div className="rounded-md bg-zinc-50 p-3 ring-1 ring-zinc-200">
+              <dt className="text-xs font-semibold uppercase text-zinc-600">Saved screens</dt>
+              <dd className="mt-1 text-xl font-semibold">{rows.length}</dd>
+            </div>
+          </dl>
+        </div>
 
         {selectedRow ? (
           <section className="border-t border-zinc-200 p-5" aria-label="Selected screen details">
@@ -473,7 +479,7 @@ export function DeviceHealthFleetPanel({
                 <div>
                   <h3 className="text-2xl font-semibold">{selectedRow.linkedScreen?.name ?? selectedRow.device.name}</h3>
                   <p className="mt-1 text-sm text-zinc-600">
-                    {selectedRow.device.name} at {selectedRow.device.host} / {selectedRow.linkedScreen?.location ?? selectedRow.device.location}
+                    Pi {selectedRow.device.host} / {selectedRow.linkedScreen?.location ?? selectedRow.device.location}
                   </p>
                 </div>
                 <StatusPill
@@ -554,7 +560,7 @@ export function DeviceHealthFleetPanel({
                 <summary className="cursor-pointer text-sm font-semibold text-zinc-900">More details</summary>
                 <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
                   <div>
-                    <dt className="font-semibold text-zinc-500">Device host</dt>
+                    <dt className="font-semibold text-zinc-500">Pi address</dt>
                     <dd className="mt-1 break-words text-zinc-800">{selectedRow.device.host}</dd>
                   </div>
                   <div>
@@ -588,7 +594,7 @@ export function DeviceHealthFleetPanel({
             id="device-health-search"
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
-            placeholder="Screen, device, host, location, or group"
+            placeholder="Screen, Pi, address, location, or group"
             className="mt-2 min-h-11 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-100"
           />
           <p className="mt-2 text-sm text-zinc-600">
@@ -601,7 +607,7 @@ export function DeviceHealthFleetPanel({
             <thead className="bg-zinc-50 text-xs uppercase text-zinc-500">
               <tr>
                 <th className="px-4 py-3">Screen</th>
-                <th className="px-4 py-3">Device</th>
+                <th className="px-4 py-3">Pi</th>
                 <th className="px-4 py-3">Location</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Now playing</th>
@@ -618,7 +624,7 @@ export function DeviceHealthFleetPanel({
                     <p className="mt-1 text-xs text-zinc-600">{row.assignedPlaylistName}</p>
                   </td>
                   <td className="px-4 py-3">
-                    <p className="font-semibold text-zinc-950">{row.device.name}</p>
+                    <p className="font-semibold text-zinc-950">{piLabel(row.device, row.linkedScreen)}</p>
                     <p className="mt-1 text-xs text-zinc-600">{row.device.host}</p>
                   </td>
                   <td className="px-4 py-3 text-zinc-700">{row.linkedScreen?.location ?? row.device.location}</td>

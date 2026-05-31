@@ -8,6 +8,7 @@ import {
 import {
   createDevice,
   createScreen,
+  createScreenWithDevice,
   ensureInventorySeed,
   removeDevice,
   removeScreen
@@ -48,9 +49,11 @@ export async function POST(request: Request) {
           targetType: "screen";
           deviceId?: string | null;
           group?: string;
+          host?: string;
           location?: string;
           name?: string;
           playlistId?: string | null;
+          sshUser?: string;
         }
       | {
           targetType: "device";
@@ -66,6 +69,17 @@ export async function POST(request: Request) {
     if (body.targetType === "screen") {
       if (!body.name || !body.name.trim()) {
         return NextResponse.json({ error: "Screen name is required." }, { status: 400 });
+      }
+      if (body.host?.trim()) {
+        await createScreenWithDevice({
+          group: body.group,
+          host: body.host,
+          location: body.location,
+          name: body.name,
+          playlistId: body.playlistId ?? null,
+          sshUser: body.sshUser
+        });
+        return getInventoryResponse();
       }
       await createScreen({
         deviceId: body.deviceId ?? null,
