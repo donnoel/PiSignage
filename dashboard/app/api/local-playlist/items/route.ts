@@ -33,6 +33,14 @@ function nextAssetId(playlist: Playlist, baseName: string): string {
   return assetId;
 }
 
+function playlistAssetFileName(asset: PlaylistAsset): string | null {
+  if (!asset.uri.startsWith("assets/")) {
+    return null;
+  }
+
+  return path.basename(asset.uri);
+}
+
 function updatePlaylistOrder(playlist: Playlist, action: PlaylistEditAction, assetId: string): Playlist {
   const index = playlist.assets.findIndex((asset) => asset.assetId === assetId);
 
@@ -154,6 +162,10 @@ async function appendMediaStoreItemToPlaylist(playlist: Playlist, mediaId: strin
 
   if (path.extname(media.playbackFileName).toLowerCase() !== ".mp4") {
     throw new Error("Only MP4 playback files can be added to the Pi playlist. Convert this media before using it.");
+  }
+
+  if (playlist.assets.some((asset) => playlistAssetFileName(asset) === media.playbackFileName)) {
+    throw new Error("That media is already in the local playlist.");
   }
 
   const playbackPath = path.join(sampleAssetsDirectory(), media.playbackFileName);

@@ -6,10 +6,12 @@ import { NextResponse } from "next/server";
 import {
   appendActivityRecord,
   ensureLocalDataFoundation,
+  type MediaRecord,
   readMediaStore,
   writeMediaStore
 } from "../../lib/local-data-store";
-import { sampleAssetsDirectory, writeFileAtomic } from "../../lib/local-playlist";
+import { readLivePlaylist, sampleAssetsDirectory, writeFileAtomic } from "../../lib/local-playlist";
+import type { PlaylistAsset } from "../../lib/local-playlist";
 import {
   createStillVideoClip,
   defaultDurationSeconds,
@@ -25,6 +27,13 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+type MediaApiItem = MediaRecord & {
+  missingFile: boolean;
+  origin: "media-store" | "playlist";
+  playlistAssetIds: string[];
+  playlistUseCount: number;
+};
 
 function parseTags(value: FormDataEntryValue | null): string[] {
   if (typeof value !== "string") {
@@ -81,16 +90,108 @@ function normalize(value: string): string {
   return value.trim().toLowerCase();
 }
 
+function playlistAssetFileName(asset: PlaylistAsset): string | null {
+  if (!asset.uri.startsWith("assets/")) {
+    return null;
+  }
+
+  return path.basename(asset.uri);
+}
+
+async function fileSizeForPlaybackFile(fileName: string): Promise<{ missingFile: boolean; sizeBytes: number }> {
+  try {
+    const stat = await fs.stat(path.join(sampleAssetsDirectory(), fileName));
+    return { missingFile: false, sizeBytes: stat.size };
+  } catch {
+    return { missingFile: true, sizeBytes: 0 };
+  }
+}
+
+function playlistAssetRecord(
+  fileName: string,
+  assets: PlaylistAsset[],
+  playlistUpdatedAt: string,
+  sizeBytes: number,
+  missingFile: boolean
+): MediaApiItem {
+  const primaryAsset = assets[0];
+
+  return {
+    id: `playlist:${primaryAsset.assetId}`,
+    title: primaryAsset.altText?.trim() || baseTitleFromFileName(fileName),
+    description: "",
+    tags: [],
+    sourceFileName: fileName,
+    playbackFileName: fileName,
+    mimeType: mimeTypeFromExtension(fileName),
+    sizeBytes,
+    durationSeconds: primaryAsset.durationSeconds ?? null,
+    status: missingFile ? "failed" : "ready",
+    createdAt: playlistUpdatedAt,
+    updatedAt: playlistUpdatedAt,
+    origin: "playlist",
+    missingFile,
+    playlistAssetIds: assets.map((asset) => asset.assetId),
+    playlistUseCount: assets.length
+  };
+}
+
+async function mediaItemsWithPlaylistAssets(mediaStoreItems: MediaRecord[]): Promise<MediaApiItem[]> {
+  const playlist = await readLivePlaylist();
+  const playlistAssetsByFileName = new Map<string, PlaylistAsset[]>();
+
+  for (const asset of playlist.assets) {
+    const fileName = playlistAssetFileName(asset);
+    if (!fileName) {
+      continue;
+    }
+
+    const assets = playlistAssetsByFileName.get(fileName) ?? [];
+    assets.push(asset);
+    playlistAssetsByFileName.set(fileName, assets);
+  }
+
+  const storeFileNames = new Set(mediaStoreItems.map((item) => item.playbackFileName));
+  const storeItems = await Promise.all(
+    mediaStoreItems.map(async (item): Promise<MediaApiItem> => {
+      const playlistAssets = playlistAssetsByFileName.get(item.playbackFileName) ?? [];
+      const fileState = await fileSizeForPlaybackFile(item.playbackFileName);
+
+      return {
+        ...item,
+        sizeBytes: item.sizeBytes || fileState.sizeBytes,
+        status: fileState.missingFile ? "failed" : item.status,
+        origin: "media-store",
+        missingFile: fileState.missingFile,
+        playlistAssetIds: playlistAssets.map((asset) => asset.assetId),
+        playlistUseCount: playlistAssets.length
+      };
+    })
+  );
+
+  const playlistOnlyItems = await Promise.all(
+    Array.from(playlistAssetsByFileName.entries())
+      .filter(([fileName]) => !storeFileNames.has(fileName))
+      .map(async ([fileName, assets]) => {
+        const fileState = await fileSizeForPlaybackFile(fileName);
+        return playlistAssetRecord(fileName, assets, playlist.updatedAt, fileState.sizeBytes, fileState.missingFile);
+      })
+  );
+
+  return [...storeItems, ...playlistOnlyItems];
+}
+
 export async function GET(request: Request) {
   await ensureLocalDataFoundation();
   const mediaStore = await readMediaStore();
+  const mediaItems = await mediaItemsWithPlaylistAssets(mediaStore.items);
   const { searchParams } = new URL(request.url);
   const cursor = parsePositiveInt(searchParams.get("cursor"), 0, Number.MAX_SAFE_INTEGER);
   const limit = parsePositiveInt(searchParams.get("limit"), 50, 200);
   const query = normalize(searchParams.get("q") ?? "");
   const requiredTag = normalize(searchParams.get("tag") ?? "");
 
-  const filteredItems = mediaStore.items.filter((item) => {
+  const filteredItems = mediaItems.filter((item) => {
     if (requiredTag) {
       const hasTag = item.tags.some((tag) => normalize(tag) === requiredTag);
       if (!hasTag) {
@@ -103,7 +204,7 @@ export async function GET(request: Request) {
     }
 
     const haystack = normalize(
-      `${item.title}\n${item.description}\n${item.tags.join(" ")}\n${item.playbackFileName}\n${item.sourceFileName}`
+      `${item.title}\n${item.description}\n${item.tags.join(" ")}\n${item.playbackFileName}\n${item.sourceFileName}\n${item.origin}`
     );
     return haystack.includes(query);
   });

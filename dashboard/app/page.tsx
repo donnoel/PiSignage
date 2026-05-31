@@ -134,7 +134,7 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
   "media-store": {
     eyebrow: "Library",
     title: "Media Store",
-    description: "Keep reusable, Pi-safe media ready for playlists."
+    description: "Upload, find, and organize media for your screens."
   },
   playlist: {
     eyebrow: "Playback loop",

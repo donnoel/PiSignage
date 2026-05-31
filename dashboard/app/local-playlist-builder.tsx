@@ -9,6 +9,8 @@ type MediaItem = {
   title: string;
   playbackFileName: string;
   durationSeconds: number | null;
+  origin?: "media-store" | "playlist";
+  playlistUseCount?: number;
   status: "ready" | "processing" | "failed";
   tags: string[];
 };
@@ -57,7 +59,7 @@ type PlaylistBuilderProps = {
 };
 
 function isPlaylistSafeMedia(item: MediaItem): boolean {
-  return item.status === "ready" && /\.mp4$/i.test(item.playbackFileName);
+  return item.status === "ready" && item.origin !== "playlist" && (item.playlistUseCount ?? 0) === 0 && /\.mp4$/i.test(item.playbackFileName);
 }
 
 export function LocalPlaylistBuilder({ playlistId }: PlaylistBuilderProps) {
