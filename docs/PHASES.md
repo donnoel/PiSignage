@@ -231,6 +231,12 @@ Acceptance:
 - Network loss does not break already-cached schedule behavior.
 - Start with simple daily windows before exceptions or holidays.
 
+Implemented foundation:
+
+- Dashboard Scheduling view manages simple daily windows and per-screen assignment.
+- Schedule changes are stored in local JSON and published to the Pi as cached schedule state when configured.
+- Pi-side `pisignage-enforce-schedule.mjs` plus a user timer can enforce cached schedules offline by starting or stopping the VLC service.
+
 Validation:
 
 - `npm --workspace dashboard run typecheck`

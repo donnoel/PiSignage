@@ -16,6 +16,7 @@
     "serve:player": "node device/pi/bin/pisignage-serve-player.mjs",
     "agent:heartbeat": "npm --workspace device-agent run heartbeat",
     "simulate:failures": "node scripts/local-failure-smoke.mjs",
+    "test:schedule": "node scripts/schedule-evaluation-smoke.mjs",
     "generate:still-presets": "node scripts/generate-still-video-presets.mjs"
   },
   "overrides": {

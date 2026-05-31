@@ -299,6 +299,45 @@ Inspect the local playback status file:
 cat ~/.local/state/pisignage/player-status.json
 ```
 
+## Schedule Enforcement
+
+The dashboard publishes simple business-hours schedules to
+`sample-content/schedules.local.json` on the Pi. The Pi can enforce that cached
+file without network access by running a one-shot schedule script on a timer:
+
+```text
+device/pi/bin/pisignage-enforce-schedule.mjs
+device/pi/systemd/user/pisignage-schedule.service
+device/pi/systemd/user/pisignage-schedule.timer
+```
+
+The script reads the cached schedule file, checks `PISIGNAGE_SCREEN_ID`, and
+starts or stops `pisignage-vlc.service` when the assigned screen is inside or
+outside its active window. If no schedule is assigned to the screen, playback is
+left alone.
+
+Validate schedule evaluation without changing VLC:
+
+```sh
+node device/pi/bin/pisignage-enforce-schedule.mjs --dry-run
+```
+
+Install the tracked schedule timer for the current user:
+
+```sh
+install -Dm755 device/pi/bin/pisignage-enforce-schedule.mjs ~/.local/bin/pisignage-enforce-schedule.mjs
+install -Dm644 device/pi/systemd/user/pisignage-schedule.service ~/.config/systemd/user/pisignage-schedule.service
+install -Dm644 device/pi/systemd/user/pisignage-schedule.timer ~/.config/systemd/user/pisignage-schedule.timer
+systemctl --user daemon-reload
+systemctl --user enable --now pisignage-schedule.timer
+```
+
+Inspect the local schedule status file:
+
+```sh
+cat ~/.local/state/pisignage/schedule-status.json
+```
+
 ## Reboot Recovery Plan
 
 Manual recovery expectations for tomorrow:

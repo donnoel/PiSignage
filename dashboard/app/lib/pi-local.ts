@@ -210,3 +210,42 @@ export async function publishPlaylistToPi(
     };
   }
 }
+
+export async function publishScheduleStoreToPi(
+  schedulePath: string,
+  messages: { notConfigured: string; failure: string; success?: string }
+): Promise<PiPublishResult> {
+  const config = readPiConfig();
+
+  if (!config) {
+    return {
+      enabled: false,
+      ok: false,
+      message: messages.notConfigured
+    };
+  }
+
+  const remoteSchedulePath = path.posix.join(config.root, "sample-content", "schedules.local.json");
+  const temporarySchedulePath = `${remoteSchedulePath}.${Date.now()}.tmp`;
+
+  try {
+    await runScp(config, schedulePath, temporarySchedulePath);
+    await runSsh(
+      config,
+      `mv ${quoteRemoteShell(temporarySchedulePath)} ${quoteRemoteShell(remoteSchedulePath)}`
+    );
+
+    return {
+      enabled: true,
+      ok: true,
+      message: messages.success ?? `Published schedules to Pi at ${config.host}.`
+    };
+  } catch (error) {
+    console.error("local schedule publish failed", error);
+    return {
+      enabled: true,
+      ok: false,
+      message: `${messages.failure} ${describePiPublishFailure(error)}`
+    };
+  }
+}

@@ -1,0 +1,9 @@
+[Unit]
+Description=PiSignage Schedule Enforcement
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/donnoel/PiSignage
+Environment=PISIGNAGE_SCREEN_ID=screen-primary
+Environment=PISIGNAGE_SCHEDULE_STATUS_PATH=%h/.local/state/pisignage/schedule-status.json
+ExecStart=/usr/bin/node %h/.local/bin/pisignage-enforce-schedule.mjs

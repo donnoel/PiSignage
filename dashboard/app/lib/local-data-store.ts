@@ -301,6 +301,10 @@ export async function readScheduleStore(): Promise<ScheduleStore> {
   return readJsonOrDefaults(paths.schedules, defaultScheduleStore());
 }
 
+export function scheduleStorePath(): string {
+  return jsonStorePaths().schedules;
+}
+
 export async function writeScheduleStore(value: ScheduleStore): Promise<void> {
   const paths = jsonStorePaths();
   await writeJsonStore(paths.schedules, value);

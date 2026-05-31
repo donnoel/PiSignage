@@ -15,6 +15,7 @@ import { LocalPlaylistItemEditor } from "./local-playlist-item-editor";
 import { ScreenDeviceInventoryPanel } from "./screen-device-inventory-panel";
 import { LocalSystemActions } from "./local-system-actions";
 import { LocalUploadForm } from "./local-upload-form";
+import { SchedulingPanel } from "./scheduling-panel";
 import { TroubleshootingPanel } from "./troubleshooting-panel";
 
 export const dynamic = "force-dynamic";
@@ -86,7 +87,14 @@ const execTimeoutMs = 4_000;
 const staleStatusThresholdMs = 45_000;
 const staleHeartbeatThresholdMs = 120_000;
 
-type DashboardView = "dashboard" | "media-store" | "playlist" | "device-health" | "screens" | "troubleshooting";
+type DashboardView =
+  | "dashboard"
+  | "media-store"
+  | "playlist"
+  | "device-health"
+  | "screens"
+  | "scheduling"
+  | "troubleshooting";
 
 type DashboardPageProps = {
   searchParams?: Promise<{
@@ -100,6 +108,7 @@ const navigationItems: Array<{ label: string; view: DashboardView }> = [
   { label: "Playlist", view: "playlist" },
   { label: "Device health", view: "device-health" },
   { label: "Screens", view: "screens" },
+  { label: "Scheduling", view: "scheduling" },
   { label: "Troubleshooting", view: "troubleshooting" }
 ];
 
@@ -127,6 +136,11 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
     eyebrow: "Screen inventory",
     title: "Screens",
     description: "Status, assignments, and recovery signals."
+  },
+  scheduling: {
+    eyebrow: "Business hours",
+    title: "Scheduling",
+    description: "Daily on and off windows with timezone-aware screen assignment."
   },
   troubleshooting: {
     eyebrow: "Field support",
@@ -1230,6 +1244,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           >
             <h2 id="troubleshooting-heading" className="sr-only">Troubleshooting</h2>
             <TroubleshootingPanel />
+          </section>
+
+          <section
+            id="scheduling"
+            aria-labelledby="scheduling-heading"
+            className={selectedView === "scheduling" ? "" : "hidden"}
+          >
+            <h2 id="scheduling-heading" className="sr-only">Scheduling</h2>
+            <SchedulingPanel />
           </section>
 
           <section
