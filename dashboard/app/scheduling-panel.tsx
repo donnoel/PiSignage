@@ -156,30 +156,12 @@ function formatDays(days: DayOption[], selected: number[]): string {
     .join(", ");
 }
 
-function scheduleWindow(schedule: ScheduleRecord | null | undefined): string {
-  const firstRule = schedule?.rules[0];
-  if (!firstRule) {
-    return "No window";
-  }
-
-  return `${firstRule.startTime} to ${firstRule.endTime}`;
-}
-
-function scheduleDays(schedule: ScheduleRecord | null | undefined, days: DayOption[]): string {
-  return formatDays(days, schedule?.rules[0]?.daysOfWeek ?? []);
-}
-
 function playlistLabel(playlist: PlaylistSummary | null | undefined, playlistId: string | null): string {
   if (playlist) {
     return playlist.name;
   }
 
   return playlistId ? "Playlist not found" : "No playlist assigned";
-}
-
-function namesForScreens(screenIds: string[], screensById: Map<string, ScreenRecord>): string {
-  const names = screenIds.map((id) => screensById.get(id)?.name ?? id);
-  return names.length ? names.join(", ") : "No screens assigned";
 }
 
 function screenPublishStatus(screen: ScreenRecord, support: ScheduleSupport | undefined): { label: string; tone: Tone } {
@@ -208,7 +190,7 @@ export function SchedulingPanel() {
   const [endTime, setEndTime] = useState("17:00");
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>(defaultDays);
   const [screenIds, setScreenIds] = useState<string[]>([]);
-  const [busyAction, setBusyAction] = useState<"clear" | "delete" | "load" | "save" | null>(null);
+  const [busyAction, setBusyAction] = useState<"clear" | "load" | "save" | null>(null);
   const [isPending, startTransition] = useTransition();
   const isBusy = Boolean(busyAction) || isPending;
 
@@ -381,38 +363,6 @@ export function SchedulingPanel() {
     }
   }
 
-  async function deleteSchedule(schedule: ScheduleRecord) {
-    if (isBusy) {
-      return;
-    }
-
-    setBusyAction("delete");
-    setMessage(`Removing ${schedule.name}...`);
-    try {
-      const response = await fetch("/api/local-schedules", {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ id: schedule.id })
-      });
-      const result = (await response.json()) as ScheduleResponse;
-      if (!response.ok || result.error) {
-        throw new Error(result.error ?? "Schedule remove failed.");
-      }
-      setData(result);
-      setMessage(result.publish?.message ?? "Schedule removed.");
-      if (editingId === schedule.id) {
-        resetForm(result.defaultTimezone);
-      }
-      startTransition(() => router.refresh());
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Schedule remove failed.");
-    } finally {
-      setBusyAction(null);
-    }
-  }
-
   async function clearScheduleForScreen(screen: ScreenRecord, schedule: ScheduleRecord) {
     if (isBusy) {
       return;
@@ -567,51 +517,6 @@ export function SchedulingPanel() {
             </ol>
           </section>
 
-          <details className="rounded-lg border border-zinc-200 bg-white shadow-sm">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-5">
-              <span className="text-lg font-semibold">Saved schedules</span>
-              <span className="self-start">
-                <StatusPill label={`${data?.schedules.length ?? 0} schedules`} tone="muted" />
-              </span>
-            </summary>
-            <ol className="divide-y divide-zinc-200">
-              {(data?.schedules ?? []).map((schedule) => (
-                <li key={schedule.id} className="grid gap-4 px-5 py-4 text-sm xl:grid-cols-[minmax(0,1fr)_auto]">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-zinc-950">{schedule.name}</p>
-                    <p className="mt-1 break-words text-zinc-600">
-                      {scheduleWindow(schedule)} / {scheduleDays(schedule, days)} / {schedule.timezone}
-                    </p>
-                    <p className="mt-1 break-words text-xs text-zinc-500">
-                      Screens: {namesForScreens(schedule.screenIds, screensById)}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2 xl:justify-end">
-                    <button
-                      type="button"
-                      onClick={() => editSchedule(schedule)}
-                      className="min-h-9 rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-50"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onClick={() => void deleteSchedule(schedule)}
-                      className="min-h-9 rounded-md border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </li>
-              ))}
-              {(data?.schedules.length ?? 0) === 0 ? (
-                <li className="p-5 text-sm leading-6 text-zinc-600">
-                  No saved schedules.
-                </li>
-              ) : null}
-            </ol>
-          </details>
         </div>
 
         {isEditorOpen ? (

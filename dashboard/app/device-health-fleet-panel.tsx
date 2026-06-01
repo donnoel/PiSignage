@@ -509,7 +509,7 @@ export function DeviceHealthFleetPanel({
                       type="button"
                       aria-pressed={isSelected}
                       onClick={() => setSelectedDeviceId(row.device.id)}
-                      className={`grid w-full gap-3 px-4 py-3 text-left text-sm lg:grid-cols-[minmax(0,1.2fr)_minmax(160px,0.8fr)_auto] ${
+                      className={`grid w-full gap-3 px-4 py-3 text-left text-sm lg:grid-cols-[minmax(0,1fr)_220px_minmax(0,1fr)] lg:items-center ${
                         isSelected ? "bg-teal-50" : "bg-white hover:bg-zinc-50"
                       }`}
                     >
@@ -521,11 +521,11 @@ export function DeviceHealthFleetPanel({
                           {row.linkedScreen?.location ?? row.device.location} · {row.assignedPlaylistName}
                         </span>
                       </span>
-                      <span className="min-w-0">
+                      <span className="min-w-0 text-left lg:w-full">
                         <span className="block truncate font-semibold text-zinc-800">{piLabel(row.device, row.linkedScreen)}</span>
                         <span className="mt-1 block truncate text-xs text-zinc-600">{row.device.host}</span>
                       </span>
-                      <span className="flex flex-wrap items-center gap-2 lg:justify-end">
+                      <span className="flex flex-wrap items-center justify-end gap-2 lg:justify-self-end">
                         <StatusPill label={row.healthLabel} tone={row.healthTone} />
                         <StatusPill label={row.playbackLabel} tone={row.playbackTone} />
                         <StatusPill label={row.syncLabel} tone={row.syncTone} />
