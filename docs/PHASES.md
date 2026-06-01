@@ -154,8 +154,8 @@ Acceptance:
 - Playlist items can be added from the Media Store.
 - Playlist items can be rearranged and removed.
 - Playlist item details show media metadata, duration, tags, readiness, local path, and Pi reporting/sync state.
-- Playlist edits update live local state and attempt publish to assigned devices when configured.
-- Manual publish remains a recovery/resync action.
+- Playlist edits update live local state and mark changes as pending manual publish.
+- Manual publish remains the intentional operator-controlled step before sending saved playlist changes to screens.
 - At least one playable item remains for an assigned playlist unless the user explicitly unassigns it.
 
 Validation:

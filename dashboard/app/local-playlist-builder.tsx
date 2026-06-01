@@ -59,11 +59,7 @@ function savedMessage(piPublish: PlaylistActionResponse["piPublish"]): string {
     return "Added to playlist.";
   }
 
-  if (piPublish.ok) {
-    return "Added to playlist and sent to the screen.";
-  }
-
-  return `Added to playlist. ${piPublish.message}`;
+  return piPublish.message;
 }
 
 export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: PlaylistBuilderProps) {

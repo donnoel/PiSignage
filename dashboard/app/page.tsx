@@ -756,7 +756,11 @@ function publishStateLabel(publishStatus: PublishStatus | null): string {
     return "Not published";
   }
 
-  return publishStatus.ok ? "Sent" : "Publish failed";
+  if (publishStatus.ok) {
+    return "Sent";
+  }
+
+  return publishStatus.piPublishEnabled ? "Publish failed" : "Pending publish";
 }
 
 function shortPublishDetail(publishStatus: PublishStatus | null): string {
@@ -764,7 +768,11 @@ function shortPublishDetail(publishStatus: PublishStatus | null): string {
     return "Not sent yet";
   }
 
-  return publishStatus.ok ? `Sent ${formatTimestamp(publishStatus.timestamp)}` : "Needs attention";
+  if (publishStatus.ok) {
+    return `Sent ${formatTimestamp(publishStatus.timestamp)}`;
+  }
+
+  return publishStatus.piPublishEnabled ? "Needs attention" : "Saved locally";
 }
 
 function playlistLiveStatus(
@@ -780,10 +788,18 @@ function playlistLiveStatus(
     };
   }
 
-  if (publishStatus && !publishStatus.ok) {
+  if (publishStatus && !publishStatus.ok && publishStatus.piPublishEnabled) {
     return {
       detail: "The last publish did not complete.",
       label: "Publish failed",
+      tone: "warn"
+    };
+  }
+
+  if (publishStatus && !publishStatus.ok && !publishStatus.piPublishEnabled) {
+    return {
+      detail: "Saved locally. Publish manually when this playlist is ready for the screen.",
+      label: "Pending publish",
       tone: "warn"
     };
   }
@@ -1154,7 +1170,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     });
   }
 
-  if (publishStatusForSelected && !publishStatusForSelected.ok) {
+  if (publishStatusForSelected && !publishStatusForSelected.ok && publishStatusForSelected.piPublishEnabled) {
     attentionItems.push({
       detail: publishStatusForSelected.message,
       label: "Publish failed",
@@ -1285,11 +1301,21 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     },
     {
       label: "Last send",
-      value: publishStatusForSelected ? (publishStatusForSelected.ok ? "Succeeded" : "Needs attention") : "Not recorded",
+      value: publishStatusForSelected
+        ? publishStatusForSelected.ok
+          ? "Succeeded"
+          : publishStatusForSelected.piPublishEnabled
+            ? "Needs attention"
+            : "Pending publish"
+        : "Not recorded",
       detail: publishStatusForSelected
         ? `${actionLabel(publishStatusForSelected.action)} wrote playlist v${publishStatusForSelected.playlistVersion}. ${publishStatusForSelected.message}`
         : "No local publish status file has been written yet.",
-      tone: publishStatusForSelected ? (publishStatusForSelected.ok ? "good" : "warn") : "muted",
+      tone: publishStatusForSelected
+        ? publishStatusForSelected.ok
+          ? "good"
+          : "warn"
+        : "muted",
       timestamp: publishStatusForSelected?.timestamp
     },
     {

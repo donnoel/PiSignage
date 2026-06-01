@@ -152,8 +152,8 @@ Requirements:
 - Rearrange playlist items.
 - Remove playlist items while preserving at least one playable item for assigned screens.
 - Show item details: media title, tags, duration, file path, validation status, and Pi sync/reporting state.
-- Publish playlist changes to assigned devices when configured.
-- Keep manual publish as a recovery/resync action, not the normal next step after every successful edit.
+- Save playlist changes locally without automatically publishing to assigned devices.
+- Keep manual publish as the intentional operator-controlled step before sending saved playlist changes to screens.
 - Support transitions later without compromising playback reliability.
 
 Acceptance:

@@ -4,12 +4,15 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { appendActivityRecord, readMediaStore } from "../../../lib/local-data-store";
 import {
+  ensureLivePlaylistPath,
   readPlaylistStore,
   sampleAssetsDirectory,
   readStoredPlaylist,
+  writePlaylist,
+  writePublishStatus,
   writeStoredPlaylist
 } from "../../../lib/local-playlist";
-import type { Playlist, PlaylistAsset } from "../../../lib/local-playlist";
+import type { PiPublishResult, Playlist, PlaylistAsset } from "../../../lib/local-playlist";
 import { defaultDurationSeconds, slugify } from "../../../lib/media-processing";
 
 type PlaylistEditAction = "move-up" | "move-down" | "remove" | "update-item" | "add-media" | "reorder";
@@ -228,6 +231,16 @@ async function appendMediaStoreItemToPlaylist(playlist: Playlist, mediaId: strin
   };
 }
 
+async function markPlaylistEditPendingPublish(playlist: Playlist): Promise<PiPublishResult> {
+  const playlistPath = await ensureLivePlaylistPath();
+  await writePlaylist(playlistPath, playlist);
+  return {
+    enabled: false,
+    ok: false,
+    message: "Saved locally. Publish manually when this playlist is ready for the screen."
+  };
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as {
@@ -275,13 +288,15 @@ export async function POST(request: Request) {
     }
 
     await writeStoredPlaylist(nextPlaylist);
+    const piPublish = await markPlaylistEditPendingPublish(nextPlaylist);
+    await writePublishStatus(`playlist-${body.action}`, nextPlaylist, piPublish);
     await appendActivityRecord({
       id: randomUUID(),
       action: `playlist-${body.action}`,
       actor: "local-operator",
       entityId: body.assetId ?? body.mediaId ?? nextPlaylist.playlistId,
       entityType: "playlist",
-      message: `Playlist action ${body.action} applied to ${nextPlaylist.name}.`,
+      message: `Playlist action ${body.action} applied to ${nextPlaylist.name}. ${piPublish.message}`,
       result: "success",
       timestamp: new Date().toISOString()
     });
@@ -289,10 +304,8 @@ export async function POST(request: Request) {
     return NextResponse.json({
       playlistVersion: nextPlaylist.version,
       assetCount: nextPlaylist.assets.length,
-      message:
-        body.action === "add-media"
-          ? "Added to this playlist. Publish when it is ready for the screen."
-          : "Saved locally. Publish when this playlist is ready for the screen."
+      piPublish,
+      message: piPublish.message
     });
   } catch (error) {
     console.error("local playlist edit failed", error);

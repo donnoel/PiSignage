@@ -11,15 +11,6 @@ import {
   writePublishStatus
 } from "../../../lib/local-playlist";
 import type { Playlist } from "../../../lib/local-playlist";
-import {
-  describePiPublishFailure,
-  publishPlaylistToPi,
-  quoteRemoteShell,
-  readPiConfig,
-  requiredRemoteAssetPaths,
-  runScp,
-  runSsh
-} from "../../../lib/pi-local";
 import type { PiPublishResult } from "../../../lib/local-playlist";
 import {
   createStillVideoClip,
@@ -71,46 +62,12 @@ function appendAsset(
   };
 }
 
-async function publishUploadToPi(
-  savedFilePath: string,
-  savedFileName: string,
-  playlistPath: string,
-  playlist: Playlist
-): Promise<PiPublishResult> {
-  const config = readPiConfig();
-
-  if (!config) {
-    return {
-      enabled: false,
-      ok: false,
-      message: "Pi publish is not configured; upload was saved locally only."
-    };
-  }
-
-  const remoteAssetsDirectory = path.posix.join(config.root, "sample-content", "assets");
-
-  try {
-    await runSsh(config, `mkdir -p ${quoteRemoteShell(remoteAssetsDirectory)}`);
-    await runScp(config, savedFilePath, path.posix.join(remoteAssetsDirectory, savedFileName));
-    await runSsh(
-      config,
-      requiredRemoteAssetPaths(config, playlist)
-        .map((assetPath) => `test -f ${quoteRemoteShell(assetPath)}`)
-        .join(" && ")
-    );
-    return publishPlaylistToPi(playlistPath, playlist, {
-      notConfigured: "Pi publish is not configured; upload was saved locally only.",
-      failure: "Upload was saved locally, but Pi publish needs attention.",
-      success: `Published to Pi at ${config.host}.`
-    });
-  } catch (error) {
-    console.error("local Pi publish failed", error);
-    return {
-      enabled: true,
-      ok: false,
-      message: `Upload was saved locally, but Pi publish needs attention. ${describePiPublishFailure(error)}`
-    };
-  }
+function pendingManualPublish(): PiPublishResult {
+  return {
+    enabled: false,
+    ok: false,
+    message: "Saved locally. Publish manually when this playlist is ready for the screen."
+  };
 }
 
 export async function POST(request: Request) {
@@ -174,7 +131,7 @@ export async function POST(request: Request) {
       await writeFileAtomic(savedFilePath, uploadedBytes);
     }
     await writePlaylist(playlistPath, nextPlaylist);
-    const piPublish = await publishUploadToPi(savedFilePath, savedFileName, playlistPath, nextPlaylist);
+    const piPublish = pendingManualPublish();
     await writePublishStatus("upload", nextPlaylist, piPublish);
 
     const appendedAsset = nextPlaylist.assets[nextPlaylist.assets.length - 1];

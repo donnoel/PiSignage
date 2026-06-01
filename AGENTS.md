@@ -36,8 +36,8 @@ This repo is a local-first Raspberry Pi digital signage proof of concept. You ar
 - Treat `sample-content/playlist.local.json` as the tracked seed/baseline playlist.
 - Treat `dashboard/local-state/playlist.local.json` as the live dashboard-editable playlist.
 - Normal dashboard operations must not dirty tracked source files.
-- Playlist edits, uploads, removes, and reorders should update live local state and attempt to publish to the Pi when configured.
-- The manual publish button is for resync/recovery, not the normal next step after every successful edit.
+- Playlist edits, uploads, removes, and reorders should update live local state without automatically publishing to the Pi.
+- The manual publish button is the intentional operator-controlled step for sending saved playlist changes to the screen.
 - Preserve local playback when the network is unavailable. A missing network must not stop cached/local playback.
 
 ## Pi And Playback Rules

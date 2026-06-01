@@ -26,11 +26,7 @@ function savedMessage(piPublish: PlaylistEditResponse["piPublish"]): string {
     return "Saved locally.";
   }
 
-  if (piPublish.ok) {
-    return "Saved locally and sent to the screen.";
-  }
-
-  return `Saved locally. ${piPublish.message}`;
+  return piPublish.message;
 }
 
 function fileNameFromUri(uri: string): string {
