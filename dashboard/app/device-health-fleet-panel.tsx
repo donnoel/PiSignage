@@ -332,7 +332,8 @@ export function DeviceHealthFleetPanel({
     return true;
   });
 
-  const selectedRow = rows.find((row) => row.device.id === selectedDeviceId) ?? visibleRows[0] ?? null;
+  const selectedRow =
+    visibleRows.find((row) => row.device.id === selectedDeviceId) ?? visibleRows[0] ?? rows[0] ?? null;
   const onlineCount = rows.filter((row) => row.healthLabel === "Online").length;
   const offlineCount = rows.filter((row) => row.healthLabel === "Offline").length;
   const staleCount = rows.filter((row) => row.isLive && liveStatusStale).length;
@@ -472,6 +473,74 @@ export function DeviceHealthFleetPanel({
           </dl>
         </div>
 
+        <div className="border-t border-zinc-200 p-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div>
+              <h3 className="text-base font-semibold text-zinc-950">Screens and devices</h3>
+              <p className="mt-1 text-sm text-zinc-600">
+                Select a row to inspect actions and evidence. The list scrolls independently for larger installs.
+              </p>
+            </div>
+            <div className="w-full xl:max-w-md">
+              <label htmlFor="device-health-search" className="text-xs font-semibold uppercase text-zinc-500">
+                Search screens
+              </label>
+              <input
+                id="device-health-search"
+                value={query}
+                onChange={(event) => setQuery(event.currentTarget.value)}
+                placeholder="Screen, Pi, address, location, or group"
+                className="mt-2 min-h-11 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-100"
+              />
+            </div>
+          </div>
+          <p className="mt-3 text-sm text-zinc-600">
+            Showing {formatCount(visibleRows.length, "screen")} from {formatCount(rows.length, "screen")}.
+          </p>
+
+          <div className="mt-4 max-h-[520px] overflow-auto rounded-md border border-zinc-200">
+            <ol className="divide-y divide-zinc-200">
+              {visibleRows.map((row) => {
+                const isSelected = selectedRow?.device.id === row.device.id;
+
+                return (
+                  <li key={row.device.id}>
+                    <button
+                      type="button"
+                      aria-pressed={isSelected}
+                      onClick={() => setSelectedDeviceId(row.device.id)}
+                      className={`grid w-full gap-3 px-4 py-3 text-left text-sm lg:grid-cols-[minmax(0,1.2fr)_minmax(160px,0.8fr)_auto] ${
+                        isSelected ? "bg-teal-50" : "bg-white hover:bg-zinc-50"
+                      }`}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate font-semibold text-zinc-950">
+                          {row.linkedScreen?.name ?? "No screen linked"}
+                        </span>
+                        <span className="mt-1 block truncate text-xs text-zinc-600">
+                          {row.linkedScreen?.location ?? row.device.location} · {row.assignedPlaylistName}
+                        </span>
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate font-semibold text-zinc-800">{piLabel(row.device, row.linkedScreen)}</span>
+                        <span className="mt-1 block truncate text-xs text-zinc-600">{row.device.host}</span>
+                      </span>
+                      <span className="flex flex-wrap items-center gap-2 lg:justify-end">
+                        <StatusPill label={row.healthLabel} tone={row.healthTone} />
+                        <StatusPill label={row.playbackLabel} tone={row.playbackTone} />
+                        <StatusPill label={row.syncLabel} tone={row.syncTone} />
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+              {visibleRows.length === 0 ? (
+                <li className="px-4 py-6 text-sm text-zinc-600">No screens match this view.</li>
+              ) : null}
+            </ol>
+          </div>
+        </div>
+
         {selectedRow ? (
           <section className="border-t border-zinc-200 p-5" aria-label="Selected screen details">
             <div>
@@ -585,93 +654,6 @@ export function DeviceHealthFleetPanel({
           </section>
         ) : null}
 
-        <div className="border-t border-zinc-200 p-5">
-          <h3 className="text-base font-semibold text-zinc-950">All screens</h3>
-          <label htmlFor="device-health-search" className="text-sm font-semibold text-zinc-800">
-            <span className="mt-4 block">Search screens</span>
-          </label>
-          <input
-            id="device-health-search"
-            value={query}
-            onChange={(event) => setQuery(event.currentTarget.value)}
-            placeholder="Screen, Pi, address, location, or group"
-            className="mt-2 min-h-11 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-100"
-          />
-          <p className="mt-2 text-sm text-zinc-600">
-            Showing {formatCount(visibleRows.length, "screen")} from {formatCount(rows.length, "screen")}.
-          </p>
-        </div>
-
-        <div className="max-w-full overflow-x-auto border-t border-zinc-200">
-          <table className="w-full min-w-[1080px] text-left text-sm">
-            <thead className="bg-zinc-50 text-xs uppercase text-zinc-500">
-              <tr>
-                <th className="px-4 py-3">Screen</th>
-                <th className="px-4 py-3">Pi</th>
-                <th className="px-4 py-3">Location</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Now playing</th>
-                <th className="px-4 py-3">Playlist update</th>
-                <th className="px-4 py-3">Checked in</th>
-                <th className="px-4 py-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-200">
-              {visibleRows.map((row) => (
-                <tr key={row.device.id} className={row.needsAttention ? "bg-amber-50/40" : undefined}>
-                  <td className="px-4 py-3">
-                    <p className="font-semibold text-zinc-950">{row.linkedScreen?.name ?? "No screen linked"}</p>
-                    <p className="mt-1 text-xs text-zinc-600">{row.assignedPlaylistName}</p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className="font-semibold text-zinc-950">{piLabel(row.device, row.linkedScreen)}</p>
-                    <p className="mt-1 text-xs text-zinc-600">{row.device.host}</p>
-                  </td>
-                  <td className="px-4 py-3 text-zinc-700">{row.linkedScreen?.location ?? row.device.location}</td>
-                  <td className="px-4 py-3">
-                    <StatusPill label={row.healthLabel} tone={row.healthTone} />
-                    <p className="mt-1 text-xs text-zinc-600">{row.healthDetail}</p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusPill label={row.playbackLabel} tone={row.playbackTone} />
-                    <p className="mt-1 text-xs text-zinc-600">{row.playbackDetail}</p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusPill label={row.syncLabel} tone={row.syncTone} />
-                    <p className="mt-1 text-xs text-zinc-600">{row.syncDetail}</p>
-                  </td>
-                  <td className="px-4 py-3 text-zinc-700">{row.lastSeenAge}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedDeviceId(row.device.id)}
-                        className="min-h-9 rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-50"
-                      >
-                        Details
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!row.isLive || !row.assignedPlaylistId || isBusy}
-                        onClick={() => void runAction("publish", row)}
-                        className="min-h-9 rounded-md bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
-                      >
-                        {busyAction === "publish" ? "Syncing" : "Retry sync"}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {visibleRows.length === 0 ? (
-                <tr>
-                  <td className="px-4 py-5 text-zinc-600" colSpan={8}>
-                    No screens match this view.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
       </div>
 
       {message ? (
