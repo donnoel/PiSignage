@@ -73,3 +73,71 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export async function PATCH(request: Request) {
+  try {
+    const body = (await request.json()) as {
+      name?: string;
+      playlistId?: string;
+    };
+    const playlistId = body.playlistId?.trim();
+    const name = body.name?.trim().slice(0, 80);
+
+    if (!playlistId) {
+      return NextResponse.json({ error: "Choose a playlist." }, { status: 400 });
+    }
+    if (!name) {
+      return NextResponse.json({ error: "Enter a playlist name." }, { status: 400 });
+    }
+
+    const store = await readPlaylistStore();
+    const index = store.items.findIndex((item) => item.playlistId === playlistId);
+    if (index === -1) {
+      return NextResponse.json({ error: "Playlist was not found." }, { status: 404 });
+    }
+    const existing = store.items.find(
+      (item) => item.playlistId !== playlistId && item.name.trim().toLowerCase() === name.toLowerCase()
+    );
+    if (existing) {
+      return NextResponse.json({ error: "A playlist with that name already exists." }, { status: 409 });
+    }
+
+    const timestamp = nowIso();
+    const previous = store.items[index];
+    const playlist: Playlist = {
+      ...previous,
+      name,
+      updatedAt: timestamp
+    };
+    const nextItems = [...store.items];
+    nextItems[index] = playlist;
+
+    await writePlaylistStore({
+      ...store,
+      items: nextItems,
+      updatedAt: timestamp,
+      version: store.version + 1
+    });
+
+    if (name !== previous.name) {
+      await appendActivityRecord({
+        id: randomUUID(),
+        action: "playlist-rename",
+        actor: "local-operator",
+        entityId: playlist.playlistId,
+        entityType: "playlist",
+        message: `Renamed playlist ${previous.name} to ${playlist.name}.`,
+        result: "success",
+        timestamp
+      });
+    }
+
+    return NextResponse.json({ playlist });
+  } catch (error) {
+    console.error("playlist rename failed", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Playlist rename failed." },
+      { status: 500 }
+    );
+  }
+}

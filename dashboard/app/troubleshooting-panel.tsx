@@ -77,6 +77,140 @@ function toneFromResult(result: ActivityRecord["result"]): "good" | "muted" | "w
   return result === "error" ? "warn" : "muted";
 }
 
+function diagnosticByLabel(items: DiagnosticItem[], label: string): DiagnosticItem | null {
+  return items.find((item) => item.label === label) ?? null;
+}
+
+function extractLineValue(detail: string, key: string): string | null {
+  const line = detail
+    .split("\n")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(`${key}=`));
+
+  return line?.slice(key.length + 1).trim() || null;
+}
+
+function extractDisplayMode(detail: string): string | null {
+  const connector = detail.match(/Connector\s+\d+\s+\(\d+\)\s+([A-Z0-9-]+)/);
+  const mode = detail.match(/(\d{3,4}x\d{3,4}@\d+(?:\.\d+)?)/);
+
+  if (connector?.[1] && mode?.[1]) {
+    return `${connector[1]} ${mode[1]}`;
+  }
+
+  return mode?.[1] ?? connector?.[1] ?? null;
+}
+
+function summarizePlayer(detail: string): string {
+  if (detail.includes("player-status-missing")) {
+    return "Status file missing";
+  }
+
+  try {
+    const parsed = JSON.parse(detail) as {
+      currentAssetId?: string;
+      currentPlaylistId?: string;
+      mode?: string;
+      state?: string;
+      status?: string;
+    };
+    const state = parsed.state ?? parsed.status ?? parsed.mode;
+    const asset = parsed.currentAssetId;
+
+    if (state && asset) {
+      return `${state}: ${asset}`;
+    }
+
+    return state ?? asset ?? parsed.currentPlaylistId ?? "Status file present";
+  } catch {
+    return detail.trim() ? "Status file present" : "Not reported";
+  }
+}
+
+function summarizeDiagnostic(item: DiagnosticItem | null): string {
+  if (!item) {
+    return "Not reported";
+  }
+
+  if (item.label === "VLC service") {
+    const activeState = extractLineValue(item.detail, "ActiveState");
+    const subState = extractLineValue(item.detail, "SubState");
+    const restarts = extractLineValue(item.detail, "NRestarts");
+    const state = [activeState, subState].filter(Boolean).join(" / ");
+
+    return [state || "Not reported", restarts ? `${restarts} restarts` : null].filter(Boolean).join(", ");
+  }
+
+  if (item.label === "Player status") {
+    return summarizePlayer(item.detail);
+  }
+
+  if (item.label === "Display") {
+    return extractDisplayMode(item.detail) ?? "Display evidence unavailable";
+  }
+
+  if (item.label === "Health") {
+    const uptime = extractLineValue(item.detail, "uptime");
+    const temp = extractLineValue(item.detail, "temp")?.replace(/^temp=/, "");
+    const throttle = extractLineValue(item.detail, "throttle")?.replace(/^throttled=/, "");
+
+    return [uptime, temp, throttle ? `throttle ${throttle}` : null].filter(Boolean).join(", ") || "Not reported";
+  }
+
+  return item.detail;
+}
+
+function guidanceForDiagnostic(item: DiagnosticItem | null): string {
+  if (!item) {
+    return "No evidence returned by the last refresh.";
+  }
+
+  if (item.status === "ok") {
+    return "Evidence looks healthy from the last refresh.";
+  }
+
+  if (item.label === "Pi SSH") {
+    return "Check Pi power, network, SSH settings, and dashboard/.env.local.";
+  }
+
+  if (item.label === "VLC service") {
+    return "Try Restart VLC first, then Recover if playback does not return.";
+  }
+
+  if (item.label === "Player status") {
+    return "Recover can reload the playlist and refresh player evidence.";
+  }
+
+  if (item.label === "Display") {
+    return "Confirm the TV is connected and the Pi display stack is reporting a mode.";
+  }
+
+  if (item.label === "Health") {
+    return "Review temperature, throttle, and uptime before heavier recovery steps.";
+  }
+
+  return "Review the raw evidence before taking action.";
+}
+
+function actionLabel(action: ActivityRecord["action"]): string {
+  return action
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function isTroubleshootingActivity(item: ActivityRecord): boolean {
+  return /publish|recover|recovery|restart|player|vlc|troubleshoot/i.test(`${item.action} ${item.message}`);
+}
+
+function recoveryTone(run: RecoveryRun | null): "good" | "muted" | "warn" {
+  if (!run) {
+    return "muted";
+  }
+
+  return run.ok ? "good" : "warn";
+}
+
 function formatTimestamp(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -182,21 +316,100 @@ export function TroubleshootingPanel() {
   const diagnostics = data?.pi.diagnostics ?? [];
   const logs = data?.pi.logs ?? "No logs loaded.";
   const recoveryRuns = data?.recoveryRuns ?? [];
-  const activity = data?.activity ?? [];
+  const latestRecovery = recoveryRuns[0] ?? null;
+  const troubleshootingActivity = (data?.activity ?? []).filter(isTroubleshootingActivity).slice(0, 8);
+  const sshDiagnostic = diagnosticByLabel(diagnostics, "Pi SSH");
+  const serviceDiagnostic = diagnosticByLabel(diagnostics, "VLC service");
+  const playerDiagnostic = diagnosticByLabel(diagnostics, "Player status");
+  const displayDiagnostic = diagnosticByLabel(diagnostics, "Display");
+  const healthDiagnostic = diagnosticByLabel(diagnostics, "Health");
+  const stateCards: {
+    detail: string;
+    label: string;
+    tone: "good" | "muted" | "warn";
+    value: string;
+  }[] = [
+    {
+      detail: data?.pi.configured ? data?.pi.host ?? "Pi host configured" : "Add Pi SSH settings to enable diagnostics.",
+      label: "Pi access",
+      tone: data?.pi.reachable ? "good" : "warn",
+      value: data?.pi.reachable ? "Reachable" : data?.pi.configured ? "Unavailable" : "Not configured"
+    },
+    {
+      detail: guidanceForDiagnostic(serviceDiagnostic),
+      label: "VLC service",
+      tone: serviceDiagnostic ? toneFromDiagnostic(serviceDiagnostic.status) : "muted",
+      value: summarizeDiagnostic(serviceDiagnostic)
+    },
+    {
+      detail: guidanceForDiagnostic(playerDiagnostic),
+      label: "Player status",
+      tone: playerDiagnostic ? toneFromDiagnostic(playerDiagnostic.status) : "muted",
+      value: summarizeDiagnostic(playerDiagnostic)
+    },
+    {
+      detail: guidanceForDiagnostic(displayDiagnostic),
+      label: "Display",
+      tone: displayDiagnostic ? toneFromDiagnostic(displayDiagnostic.status) : "muted",
+      value: summarizeDiagnostic(displayDiagnostic)
+    },
+    {
+      detail: guidanceForDiagnostic(healthDiagnostic),
+      label: "Health",
+      tone: healthDiagnostic ? toneFromDiagnostic(healthDiagnostic.status) : "muted",
+      value: summarizeDiagnostic(healthDiagnostic)
+    },
+    {
+      detail: latestRecovery ? latestRecovery.summary : "No recovery run has been recorded yet.",
+      label: "Last recovery",
+      tone: recoveryTone(latestRecovery),
+      value: latestRecovery ? formatTimestamp(latestRecovery.finishedAt) : "None recorded"
+    }
+  ];
 
   return (
     <div className="mt-6 space-y-4">
+      <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold">Current state</h2>
+            <p className="mt-1 text-sm leading-6 text-zinc-600">Latest local evidence from the configured Pi and recovery log.</p>
+          </div>
+          <div className="self-start">
+            <StatusPill
+              label={stateCards.some((card) => card.tone === "warn") ? "Review needed" : "Evidence refreshed"}
+              tone={stateCards.some((card) => card.tone === "warn") ? "warn" : "muted"}
+            />
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {stateCards.map((card) => (
+            <div key={card.label} className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-xs font-semibold uppercase text-zinc-500">{card.label}</p>
+                <StatusPill
+                  label={card.tone === "good" ? "Healthy" : card.tone === "warn" ? "Needs review" : "No data"}
+                  tone={card.tone === "good" ? "muted" : card.tone}
+                />
+              </div>
+              <p className="mt-3 break-words text-lg font-semibold leading-snug text-zinc-950">{card.value}</p>
+              <p className="mt-2 text-sm leading-5 text-zinc-600">{card.detail}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
         <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <h2 className="text-xl font-semibold">Support tools</h2>
+            <h2 className="text-xl font-semibold">Recovery tools</h2>
             <p className="mt-1 text-sm leading-6 text-zinc-600">
-              Diagnostics, recovery controls, Pi access helpers, and recent operational evidence.
+              Start with a fresh check, then use the narrowest action that matches the evidence.
             </p>
           </div>
           <StatusPill
             label={data?.pi.reachable ? "Pi reachable" : data?.pi.configured ? "Pi unavailable" : "Pi not configured"}
-            tone={data?.pi.reachable ? "good" : "warn"}
+            tone={data?.pi.reachable ? "muted" : "warn"}
           />
         </div>
 
@@ -265,8 +478,16 @@ export function TroubleshootingPanel() {
               <button
                 type="button"
                 disabled={isBusy}
+                onClick={() => void loadTroubleshooting()}
+                className="min-h-10 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {busyAction === "refresh" ? "Refreshing..." : "Refresh evidence"}
+              </button>
+              <button
+                type="button"
+                disabled={isBusy}
                 onClick={() => void runAction("publish")}
-                className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
+                className="min-h-10 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {busyAction === "publish" ? "Publishing..." : "Retry publish"}
               </button>
@@ -282,19 +503,29 @@ export function TroubleshootingPanel() {
                 type="button"
                 disabled={isBusy}
                 onClick={() => void runAction("recover")}
-                className="min-h-10 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-emerald-300"
+                className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
               >
-                {busyAction === "recover" ? "Recovering..." : "Recover"}
-              </button>
-              <button
-                type="button"
-                disabled={isBusy}
-                onClick={() => void loadTroubleshooting()}
-                className="min-h-10 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {busyAction === "refresh" ? "Refreshing..." : "Refresh"}
+                {busyAction === "recover" ? "Recovering..." : "Run safe recovery"}
               </button>
             </div>
+            <dl className="mt-4 grid gap-2 text-xs text-zinc-600 sm:grid-cols-2">
+              <div>
+                <dt className="font-semibold text-zinc-800">Refresh</dt>
+                <dd>Reads evidence only.</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-zinc-800">Retry publish</dt>
+                <dd>Resends the current playlist.</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-zinc-800">Restart VLC</dt>
+                <dd>Restarts playback service.</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-zinc-800">Safe recovery</dt>
+                <dd>Runs the logged recovery sequence.</dd>
+              </div>
+            </dl>
             {message ? (
               <p className="mt-3 text-sm font-medium text-zinc-600" role="status" aria-live="polite">
                 {message}
@@ -306,17 +537,33 @@ export function TroubleshootingPanel() {
 
       <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-200 p-5">
-          <h3 className="text-lg font-semibold">Diagnostics</h3>
+          <h3 className="text-lg font-semibold">Diagnostic evidence</h3>
         </div>
         <ol className="divide-y divide-zinc-200">
           {diagnostics.map((item) => (
-            <li key={item.label} className="grid gap-3 px-5 py-4 text-sm md:grid-cols-[180px_1fr_auto]">
-              <p className="font-semibold text-zinc-950">{item.label}</p>
-              <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-zinc-50 p-3 text-xs leading-5 text-zinc-700">
-                {item.detail}
-              </pre>
-              <div className="md:justify-self-end">
-                <StatusPill label={item.status === "ok" ? "OK" : item.status === "error" ? "Error" : "Review"} tone={toneFromDiagnostic(item.status)} />
+            <li key={item.label} className="grid gap-3 px-5 py-4 text-sm lg:grid-cols-[180px_1fr_auto]">
+              <div>
+                <p className="font-semibold text-zinc-950">{item.label}</p>
+                <p className="mt-1 text-xs leading-5 text-zinc-500">{guidanceForDiagnostic(item)}</p>
+              </div>
+              <div>
+                <p className="rounded-md bg-zinc-50 px-3 py-2 font-medium leading-6 text-zinc-800">
+                  {summarizeDiagnostic(item)}
+                </p>
+                <details className="mt-2 rounded-md border border-zinc-200 bg-white">
+                  <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-zinc-600">
+                    View raw evidence
+                  </summary>
+                  <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-words border-t border-zinc-200 bg-zinc-50 p-3 text-xs leading-5 text-zinc-700">
+                    {item.detail}
+                  </pre>
+                </details>
+              </div>
+              <div className="lg:justify-self-end">
+                <StatusPill
+                  label={item.status === "ok" ? "Healthy" : item.status === "error" ? "Error" : "Review"}
+                  tone={toneFromDiagnostic(item.status)}
+                />
               </div>
             </li>
           ))}
@@ -340,12 +587,27 @@ export function TroubleshootingPanel() {
           <ol className="divide-y divide-zinc-200">
             {recoveryRuns.map((run) => (
               <li key={run.id} className="p-5 text-sm">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-semibold text-zinc-950">{formatTimestamp(run.finishedAt)}</p>
-                  <StatusPill label={run.ok ? "Completed" : "Needs review"} tone={run.ok ? "good" : "warn"} />
-                </div>
-                <p className="mt-2 text-zinc-700">{run.summary}</p>
-                <p className="mt-1 text-xs text-zinc-500">{run.steps.length} logged steps</p>
+                <details>
+                  <summary className="cursor-pointer list-none">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold text-zinc-950">{formatTimestamp(run.finishedAt)}</p>
+                      <StatusPill label={run.ok ? "Completed" : "Needs review"} tone={run.ok ? "good" : "warn"} />
+                    </div>
+                    <p className="mt-2 text-zinc-700">{run.summary}</p>
+                    <p className="mt-1 text-xs font-medium text-zinc-500">{run.steps.length} logged steps. Select to inspect.</p>
+                  </summary>
+                  <ol className="mt-4 space-y-3 border-t border-zinc-200 pt-4">
+                    {run.steps.map((step) => (
+                      <li key={step.id} className="grid gap-2 rounded-md bg-zinc-50 p-3 sm:grid-cols-[1fr_auto]">
+                        <div>
+                          <p className="font-semibold text-zinc-900">{step.title}</p>
+                          <p className="mt-1 text-xs leading-5 text-zinc-600">{step.detail}</p>
+                        </div>
+                        <StatusPill label={step.status === "succeeded" ? "Done" : "Failed"} tone={step.status === "succeeded" ? "muted" : "warn"} />
+                      </li>
+                    ))}
+                  </ol>
+                </details>
               </li>
             ))}
             {recoveryRuns.length === 0 ? (
@@ -357,13 +619,13 @@ export function TroubleshootingPanel() {
 
       <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-200 p-5">
-          <h3 className="text-lg font-semibold">Activity log</h3>
+          <h3 className="text-lg font-semibold">Troubleshooting activity</h3>
         </div>
         <ol className="divide-y divide-zinc-200">
-          {activity.map((item) => (
+          {troubleshootingActivity.map((item) => (
             <li key={item.id} className="grid gap-3 px-5 py-4 text-sm md:grid-cols-[180px_1fr_auto]">
               <div>
-                <p className="font-semibold text-zinc-950">{item.action}</p>
+                <p className="font-semibold text-zinc-950">{actionLabel(item.action)}</p>
                 <p className="mt-1 text-xs text-zinc-500">{formatTimestamp(item.timestamp)}</p>
               </div>
               <p className="leading-6 text-zinc-700">{item.message}</p>
@@ -372,8 +634,8 @@ export function TroubleshootingPanel() {
               </div>
             </li>
           ))}
-          {activity.length === 0 ? (
-            <li className="p-5 text-sm text-zinc-600">No activity recorded yet.</li>
+          {troubleshootingActivity.length === 0 ? (
+            <li className="p-5 text-sm text-zinc-600">No troubleshooting activity recorded yet.</li>
           ) : null}
         </ol>
       </section>
