@@ -1338,7 +1338,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#f3f6f8] text-zinc-950">
-      {selectedView === "dashboard" || selectedView === "device-health" ? <DashboardAutoRefresh /> : null}
+      <DashboardAutoRefresh />
       <div className="grid min-h-screen lg:grid-cols-[220px_minmax(0,1fr)]">
         <aside className="border-b border-cyan-200 bg-[radial-gradient(circle_at_top_left,rgba(94,234,212,0.34),transparent_44%),linear-gradient(180deg,#e4fbf7_0%,#f1fbff_48%,#ffffff_100%)] px-5 py-5 text-slate-950 shadow-[inset_-1px_0_0_rgba(20,184,166,0.2)] lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r lg:py-6">
           <div className="flex flex-wrap items-end justify-between gap-2 lg:block">

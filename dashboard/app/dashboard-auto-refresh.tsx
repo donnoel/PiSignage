@@ -7,6 +7,18 @@ type DashboardAutoRefreshProps = {
   intervalMs?: number;
 };
 
+function isEditingFormField(element: Element | null): boolean {
+  if (!(element instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (element.isContentEditable) {
+    return true;
+  }
+
+  return Boolean(element.closest("input, textarea, select"));
+}
+
 export function DashboardAutoRefresh({ intervalMs = 10_000 }: DashboardAutoRefreshProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -17,7 +29,7 @@ export function DashboardAutoRefresh({ intervalMs = 10_000 }: DashboardAutoRefre
   }, [isPending]);
 
   const refresh = useCallback(() => {
-    if (pendingRef.current || document.hidden) {
+    if (pendingRef.current || document.hidden || isEditingFormField(document.activeElement)) {
       return;
     }
 
