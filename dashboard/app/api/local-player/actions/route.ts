@@ -13,8 +13,6 @@ import { quoteRemoteShell, readPiConfig, runSsh } from "../../../lib/pi-local";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type PlayerAction = "recover" | "restart-vlc";
-
 function nowIso(): string {
   return new Date().toISOString();
 }

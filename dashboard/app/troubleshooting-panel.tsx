@@ -387,7 +387,6 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
   const recoveryRuns = data?.recoveryRuns ?? [];
   const latestRecovery = recoveryRuns[0] ?? null;
   const troubleshootingActivity = (data?.activity ?? []).filter(isTroubleshootingActivity).slice(0, 8);
-  const sshDiagnostic = diagnosticByLabel(diagnostics, "Pi SSH");
   const serviceDiagnostic = diagnosticByLabel(diagnostics, "VLC service");
   const playerDiagnostic = diagnosticByLabel(diagnostics, "Player status");
   const displayDiagnostic = diagnosticByLabel(diagnostics, "Display");

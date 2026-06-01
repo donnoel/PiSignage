@@ -141,21 +141,6 @@ function formatCount(count: number, noun: string): string {
   return `${count} ${count === 1 ? noun : `${noun}s`}`;
 }
 
-function formatDays(days: DayOption[], selected: number[]): string {
-  if (selected.length === 0) {
-    return "No days selected";
-  }
-
-  if (selected.length === 7) {
-    return "Every day";
-  }
-
-  return days
-    .filter((day) => selected.includes(day.value))
-    .map((day) => day.label)
-    .join(", ");
-}
-
 function playlistLabel(playlist: PlaylistSummary | null | undefined, playlistId: string | null): string {
   if (playlist) {
     return playlist.name;
@@ -268,17 +253,6 @@ export function SchedulingPanel() {
     setEndTime("17:00");
     setDaysOfWeek(defaultDays);
     setScreenIds([]);
-  }
-
-  function editSchedule(schedule: ScheduleRecord) {
-    const firstRule = schedule.rules[0];
-    setEditingId(schedule.id);
-    setName(schedule.name);
-    setTimezone(schedule.timezone);
-    setStartTime(firstRule?.startTime ?? "07:00");
-    setEndTime(firstRule?.endTime ?? "17:00");
-    setDaysOfWeek(firstRule?.daysOfWeek ?? defaultDays);
-    setScreenIds(schedule.screenIds);
   }
 
   function setHoursForScreen(screen: ScreenRecord) {
