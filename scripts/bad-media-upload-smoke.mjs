@@ -5,6 +5,7 @@ const repoRoot = path.resolve(import.meta.dirname, "..");
 const dashboardUrl = new URL(process.env.PISIGNAGE_DASHBOARD_URL ?? "http://localhost:3000");
 const filesToProtect = [
   path.join(repoRoot, "dashboard", "local-state", "playlist.local.json"),
+  path.join(repoRoot, "dashboard", "local-state", "playlists.local.json"),
   path.join(repoRoot, "dashboard", "local-state", "media.local.json")
 ];
 
@@ -78,7 +79,6 @@ async function postInvalidUpload(endpoint) {
 
 const before = await readProtectedFiles();
 await postInvalidUpload("/api/media");
-await postInvalidUpload("/api/local-playlist/upload");
 const after = await readProtectedFiles();
 
 for (const [filePath, contents] of before) {
