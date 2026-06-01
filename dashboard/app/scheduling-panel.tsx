@@ -315,15 +315,15 @@ export function SchedulingPanel() {
   const selectedFormScreens = screenIds.map((id) => screensById.get(id)).filter((screen): screen is ScreenRecord => Boolean(screen));
   const formTitle = editingId
     ? selectedFormScreens.length === 1
-      ? `Edit hours for ${selectedFormScreens[0].name}`
+      ? `${selectedFormScreens[0].name} hours`
       : selectedFormScreens.length > 1
-        ? `Edit hours for ${formatCount(selectedFormScreens.length, "screen")}`
-        : "Edit screen hours"
+        ? `Hours for ${formatCount(selectedFormScreens.length, "screen")}`
+        : "Hours editor"
     : selectedFormScreens.length === 1
-      ? `Set hours for ${selectedFormScreens[0].name}`
+      ? `${selectedFormScreens[0].name} hours`
       : selectedFormScreens.length > 1
-        ? `Set hours for ${formatCount(selectedFormScreens.length, "screen")}`
-        : "Select a screen to set hours";
+        ? `Hours for ${formatCount(selectedFormScreens.length, "screen")}`
+        : "Hours editor";
   const days = data?.days ?? [
     { label: "Sun", value: 0 },
     { label: "Mon", value: 1 },
@@ -587,7 +587,7 @@ export function SchedulingPanel() {
             <div className="flex flex-col gap-2 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h3 className="text-lg font-semibold">Screen plan</h3>
-                <p className="mt-1 text-sm text-zinc-600">Choose a screen, then set or edit its hours.</p>
+                <p className="mt-1 text-sm text-zinc-600">Per-screen hours, playlist, and publish target.</p>
               </div>
               <div className="self-start">
                 <StatusPill label={`${data?.screens.length ?? 0} screens`} tone="muted" />
@@ -600,33 +600,40 @@ export function SchedulingPanel() {
                 const playlist = screen.playlistId ? playlistsById.get(screen.playlistId) : null;
 
                 return (
-                  <li key={screen.id} className="grid gap-4 px-5 py-4 text-sm xl:grid-cols-[1fr_1fr_minmax(220px,auto)_auto]">
-                    <div className="min-w-0">
-                      <p className="font-semibold text-zinc-950">{screen.name}</p>
-                      <p className="mt-1 break-words text-zinc-600">{screen.location} / {screen.group}</p>
-                      <p className="mt-1 break-words text-xs text-zinc-500">{screenPublishTarget(screen, data?.scheduleSupport)}</p>
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold uppercase text-zinc-500">Playlist</p>
-                      <p className="mt-1 break-words font-semibold text-zinc-950">
-                        {playlistLabel(playlist, screen.playlistId)}
-                      </p>
-                      <p className="mt-1 break-words text-xs text-zinc-500">
-                        {playlistDetail(playlist, screen.playlistId)}
-                      </p>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <StatusPill label={stateLabel(state)} tone={state ? stateTone(state.state) : "muted"} />
+                  <li key={screen.id} className="grid gap-4 px-5 py-4 text-sm lg:grid-cols-[minmax(0,1fr)_auto]">
+                    <div className="min-w-0 space-y-3">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-zinc-950">{screen.name}</p>
+                          <p className="mt-1 break-words text-zinc-600">{screen.location} / {screen.group}</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                          <StatusPill label={stateLabel(state)} tone={state ? stateTone(state.state) : "muted"} />
+                          <StatusPill label={screenPublishTarget(screen, data?.scheduleSupport)} tone="muted" />
+                        </div>
                       </div>
-                      <p className="mt-2 break-words font-semibold text-zinc-950">
-                        {state?.scheduleName ?? "No schedule assigned"}
-                      </p>
-                      <p className="mt-1 break-words text-xs leading-5 text-zinc-500">
-                        {schedule
-                          ? `${scheduleWindow(schedule)} / ${scheduleDays(schedule, days)} / ${schedule.timezone}`
-                          : state?.detail ?? "No schedule state reported."}
-                      </p>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold uppercase text-zinc-500">Playlist</p>
+                          <p className="mt-1 break-words font-semibold text-zinc-950">
+                            {playlistLabel(playlist, screen.playlistId)}
+                          </p>
+                          <p className="mt-1 break-words text-xs text-zinc-500">
+                            {playlistDetail(playlist, screen.playlistId)}
+                          </p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold uppercase text-zinc-500">Hours</p>
+                          <p className="mt-1 break-words font-semibold text-zinc-950">
+                            {state?.scheduleName ?? "No schedule assigned"}
+                          </p>
+                          <p className="mt-1 break-words text-xs leading-5 text-zinc-500">
+                            {schedule
+                              ? `${scheduleWindow(schedule)} / ${scheduleDays(schedule, days)} / ${schedule.timezone}`
+                              : state?.detail ?? "No schedule state reported."}
+                          </p>
+                        </div>
+                      </div>
                     </div>
                     <div className="flex flex-wrap items-start gap-2 xl:justify-end">
                       <button
@@ -660,7 +667,7 @@ export function SchedulingPanel() {
             <div className="flex flex-col gap-2 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h3 className="text-lg font-semibold">Saved schedules</h3>
-                <p className="mt-1 text-sm text-zinc-600">Reusable windows created from screen rows. Exceptions and holiday rules are still deferred.</p>
+                <p className="mt-1 text-sm text-zinc-600">Reusable windows. Exceptions and holiday rules are deferred.</p>
               </div>
               <div className="self-start">
                 <StatusPill label={`${data?.schedules.length ?? 0} schedules`} tone="muted" />
@@ -714,7 +721,7 @@ export function SchedulingPanel() {
             <div>
               <h3 className="text-lg font-semibold">{formTitle}</h3>
               <p className="mt-1 text-sm leading-6 text-zinc-600">
-                Pick the on/off window. Beam saves it locally and publishes it to the configured Pi when applicable.
+                Choose days and on/off times.
               </p>
             </div>
             {editingId ? (
