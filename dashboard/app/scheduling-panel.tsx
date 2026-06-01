@@ -187,7 +187,7 @@ function screenPublishTarget(screen: ScreenRecord, support: ScheduleSupport | un
   }
 
   return screen.deviceHost && support.host && screen.deviceHost === support.host
-    ? `Publishes to ${support.host}`
+    ? "Live Pi"
     : "Inventory only";
 }
 
@@ -250,6 +250,7 @@ export function SchedulingPanel() {
   const unassignedCount = data?.screenStates.filter((state) => state.state === "unassigned").length ?? 0;
   const scheduledCount = (data?.screenStates.length ?? 0) - unassignedCount;
   const selectedFormScreens = screenIds.map((id) => screensById.get(id)).filter((screen): screen is ScreenRecord => Boolean(screen));
+  const isEditorOpen = selectedFormScreens.length > 0 || Boolean(editingId);
   const formTitle = editingId
     ? selectedFormScreens.length === 1
       ? `${selectedFormScreens[0].name} hours`
@@ -494,7 +495,7 @@ export function SchedulingPanel() {
         </dl>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <section className={isEditorOpen ? "grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]" : "grid gap-4"}>
         <div className="space-y-4">
           <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
             <div className="flex flex-col gap-2 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
@@ -505,48 +506,35 @@ export function SchedulingPanel() {
                 <StatusPill label={`${data?.screens.length ?? 0} screens`} tone="muted" />
               </div>
             </div>
-            <ol className="divide-y divide-zinc-200">
+            <ol className="max-h-[42rem] divide-y divide-zinc-200 overflow-auto">
               {(data?.screens ?? []).map((screen) => {
                 const state = screenStateById.get(screen.id);
                 const schedule = state?.scheduleId ? scheduleById.get(state.scheduleId) : null;
                 const playlist = screen.playlistId ? playlistsById.get(screen.playlistId) : null;
+                const isSelected = screenIds.includes(screen.id);
 
                 return (
-                  <li key={screen.id} className="grid gap-4 px-5 py-4 text-sm lg:grid-cols-[minmax(0,1fr)_auto]">
-                    <div className="min-w-0 space-y-3">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="min-w-0">
-                          <p className="font-semibold text-zinc-950">{screen.name}</p>
-                          <p className="mt-1 break-words text-zinc-600">{screen.location} / {screen.group}</p>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                          <StatusPill label={stateLabel(state)} tone={state ? stateTone(state.state) : "muted"} />
-                          <StatusPill label={screenPublishTarget(screen, data?.scheduleSupport)} tone="muted" />
-                        </div>
-                      </div>
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold uppercase text-zinc-500">Playlist</p>
-                          <p className="mt-1 break-words font-semibold text-zinc-950">
-                            {playlistLabel(playlist, screen.playlistId)}
-                          </p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold uppercase text-zinc-500">Hours</p>
-                          <p className="mt-1 break-words font-semibold text-zinc-950">
-                            {state?.scheduleName ?? "No schedule assigned"}
-                          </p>
-                          {schedule ? (
-                            <p className="mt-1 break-words text-xs leading-5 text-zinc-500">
-                              {scheduleWindow(schedule)} / {scheduleDays(schedule, days)}
-                            </p>
-                          ) : null}
-                        </div>
+                  <li
+                    key={screen.id}
+                    className={`grid gap-3 px-5 py-3 text-sm lg:grid-cols-[minmax(0,1fr)_minmax(14rem,18rem)_12rem] lg:items-center ${
+                      isSelected ? "bg-teal-50/60" : "bg-white"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p className="break-words font-semibold text-zinc-950">{screen.name}</p>
+                      <p className="mt-1 break-words text-zinc-600">{screen.location} / {screen.group}</p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="break-words font-semibold text-zinc-950">{playlistLabel(playlist, screen.playlistId)}</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <StatusPill label={stateLabel(state)} tone={state ? stateTone(state.state) : "muted"} />
+                        <StatusPill label={screenPublishTarget(screen, data?.scheduleSupport)} tone="muted" />
                       </div>
                     </div>
-                    <div className="flex flex-wrap items-start gap-2 xl:justify-end">
+                    <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                       <button
                         type="button"
+                        aria-pressed={isSelected}
                         onClick={() => (schedule ? editScheduleForScreen(screen, schedule) : setHoursForScreen(screen))}
                         className="min-h-9 rounded-md bg-teal-700 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-800"
                       >
@@ -619,130 +607,130 @@ export function SchedulingPanel() {
           </details>
         </div>
 
-        <form onSubmit={saveSchedule} className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-lg font-semibold">{formTitle}</h3>
-            </div>
-            {editingId ? (
+        {isEditorOpen ? (
+          <form onSubmit={saveSchedule} className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm xl:sticky xl:top-4 xl:self-start">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold">{formTitle}</h3>
+              </div>
               <button
                 type="button"
                 onClick={() => resetForm()}
                 className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-50"
               >
-                New
+                Close
               </button>
-            ) : null}
-          </div>
-
-          <div className="mt-4 grid gap-3">
-            <label className="grid gap-1 text-sm font-semibold text-zinc-800">
-              Name
-              <input
-                value={name}
-                onChange={(event) => setName(event.currentTarget.value)}
-                className="min-h-10 rounded-md border border-zinc-300 px-3 py-2 text-sm font-normal text-zinc-950"
-              />
-            </label>
-            <details className="rounded-md border border-zinc-200 bg-zinc-50 p-3">
-              <summary className="cursor-pointer text-sm font-semibold text-zinc-800">Timezone</summary>
-              <label className="mt-3 grid gap-1 text-sm font-semibold text-zinc-800">
-                Schedule timezone
-                <input
-                  value={timezone}
-                  onChange={(event) => setTimezone(event.currentTarget.value)}
-                  className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-normal text-zinc-950"
-                />
-              </label>
-            </details>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="grid gap-1 text-sm font-semibold text-zinc-800">
-                On
-                <input
-                  type="time"
-                  value={startTime}
-                  onChange={(event) => setStartTime(event.currentTarget.value)}
-                  className="min-h-10 rounded-md border border-zinc-300 px-3 py-2 text-sm font-normal text-zinc-950"
-                />
-              </label>
-              <label className="grid gap-1 text-sm font-semibold text-zinc-800">
-                Off
-                <input
-                  type="time"
-                  value={endTime}
-                  onChange={(event) => setEndTime(event.currentTarget.value)}
-                  className="min-h-10 rounded-md border border-zinc-300 px-3 py-2 text-sm font-normal text-zinc-950"
-                />
-              </label>
             </div>
 
-            <fieldset className="grid gap-2">
-              <legend className="text-sm font-semibold text-zinc-800">Days</legend>
-              <div className="flex flex-wrap gap-2">
-                {days.map((day) => (
-                  <label
-                    key={day.value}
-                    className={`inline-flex min-h-9 cursor-pointer items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ${
-                      daysOfWeek.includes(day.value)
-                        ? "bg-teal-700 text-white ring-teal-700"
-                        : "bg-white text-zinc-700 ring-zinc-200"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={daysOfWeek.includes(day.value)}
-                      onChange={() => toggleDay(day.value)}
-                      className="sr-only"
-                    />
-                    {day.label}
-                  </label>
-                ))}
+            <div className="mt-4 grid gap-3">
+              <label className="grid gap-1 text-sm font-semibold text-zinc-800">
+                Name
+                <input
+                  value={name}
+                  onChange={(event) => setName(event.currentTarget.value)}
+                  className="min-h-10 rounded-md border border-zinc-300 px-3 py-2 text-sm font-normal text-zinc-950"
+                />
+              </label>
+              <details className="rounded-md border border-zinc-200 bg-zinc-50 p-3">
+                <summary className="cursor-pointer text-sm font-semibold text-zinc-800">Timezone</summary>
+                <label className="mt-3 grid gap-1 text-sm font-semibold text-zinc-800">
+                  Schedule timezone
+                  <input
+                    value={timezone}
+                    onChange={(event) => setTimezone(event.currentTarget.value)}
+                    className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-normal text-zinc-950"
+                  />
+                </label>
+              </details>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="grid gap-1 text-sm font-semibold text-zinc-800">
+                  On
+                  <input
+                    type="time"
+                    value={startTime}
+                    onChange={(event) => setStartTime(event.currentTarget.value)}
+                    className="min-h-10 rounded-md border border-zinc-300 px-3 py-2 text-sm font-normal text-zinc-950"
+                  />
+                </label>
+                <label className="grid gap-1 text-sm font-semibold text-zinc-800">
+                  Off
+                  <input
+                    type="time"
+                    value={endTime}
+                    onChange={(event) => setEndTime(event.currentTarget.value)}
+                    className="min-h-10 rounded-md border border-zinc-300 px-3 py-2 text-sm font-normal text-zinc-950"
+                  />
+                </label>
               </div>
-            </fieldset>
 
-            <fieldset className="grid gap-2">
-              <legend className="text-sm font-semibold text-zinc-800">Screens</legend>
-              <div className="grid max-h-56 gap-2 overflow-auto rounded-md border border-zinc-200 bg-zinc-50 p-2">
-                {(data?.screens ?? []).map((screen) => {
-                  const playlist = screen.playlistId ? playlistsById.get(screen.playlistId) : null;
-
-                  return (
-                    <label key={screen.id} className="flex items-start gap-2 rounded-md bg-white p-2 text-sm ring-1 ring-zinc-200">
+              <fieldset className="grid gap-2">
+                <legend className="text-sm font-semibold text-zinc-800">Days</legend>
+                <div className="flex flex-wrap gap-2">
+                  {days.map((day) => (
+                    <label
+                      key={day.value}
+                      className={`inline-flex min-h-9 cursor-pointer items-center rounded-md px-3 py-2 text-sm font-semibold ring-1 ${
+                        daysOfWeek.includes(day.value)
+                          ? "bg-teal-700 text-white ring-teal-700"
+                          : "bg-white text-zinc-700 ring-zinc-200"
+                      }`}
+                    >
                       <input
                         type="checkbox"
-                        checked={screenIds.includes(screen.id)}
-                        onChange={() => toggleScreen(screen.id)}
-                        className="mt-1 h-4 w-4 accent-teal-700"
+                        checked={daysOfWeek.includes(day.value)}
+                        onChange={() => toggleDay(day.value)}
+                        className="sr-only"
                       />
-                      <span className="min-w-0">
-                        <span className="block break-words font-semibold text-zinc-950">{screen.name}</span>
-                        <span className="block break-words text-xs text-zinc-600">
-                          {playlistLabel(playlist, screen.playlistId)}
-                        </span>
-                      </span>
+                      {day.label}
                     </label>
-                  );
-                })}
-                {(data?.screens.length ?? 0) === 0 ? (
-                  <p className="p-2 text-sm text-zinc-600">Add screens before assigning schedules.</p>
-                ) : null}
-              </div>
-            </fieldset>
+                  ))}
+                </div>
+              </fieldset>
 
-            <button
-              type="submit"
-              disabled={isBusy || screenIds.length === 0}
-              className="min-h-11 rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
-            >
-              {busyAction === "save" ? "Saving..." : editingId ? "Save hours" : "Add hours"}
-            </button>
-            {message ? (
-              <p className="text-sm font-medium text-zinc-600" role="status" aria-live="polite">
-                {message}
-              </p>
-            ) : null}
-          </div>
-        </form>
+              <fieldset className="grid gap-2">
+                <legend className="text-sm font-semibold text-zinc-800">Screens</legend>
+                <div className="grid max-h-56 gap-2 overflow-auto rounded-md border border-zinc-200 bg-zinc-50 p-2">
+                  {(data?.screens ?? []).map((screen) => {
+                    const playlist = screen.playlistId ? playlistsById.get(screen.playlistId) : null;
+
+                    return (
+                      <label key={screen.id} className="flex items-start gap-2 rounded-md bg-white p-2 text-sm ring-1 ring-zinc-200">
+                        <input
+                          type="checkbox"
+                          checked={screenIds.includes(screen.id)}
+                          onChange={() => toggleScreen(screen.id)}
+                          className="mt-1 h-4 w-4 accent-teal-700"
+                        />
+                        <span className="min-w-0">
+                          <span className="block break-words font-semibold text-zinc-950">{screen.name}</span>
+                          <span className="block break-words text-xs text-zinc-600">
+                            {playlistLabel(playlist, screen.playlistId)}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                  {(data?.screens.length ?? 0) === 0 ? (
+                    <p className="p-2 text-sm text-zinc-600">Add screens before assigning schedules.</p>
+                  ) : null}
+                </div>
+              </fieldset>
+
+              <button
+                type="submit"
+                disabled={isBusy || screenIds.length === 0}
+                className="min-h-11 rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
+              >
+                {busyAction === "save" ? "Saving..." : editingId ? "Save hours" : "Add hours"}
+              </button>
+              {message ? (
+                <p className="text-sm font-medium text-zinc-600" role="status" aria-live="polite">
+                  {message}
+                </p>
+              ) : null}
+            </div>
+          </form>
+        ) : null}
       </section>
     </div>
   );
