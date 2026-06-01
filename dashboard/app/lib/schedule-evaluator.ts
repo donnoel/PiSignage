@@ -142,7 +142,7 @@ export function scheduleStateForScreen(
   if (active) {
     return {
       detail: `${scheduleWindowLabel(active)}. ${formatDays(active.rules[0]?.daysOfWeek ?? [])}.`,
-      label: "On now",
+      label: "Open now",
       scheduleId: active.id,
       scheduleName: active.name,
       screenId: screen.id,
@@ -154,7 +154,7 @@ export function scheduleStateForScreen(
     const next = assigned[0];
     return {
       detail: `${scheduleWindowLabel(next)}. ${formatDays(next.rules[0]?.daysOfWeek ?? [])}.`,
-      label: "Off now",
+      label: "Closed now",
       scheduleId: next.id,
       scheduleName: next.name,
       screenId: screen.id,
@@ -163,8 +163,8 @@ export function scheduleStateForScreen(
   }
 
   return {
-    detail: "No schedule assigned. Playback is not schedule-limited.",
-    label: "No schedule",
+    detail: "No hours set.",
+    label: "No hours set",
     scheduleId: null,
     scheduleName: null,
     screenId: screen.id,

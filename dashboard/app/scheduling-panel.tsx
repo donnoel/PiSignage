@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { StatusPill } from "./dashboard-ui";
 
-type Tone = "good" | "muted" | "warn";
+type Tone = "danger" | "good" | "muted" | "warn";
 
 type DayOption = {
   label: string;
@@ -62,6 +62,7 @@ type ScheduleSupport = {
   lastSuccessfulPublish: SchedulePublishSummary | null;
   pendingLocalChanges: boolean;
   piConfigured: boolean;
+  reachable: boolean;
 };
 
 type ScheduleResponse = {
@@ -94,14 +95,14 @@ function stateLabel(state: ScreenScheduleState | undefined): string {
   }
 
   if (state.state === "on") {
-    return "Window open";
+    return "Open now";
   }
 
   if (state.state === "off") {
-    return "Window closed";
+    return "Closed now";
   }
 
-  return "No schedule";
+  return "No hours set";
 }
 
 function supportTone(support: ScheduleSupport | undefined): Tone {
@@ -181,14 +182,19 @@ function namesForScreens(screenIds: string[], screensById: Map<string, ScreenRec
   return names.length ? names.join(", ") : "No screens assigned";
 }
 
-function screenPublishTarget(screen: ScreenRecord, support: ScheduleSupport | undefined): string {
+function screenPublishStatus(screen: ScreenRecord, support: ScheduleSupport | undefined): { label: string; tone: Tone } {
   if (!support?.piConfigured) {
-    return "Local only";
+    return { label: "Local only", tone: "muted" };
   }
 
-  return screen.deviceHost && support.host && screen.deviceHost === support.host
-    ? "Live Pi"
-    : "Inventory only";
+  const isLiveScreen = Boolean(screen.deviceHost && support.host && screen.deviceHost === support.host);
+  if (!isLiveScreen) {
+    return { label: "Inventory only", tone: "muted" };
+  }
+
+  return support.reachable
+    ? { label: "Live screen", tone: "good" }
+    : { label: "Screen down", tone: "danger" };
 }
 
 export function SchedulingPanel() {
@@ -512,6 +518,7 @@ export function SchedulingPanel() {
                 const schedule = state?.scheduleId ? scheduleById.get(state.scheduleId) : null;
                 const playlist = screen.playlistId ? playlistsById.get(screen.playlistId) : null;
                 const isSelected = screenIds.includes(screen.id);
+                const publishStatus = screenPublishStatus(screen, data?.scheduleSupport);
 
                 return (
                   <li
@@ -528,7 +535,7 @@ export function SchedulingPanel() {
                       <p className="break-words font-semibold text-zinc-950">{playlistLabel(playlist, screen.playlistId)}</p>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         <StatusPill label={stateLabel(state)} tone={state ? stateTone(state.state) : "muted"} />
-                        <StatusPill label={screenPublishTarget(screen, data?.scheduleSupport)} tone="muted" />
+                        <StatusPill label={publishStatus.label} tone={publishStatus.tone} />
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 lg:justify-end">

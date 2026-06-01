@@ -13,7 +13,7 @@ import {
 } from "../../lib/local-data-store";
 import { ensureInventorySeed } from "../../lib/local-inventory";
 import { readLivePlaylist, readPlaylistStore } from "../../lib/local-playlist";
-import { publishScheduleStoreToPi, readPiConfig } from "../../lib/pi-local";
+import { publishScheduleStoreToPi, readPiConfig, runSsh } from "../../lib/pi-local";
 import {
   dayOptions,
   isValidTime,
@@ -128,15 +128,31 @@ async function publishSchedules() {
   return publish;
 }
 
+async function checkPiReachable() {
+  const config = readPiConfig();
+
+  if (!config) {
+    return false;
+  }
+
+  try {
+    await runSsh(config, "true", { timeoutMs: 3_000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function scheduleResponse(publish?: Awaited<ReturnType<typeof publishSchedules>>) {
   await ensureLocalDataFoundation();
-  const [scheduleStore, settings, inventory, playlistStore, activityStore, piConfig] = await Promise.all([
+  const [scheduleStore, settings, inventory, playlistStore, activityStore, piConfig, piReachable] = await Promise.all([
     readScheduleStore(),
     readSettingsRecord(),
     inventoryForSchedules(),
     readPlaylistStore(),
     readActivityStore(),
-    Promise.resolve(readPiConfig())
+    Promise.resolve(readPiConfig()),
+    checkPiReachable()
   ]);
   const screenStates = inventory.screens.items.map((screen) =>
     scheduleStateForScreen(scheduleStore.items, screen)
@@ -200,7 +216,8 @@ async function scheduleResponse(publish?: Awaited<ReturnType<typeof publishSched
           }
         : null,
       pendingLocalChanges,
-      piConfigured: Boolean(piConfig)
+      piConfigured: Boolean(piConfig),
+      reachable: piReachable
     },
     schedules: scheduleStore.items,
     screens,

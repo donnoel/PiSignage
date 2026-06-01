@@ -1,5 +1,6 @@
-export function StatusPill({ label, tone }: { label: string; tone: "good" | "warn" | "muted" }) {
+export function StatusPill({ label, tone }: { label: string; tone: "danger" | "good" | "warn" | "muted" }) {
   const className = {
+    danger: "bg-rose-100 text-rose-800 ring-rose-200",
     good: "bg-emerald-100 text-emerald-800 ring-emerald-200",
     warn: "bg-amber-100 text-amber-900 ring-amber-200",
     muted: "bg-zinc-100 text-zinc-700 ring-zinc-200"
