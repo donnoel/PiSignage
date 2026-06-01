@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
+  appendActivityRecord,
   readDeviceStore,
   readScreenStore,
   writeDeviceStore,
@@ -154,6 +156,7 @@ export async function PATCH(request: Request) {
   try {
     const body = (await request.json()) as {
       id?: string;
+      name?: string;
       playlistId?: string | null;
       targetType?: "screen" | "device";
     };
@@ -169,14 +172,36 @@ export async function PATCH(request: Request) {
       if (index === -1) {
         return NextResponse.json({ error: "Screen was not found." }, { status: 404 });
       }
+      const nextName = typeof body.name === "string" ? body.name.trim() : undefined;
+      if (body.name !== undefined && !nextName) {
+        return NextResponse.json({ error: "Screen name is required." }, { status: 400 });
+      }
       const nextItems = [...store.items];
-      nextItems[index] = { ...nextItems[index], playlistId: body.playlistId ?? null, updatedAt: timestamp };
+      const previous = nextItems[index];
+      nextItems[index] = {
+        ...previous,
+        name: nextName ?? previous.name,
+        playlistId: body.playlistId === undefined ? previous.playlistId : body.playlistId,
+        updatedAt: timestamp
+      };
       await writeScreenStore({
         ...store,
         items: nextItems,
         updatedAt: timestamp,
         version: store.version + 1
       });
+      if (nextName && nextName !== previous.name) {
+        await appendActivityRecord({
+          id: randomUUID(),
+          action: "screen-rename",
+          actor: "local-operator",
+          entityId: previous.id,
+          entityType: "screen",
+          message: `Renamed screen ${previous.name} to ${nextName}.`,
+          result: "success",
+          timestamp
+        });
+      }
       return getInventoryResponse();
     }
 
@@ -186,7 +211,11 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Device was not found." }, { status: 404 });
     }
     const nextItems = [...store.items];
-    nextItems[index] = { ...nextItems[index], playlistId: body.playlistId ?? null, updatedAt: timestamp };
+    nextItems[index] = {
+      ...nextItems[index],
+      playlistId: body.playlistId === undefined ? nextItems[index].playlistId : body.playlistId,
+      updatedAt: timestamp
+    };
     await writeDeviceStore({
       ...store,
       items: nextItems,

@@ -59,6 +59,8 @@ type InventoryPanelProps = {
   statusTimestampLabel: string;
 };
 
+type ScreenActionTone = "danger" | "neutral" | "primary";
+
 type ScreenRow = {
   assignedPlaylist: PlaylistOption | null;
   assignedPlaylistId: string | null;
@@ -87,6 +89,17 @@ function compareText(left: string, right: string): number {
 
 function formatCount(count: number, label: string): string {
   return `${count} ${count === 1 ? label : `${label}s`}`;
+}
+
+function screenActionClass(tone: ScreenActionTone): string {
+  if (tone === "danger") {
+    return "border-rose-200 text-rose-700 hover:bg-rose-50";
+  }
+  if (tone === "primary") {
+    return "border-teal-200 text-teal-800 hover:bg-teal-50";
+  }
+
+  return "border-zinc-200 text-zinc-800 hover:bg-zinc-50";
 }
 
 function normalized(value: string | null | undefined): string {
@@ -563,6 +576,44 @@ export function ScreenDeviceInventoryPanel({
     }
   }
 
+  async function renameScreen(screen: ScreenRecord) {
+    if (isBusy) {
+      return;
+    }
+
+    const nextName = window.prompt("Rename screen", screen.name)?.trim();
+    if (!nextName || nextName === screen.name) {
+      return;
+    }
+
+    setIsSaving(true);
+    setMessage(`Renaming ${screen.name}...`);
+    try {
+      const response = await fetch("/api/local-inventory", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          id: screen.id,
+          name: nextName,
+          targetType: "screen"
+        })
+      });
+      const result = (await response.json()) as InventoryResponse;
+      if (!response.ok || result.error) {
+        throw new Error(result.error ?? "Could not rename this screen.");
+      }
+      setInventory(result);
+      setMessage(`${nextName} renamed.`);
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not rename this screen.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   async function savePlaylistAssignment(
     targetType: "screen" | "device",
     targetId: string,
@@ -746,38 +797,52 @@ export function ScreenDeviceInventoryPanel({
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <p className="font-semibold text-zinc-950">{piLabel(row.device, row.screen)}</p>
-                    <p className="mt-1 break-words text-xs text-zinc-600">
-                      {row.device?.host ?? "Add a local Pi"}
+                    <p className="break-words font-semibold text-zinc-950" title={piLabel(row.device, row.screen)}>
+                      {row.device?.host ?? "Add device"}
                     </p>
                   </td>
                   <td className="px-4 py-3">
-                    <p className="font-semibold text-zinc-950">{row.lastSeenAge}</p>
-                    <p className="mt-1 text-xs text-zinc-600">{row.lastSeenFull}</p>
+                    <p className="font-semibold text-zinc-950" title={row.lastSeenFull}>{row.lastSeenAge}</p>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-2">
                       <a
                         href={`/?view=device-health&screen=${encodeURIComponent(row.screen.id)}`}
-                        className="min-h-9 rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-50"
+                        title="Status"
+                        aria-label={`Open status for ${row.screen.name}`}
+                        className={`inline-flex h-10 w-10 items-center justify-center rounded-md border bg-white text-base font-semibold ${screenActionClass("neutral")}`}
                       >
-                        Status
+                        i
                       </a>
                       {row.assignedPlaylistId ? (
                         <a
                           href={`/?view=playlist&playlist=${encodeURIComponent(row.assignedPlaylistId)}`}
-                          className="min-h-9 rounded-md border border-teal-200 bg-white px-3 py-2 text-xs font-semibold text-teal-800 hover:bg-teal-50"
+                          title="Playlist"
+                          aria-label={`Open playlist for ${row.screen.name}`}
+                          className={`inline-flex h-10 w-10 items-center justify-center rounded-md border bg-white text-base font-semibold ${screenActionClass("primary")}`}
                         >
-                          Playlist
+                          ≡
                         </a>
                       ) : null}
                       <button
                         type="button"
+                        onClick={() => void renameScreen(row.screen)}
+                        disabled={isBusy}
+                        title="Rename"
+                        aria-label={`Rename ${row.screen.name}`}
+                        className={`inline-flex h-10 w-10 items-center justify-center rounded-md border bg-white text-base font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${screenActionClass("neutral")}`}
+                      >
+                        ✎
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => void removeInventory("screen", row.screen.id, row.screen.name)}
                         disabled={isBusy}
-                        className="min-h-9 rounded-md border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        title="Remove"
+                        aria-label={`Remove ${row.screen.name}`}
+                        className={`inline-flex h-10 w-10 items-center justify-center rounded-md border bg-white text-lg font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${screenActionClass("danger")}`}
                       >
-                        Remove
+                        ×
                       </button>
                     </div>
                   </td>
