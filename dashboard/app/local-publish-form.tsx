@@ -55,7 +55,7 @@ export function LocalPublishForm({ assetCount, playlistId }: LocalPublishFormPro
       }
 
       const publishMessage = result.piPublish?.message ?? "Publish saved.";
-      setMessage(result.piPublish?.ok ? "Published." : publishMessage);
+      setMessage(result.piPublish?.ok ? "Sent." : publishMessage);
       setMessageKind(result.piPublish && !result.piPublish.ok ? "warning" : "success");
       startTransition(() => router.refresh());
     } catch (error) {

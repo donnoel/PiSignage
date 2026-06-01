@@ -27,7 +27,7 @@ function savedMessage(piPublish: PlaylistEditResponse["piPublish"]): string {
   }
 
   if (piPublish.ok) {
-    return "Saved locally and sent to the assigned Pi.";
+    return "Saved locally and sent to the screen.";
   }
 
   return `Saved locally. ${piPublish.message}`;

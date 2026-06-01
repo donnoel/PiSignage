@@ -215,12 +215,6 @@ function matchesFolderFilter(item: MediaItem, folderFilter: string): boolean {
   if (folderFilter === "unfiled") {
     return !item.folderId;
   }
-  if (folderFilter === "playlist") {
-    return isInPlaylist(item);
-  }
-  if (folderFilter === "review") {
-    return !playbackSafety(item).canUseInPlaylist;
-  }
 
   const folderId = selectedCustomFolderId(folderFilter);
   return folderId ? item.folderId === folderId : true;
@@ -732,11 +726,20 @@ export function MediaStorePanel() {
               <div className="mt-2 flex flex-wrap gap-2">
                 {renderFolderButton("All media", items.length, "all")}
                 {renderFolderButton("Unfiled", unfiledItemCount, "unfiled")}
-                {renderFolderButton("In playlist", playlistItemCount, "playlist")}
-                {renderFolderButton("Review", reviewItemCount, "review")}
                 {folders.map((folder) =>
                   renderFolderButton(folder.name, folderCounts.get(folder.id) ?? 0, `${folderFilterPrefix}${folder.id}`)
                 )}
+                {reviewItemCount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setSafetyFilter("review")}
+                    aria-pressed={safetyFilter === "review"}
+                    className="flex min-h-10 max-w-full items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-left text-sm font-semibold text-amber-950 ring-1 ring-amber-200"
+                  >
+                    <span className="truncate">Needs attention</span>
+                    <span className="shrink-0 text-xs text-amber-700">{reviewItemCount}</span>
+                  </button>
+                ) : null}
               </div>
             </div>
 

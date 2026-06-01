@@ -98,6 +98,14 @@ type PublishStatus = {
   timestamp: string;
 };
 
+type StatusTone = "good" | "warn" | "muted";
+
+type PlaylistSyncState = {
+  detail: string;
+  label: string;
+  tone: StatusTone;
+};
+
 const execTimeoutMs = 4_000;
 const staleStatusThresholdMs = 45_000;
 const staleHeartbeatThresholdMs = 120_000;
@@ -680,43 +688,43 @@ async function loadDashboardState(selectedPlaylistId?: string | null): Promise<D
   return { heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi };
 }
 
-function syncState(localVersion: number, piVersion: number | undefined, piReachable: boolean) {
+function syncState(localVersion: number, piVersion: number | undefined, piReachable: boolean): PlaylistSyncState {
   if (!piReachable) {
     return {
-      detail: "Beam cannot reach the Pi right now. The last published playlist remains saved locally.",
+      detail: "Beam cannot reach the screen right now. The last sent playlist remains saved locally.",
       label: "Waiting",
-      tone: "muted" as const
+      tone: "muted"
     };
   }
 
   if (typeof piVersion !== "number") {
     return {
-      detail: "Waiting for screen sync status.",
-      label: "Unknown",
-      tone: "warn" as const
+      detail: "Waiting for the screen to report what it has.",
+      label: "Waiting for screen",
+      tone: "warn"
     };
   }
 
   if (piVersion === localVersion) {
     return {
-      detail: "The assigned Pi reports the latest playlist.",
-      label: "In sync",
-      tone: "good" as const
+      detail: "The screen has this version.",
+      label: "Screen current",
+      tone: "good"
     };
   }
 
   if (piVersion < localVersion) {
     return {
-      detail: "The assigned Pi has not reported these changes yet.",
-      label: "Pi behind",
-      tone: "warn" as const
+      detail: "The screen has not confirmed these changes yet.",
+      label: "Needs publish",
+      tone: "warn"
     };
   }
 
   return {
-    detail: "The assigned Pi is reporting a different playlist than this dashboard has saved.",
+    detail: "The screen is reporting a different version than Beam has saved.",
     label: "Mismatch",
-    tone: "warn" as const
+    tone: "warn"
   };
 }
 
@@ -748,15 +756,7 @@ function publishStateLabel(publishStatus: PublishStatus | null): string {
     return "Not published";
   }
 
-  return publishStatus.ok ? "Published" : "Needs attention";
-}
-
-function publishStateTone(publishStatus: PublishStatus | null): "good" | "warn" | "muted" {
-  if (!publishStatus) {
-    return "muted";
-  }
-
-  return publishStatus.ok ? "good" : "warn";
+  return publishStatus.ok ? "Sent" : "Publish failed";
 }
 
 function shortPublishDetail(publishStatus: PublishStatus | null): string {
@@ -767,23 +767,60 @@ function shortPublishDetail(publishStatus: PublishStatus | null): string {
   return publishStatus.ok ? `Sent ${formatTimestamp(publishStatus.timestamp)}` : "Needs attention";
 }
 
-function shortScreenDetail(
-  playlistSyncState: { detail: string; label: string; tone: "good" | "warn" | "muted" },
+function playlistLiveStatus(
+  playlistSyncState: PlaylistSyncState,
+  publishStatus: PublishStatus | null,
   assignedScreensLabel: string
-): string {
+): PlaylistSyncState {
   if (assignedScreensLabel === "No screens assigned") {
-    return "Choose a screen before publishing.";
+    return {
+      detail: "Choose a screen before this playlist can go live.",
+      label: "No screen",
+      tone: "muted"
+    };
+  }
+
+  if (publishStatus && !publishStatus.ok) {
+    return {
+      detail: "The last publish did not complete.",
+      label: "Publish failed",
+      tone: "warn"
+    };
   }
 
   if (playlistSyncState.tone === "good") {
-    return "Screens are up to date.";
+    return {
+      detail: "Live on the assigned screen.",
+      label: "Live",
+      tone: "good"
+    };
   }
 
   if (playlistSyncState.label === "Not live") {
-    return "Publish when ready.";
+    if (publishStatus?.ok) {
+      return {
+        detail: "Sent, but the screen has not confirmed it yet.",
+        label: "Sent",
+        tone: "muted"
+      };
+    }
+
+    return {
+      detail: "Not sent to a screen yet.",
+      label: "Not published",
+      tone: "muted"
+    };
   }
 
-  return playlistSyncState.detail;
+  return playlistSyncState;
+}
+
+function shortScreenDetail(playlistLiveState: PlaylistSyncState): string {
+  if (playlistLiveState.tone === "good") {
+    return "Screen is current.";
+  }
+
+  return playlistLiveState.detail;
 }
 
 type EvidenceItem = {
@@ -1047,6 +1084,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const assignedScreens = playlistScreens(playlist.playlistId);
   const assignedScreensLabel = nameList(assignedScreens, (screen) => screen.name, "No screens assigned");
+  const selectedPlaylistLiveState = playlistLiveStatus(
+    playlistSyncState,
+    publishStatusForSelected,
+    assignedScreensLabel
+  );
   const playlistAssetFileNames = playlist.assets.map((asset) => fileNameFromUri(asset.uri));
   const attentionItems: AttentionItem[] = [];
 
@@ -1658,6 +1700,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   const rowScreensLabel = nameList(rowScreens, (screen) => screen.name, "No screens assigned");
                   const rowPublishStatus = publishStatusForPlaylist(option);
                   const rowSyncState = syncStateForPlaylist(option);
+                  const rowLiveState = playlistLiveStatus(rowSyncState, rowPublishStatus, rowScreensLabel);
                   const isSelected = option.playlistId === playlist.playlistId;
 
                   return (
@@ -1676,10 +1719,14 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                           <p className="truncate font-semibold" title={option.name}>{option.name}</p>
                           <p className="mt-1 text-zinc-600">{option.assets.length} items · {formatDuration(option.assets)}</p>
                         </div>
-                        <StatusPill label={isSelected ? "Editing" : publishStateLabel(rowPublishStatus)} tone={isSelected ? "good" : publishStateTone(rowPublishStatus)} />
+                        <div className="flex flex-col items-end gap-2">
+                          {isSelected ? <StatusPill label="Open" tone="good" /> : null}
+                          <StatusPill label={rowLiveState.label} tone={rowLiveState.tone} />
+                        </div>
                       </div>
                       <p className="mt-3 truncate text-zinc-700" title={rowScreensLabel}>{rowScreensLabel}</p>
-                      <p className="mt-1 text-xs text-zinc-500">{rowSyncState.tone === "good" ? "Up to date" : shortPublishDetail(rowPublishStatus)}</p>
+                      <p className="mt-1 text-xs text-zinc-500">{rowLiveState.detail}</p>
+                      <p className="mt-1 text-xs text-zinc-500">{shortPublishDetail(rowPublishStatus)}</p>
                     </a>
                   );
                 })}
@@ -1689,13 +1736,14 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-teal-700">Now editing</p>
+                  <p className="text-sm font-semibold text-teal-700">Open playlist</p>
                   <h3 className="mt-1 text-2xl font-semibold">{playlist.name}</h3>
                   <p className="mt-1 text-sm text-zinc-600">
                     {playlist.assets.length} items · {totalDuration} · {assignedScreens.length === 0 ? "no screens yet" : assignedScreensLabel}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2 sm:justify-end">
+                  <StatusPill label={selectedPlaylistLiveState.label} tone={selectedPlaylistLiveState.tone} />
                   <StatusPill label={`${playlist.assets.length} items`} tone="muted" />
                   <StatusPill label={totalDuration} tone="muted" />
                   <StatusPill label={assignedScreens.length === 0 ? "No screens" : "Has screens"} tone={assignedScreens.length === 0 ? "warn" : "good"} />
@@ -1785,9 +1833,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h3 className="text-lg font-semibold">Publish</h3>
-                      <p className="mt-1 text-sm text-zinc-600">{shortScreenDetail(playlistSyncState, assignedScreensLabel)}</p>
+                      <p className="mt-1 text-sm text-zinc-600">{shortScreenDetail(selectedPlaylistLiveState)}</p>
                     </div>
-                    <StatusPill label={playlistSyncState.label} tone={playlistSyncState.tone} />
+                    <StatusPill label={selectedPlaylistLiveState.label} tone={selectedPlaylistLiveState.tone} />
                   </div>
                   <dl className="mt-4 grid gap-2 text-sm">
                     <div className="rounded-md bg-zinc-50 p-3">

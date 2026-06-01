@@ -21,14 +21,6 @@ type ScreenRecord = {
   playlistId: string | null;
 };
 
-type DeviceRecord = {
-  host: string;
-  id: string;
-  name: string;
-  playlistId?: string | null;
-  screenId: string | null;
-};
-
 type MediaListResponse = {
   error?: string;
   items: MediaItem[];
@@ -38,7 +30,6 @@ type MediaListResponse = {
 };
 
 type AssignmentResponse = {
-  devices: DeviceRecord[];
   error?: string;
   playlistId: string;
   screens: ScreenRecord[];
@@ -69,7 +60,7 @@ function savedMessage(piPublish: PlaylistActionResponse["piPublish"]): string {
   }
 
   if (piPublish.ok) {
-    return "Added to playlist and sent to the assigned Pi.";
+    return "Added to playlist and sent to the screen.";
   }
 
   return `Added to playlist. ${piPublish.message}`;
@@ -183,13 +174,13 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
     }
   }
 
-  async function saveAssignment(targetType: "screen" | "device", targetId: string, assigned: boolean) {
+  async function saveScreenAssignment(targetId: string, assigned: boolean) {
     if (isBusy) {
       return;
     }
 
     setIsSaving(true);
-    setAssignmentMessage(`Saving ${targetType} assignment...`);
+    setAssignmentMessage("Saving screen...");
     try {
       const response = await fetch("/api/local-playlist/assign", {
         method: "POST",
@@ -200,7 +191,7 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
           assigned,
           playlistId,
           targetId,
-          targetType
+          targetType: "screen"
         })
       });
       const result = (await response.json()) as AssignmentResponse;
@@ -278,11 +269,10 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
 
       <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold">Plays on</h3>
+          <h3 className="text-lg font-semibold">Screen</h3>
         </div>
 
         <div className="mt-4 space-y-3">
-          <h4 className="text-sm font-semibold text-zinc-500">Screens</h4>
           {(assignments?.screens ?? []).map((screen) => {
             const assigned = screen.playlistId === playlistId;
             return (
@@ -292,7 +282,7 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
                   checked={assigned}
                   disabled={isBusy}
                   onChange={(event) => {
-                    void saveAssignment("screen", screen.id, event.currentTarget.checked);
+                    void saveScreenAssignment(screen.id, event.currentTarget.checked);
                   }}
                   className="mt-1 h-4 w-4 accent-teal-700"
                 />
@@ -304,34 +294,7 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
             );
           })}
           {(assignments?.screens ?? []).length === 0 ? (
-            <p className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-600">No screens recorded.</p>
-          ) : null}
-        </div>
-
-        <div className="mt-5 space-y-3">
-          <h4 className="text-sm font-semibold text-zinc-500">Devices</h4>
-          {(assignments?.devices ?? []).map((device) => {
-            const assigned = (device.playlistId ?? null) === playlistId;
-            return (
-              <label key={device.id} className="flex items-start gap-3 rounded-md border border-zinc-200 bg-zinc-50 p-3">
-                <input
-                  type="checkbox"
-                  checked={assigned}
-                  disabled={isBusy}
-                  onChange={(event) => {
-                    void saveAssignment("device", device.id, event.currentTarget.checked);
-                  }}
-                  className="mt-1 h-4 w-4 accent-teal-700"
-                />
-                <span>
-                  <span className="block font-semibold text-zinc-950">{device.name}</span>
-                  <span className="block text-sm text-zinc-600">{device.host}</span>
-                </span>
-              </label>
-            );
-          })}
-          {(assignments?.devices ?? []).length === 0 ? (
-            <p className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-600">No devices recorded.</p>
+            <p className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-600">No screen recorded.</p>
           ) : null}
         </div>
 
