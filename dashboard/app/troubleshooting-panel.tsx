@@ -217,6 +217,27 @@ function isTroubleshootingActivity(item: ActivityRecord): boolean {
   return /publish|recover|recovery|restart|player|vlc|troubleshoot/i.test(`${item.action} ${item.message}`);
 }
 
+function dedupeActivity(items: ActivityRecord[]): ActivityRecord[] {
+  const seen = new Set<string>();
+  const deduped: ActivityRecord[] = [];
+
+  for (const item of items) {
+    const key = `${item.action}|${item.message}`;
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    deduped.push(item);
+  }
+
+  return deduped;
+}
+
+function screenCountLabel(count: number): string {
+  return `${count} ${count === 1 ? "screen" : "screens"}`;
+}
+
 function recoveryTone(run: RecoveryRun | null): "good" | "muted" | "warn" {
   if (!run) {
     return "muted";
@@ -386,7 +407,7 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
   const logs = data?.pi.logs ?? "No logs loaded.";
   const recoveryRuns = data?.recoveryRuns ?? [];
   const latestRecovery = recoveryRuns[0] ?? null;
-  const troubleshootingActivity = (data?.activity ?? []).filter(isTroubleshootingActivity).slice(0, 8);
+  const troubleshootingActivity = dedupeActivity((data?.activity ?? []).filter(isTroubleshootingActivity)).slice(0, 8);
   const serviceDiagnostic = diagnosticByLabel(diagnostics, "VLC service");
   const playerDiagnostic = diagnosticByLabel(diagnostics, "Player status");
   const displayDiagnostic = diagnosticByLabel(diagnostics, "Display");
@@ -473,10 +494,10 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
           <div>
             <h2 className="text-xl font-semibold">Screen scope</h2>
             <p className="mt-1 text-sm leading-6 text-zinc-600">
-              Find a screen first. The list stays scrollable as inventory grows; live recovery evidence follows the selected screen.
+              Select the screen to inspect or recover. Evidence and actions apply to the selected Pi.
             </p>
           </div>
-          <StatusPill label={`${screens.length} screens`} tone="muted" />
+          <StatusPill label={screenCountLabel(screens.length)} tone="muted" />
         </div>
         <div className="grid gap-4 p-5 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div>
@@ -679,7 +700,7 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
                 type="button"
                 disabled={!selectedHasLiveDiagnostics || isBusy}
                 onClick={() => void runAction("restart")}
-                className="min-h-10 rounded-md bg-zinc-900 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
+                className="min-h-10 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {busyAction === "restart" ? "Restarting..." : "Restart VLC"}
               </button>

@@ -874,6 +874,10 @@ function normalizeIdentity(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
 
+function publishRequiredDetail(localVersion: number, reportedVersion: number | string): string {
+  return `Beam v${localVersion}; Pi v${reportedVersion}. Publish required.`;
+}
+
 function fleetCommandRows({
   inventory,
   isPlaying,
@@ -949,17 +953,17 @@ function fleetCommandRows({
         syncLabel = "Unknown";
       } else if (assignedPlaylist && livePlaylistId !== assignedPlaylist.playlistId) {
         const reportedPlaylist = livePlaylistId ? playlistsById.get(livePlaylistId)?.name ?? "another playlist" : "another playlist";
-        syncDetail = `Assigned to ${assignedPlaylist.name}, but the screen reports ${reportedPlaylist}.`;
-        syncLabel = "Sync needed";
+        syncDetail = `Beam expects ${assignedPlaylist.name}; Pi reports ${reportedPlaylist}. Publish required.`;
+        syncLabel = "Publish required";
       } else if (assignedPlaylist && livePlaylistVersion === assignedPlaylist.version) {
         syncDetail = `${assignedPlaylist.name} is on the screen.`;
         syncLabel = "In sync";
         syncTone = "good";
       } else if (assignedPlaylist && typeof livePlaylistVersion === "number" && livePlaylistVersion < assignedPlaylist.version) {
-        syncDetail = `Beam has update ${assignedPlaylist.version}; the screen reports update ${livePlaylistVersion}.`;
-        syncLabel = "Sync needed";
+        syncDetail = publishRequiredDetail(assignedPlaylist.version, livePlaylistVersion);
+        syncLabel = "Publish required";
       } else if (assignedPlaylist) {
-        syncDetail = `The screen reports update ${livePlaylistVersion ?? "unknown"}; Beam has update ${assignedPlaylist.version}.`;
+        syncDetail = `Beam v${assignedPlaylist.version}; Pi v${livePlaylistVersion ?? "unknown"}. Review required.`;
         syncLabel = "Review";
       }
 
@@ -989,7 +993,7 @@ function fleetCommandRows({
         id: device.id,
         isLive,
         location: linkedScreen?.location ?? device.location,
-        name: device.name,
+        name: linkedScreen ? `${linkedScreen.name} Pi` : device.name,
         needsAttention,
         playbackLabel: playback,
         screenId: linkedScreen?.id ?? device.screenId ?? device.id,

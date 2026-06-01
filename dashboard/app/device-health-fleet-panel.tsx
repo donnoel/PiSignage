@@ -101,6 +101,10 @@ function deviceMatchesLiveHost(device: DeviceRecord, liveHost: string | null): b
   return Boolean(liveHost && normalize(device.host) === normalize(liveHost));
 }
 
+function publishRequiredDetail(localVersion: number, reportedVersion: number): string {
+  return `Beam v${localVersion}; Pi v${reportedVersion}. Publish required.`;
+}
+
 function plainPlaybackLabel(value: string): string {
   if (value === "Stale") {
     return "Old report";
@@ -227,19 +231,19 @@ export function DeviceHealthFleetPanel({
           syncTone = "warn";
         } else if (isLive && liveReachable && livePlaylistVersion !== null && livePlaylistId) {
           if (livePlaylistId !== assignedPlaylist.playlistId) {
-            syncLabel = "Sync needed";
-            syncDetail = `Assigned to ${assignedPlaylist.name}, but the screen reported another playlist.`;
+            syncLabel = "Publish required";
+            syncDetail = `Beam expects ${assignedPlaylist.name}; Pi reports another playlist. Publish required.`;
             syncTone = "warn";
           } else if (livePlaylistVersion === assignedPlaylist.version) {
             syncLabel = "Up to date";
             syncDetail = `${assignedPlaylist.name} is on the screen.`;
             syncTone = "good";
           } else {
-            syncLabel = livePlaylistVersion < assignedPlaylist.version ? "Sync needed" : "Review";
+            syncLabel = livePlaylistVersion < assignedPlaylist.version ? "Publish required" : "Review";
             syncDetail =
               livePlaylistVersion < assignedPlaylist.version
-                ? "Beam has a newer saved update than the screen has reported."
-                : "The screen reported a newer playlist update than Beam has saved.";
+                ? publishRequiredDetail(assignedPlaylist.version, livePlaylistVersion)
+                : `Beam v${assignedPlaylist.version}; Pi v${livePlaylistVersion}. Review required.`;
             syncTone = "warn";
           }
         }
@@ -420,7 +424,7 @@ export function DeviceHealthFleetPanel({
     { count: attentionCount, key: "attention", label: "Needs attention" },
     { count: offlineCount, key: "offline", label: "Offline" },
     { count: staleCount, hideWhenZero: true, key: "stale", label: "Stale report" },
-    { count: syncIssueCount, hideWhenZero: true, key: "sync", label: "Sync needed" },
+    { count: syncIssueCount, hideWhenZero: true, key: "sync", label: "Publish required" },
     { count: waitingCount, key: "waiting", label: "Waiting" }
   ];
   const filters = filterOptions.filter((item) => !item.hideWhenZero || item.count > 0);

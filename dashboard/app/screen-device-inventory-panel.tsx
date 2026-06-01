@@ -132,6 +132,10 @@ function hasLocalAddress(device: DeviceRecord): boolean {
   return Boolean(device.host.trim()) && normalized(device.host) !== "not configured";
 }
 
+function publishRequiredDetail(localVersion: number, reportedVersion: number): string {
+  return `Beam v${localVersion}; Pi v${reportedVersion}. Publish required.`;
+}
+
 function plainPlaybackLabel(value: string): string {
   if (value === "Stale") {
     return "Old report";
@@ -357,8 +361,8 @@ export function ScreenDeviceInventoryPanel({
 
     if (livePlaylistId !== assignedPlaylist.playlistId) {
       return {
-        detail: `Assigned to ${assignedPlaylist.name}, but the screen reports ${playlistName(livePlaylistId)}.`,
-        label: "Sync needed",
+        detail: `Beam expects ${assignedPlaylist.name}; Pi reports ${playlistName(livePlaylistId)}. Publish required.`,
+        label: "Publish required",
         tone: "warn"
       };
     }
@@ -373,14 +377,14 @@ export function ScreenDeviceInventoryPanel({
 
     if (livePlaylistVersion < assignedPlaylist.version) {
       return {
-        detail: `Beam has update ${assignedPlaylist.version}; the screen reports update ${livePlaylistVersion}.`,
-        label: "Sync needed",
+        detail: publishRequiredDetail(assignedPlaylist.version, livePlaylistVersion),
+        label: "Publish required",
         tone: "warn"
       };
     }
 
     return {
-      detail: `The screen reports update ${livePlaylistVersion}; Beam has update ${assignedPlaylist.version}.`,
+      detail: `Beam v${assignedPlaylist.version}; Pi v${livePlaylistVersion}. Review required.`,
       label: "Review",
       tone: "warn"
     };

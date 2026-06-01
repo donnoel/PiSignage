@@ -36,6 +36,15 @@ function cleanTroubleshootingOutput(value: string): string {
   return markerIndex === -1 ? value : value.slice(markerIndex);
 }
 
+function normalizePiLogs(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "-- No entries --" || trimmed === "logs-unavailable") {
+    return "No recent Pi log entries were reported.";
+  }
+
+  return trimmed;
+}
+
 function statusFromService(value: string): DiagnosticItem["status"] {
   return value.includes("ActiveState=active") ? "ok" : "warning";
 }
@@ -120,7 +129,7 @@ async function readPiDiagnostics() {
       configured,
       diagnostics,
       host: config.host,
-      logs: trimmedOrUnavailable(logs, "No recent VLC journal entries reported."),
+      logs: normalizePiLogs(logs),
       playerUrl,
       reachable: true,
       sshCommand: `ssh ${config.user}@${config.host}`,
