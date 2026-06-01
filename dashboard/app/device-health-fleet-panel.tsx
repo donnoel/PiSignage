@@ -164,6 +164,7 @@ export function DeviceHealthFleetPanel({
 
   const rows = useMemo<RowState[]>(() => {
     return devices
+      .filter((device) => screensByDeviceId.has(device.id))
       .slice()
       .sort(
         (a, b) =>

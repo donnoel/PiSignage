@@ -266,14 +266,8 @@ export async function removeScreen(screenId: string): Promise<void> {
     version: screenStore.version + 1
   });
 
-  const nextDevices = deviceStore.items.map((device) =>
-    device.screenId === screenId
-      ? {
-          ...device,
-          screenId: null,
-          updatedAt: timestamp
-        }
-      : device
+  const nextDevices = deviceStore.items.filter(
+    (device) => device.screenId !== screenId && device.id !== target.deviceId
   );
   await writeDeviceStore({
     ...deviceStore,
@@ -288,7 +282,7 @@ export async function removeScreen(screenId: string): Promise<void> {
     actor: "local-operator",
     entityId: screenId,
     entityType: "screen",
-    message: `Removed screen ${target.name}.`,
+    message: `Removed screen ${target.name} and its linked Pi record.`,
     result: "success",
     timestamp
   });

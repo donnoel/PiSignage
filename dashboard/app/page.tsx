@@ -912,6 +912,7 @@ function fleetCommandRows({
   }
 
   return inventory.devices.items
+    .filter((device) => screensByDeviceId.has(device.id))
     .slice()
     .sort(
       (left, right) =>

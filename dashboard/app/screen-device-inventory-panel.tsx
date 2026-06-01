@@ -545,7 +545,7 @@ export function ScreenDeviceInventoryPanel({
 
     const confirmed = window.confirm(
       targetType === "screen"
-        ? `Remove ${label}? Media, playlists, and linked Pi records stay saved.`
+        ? `Remove ${label}? Its linked Pi record will be removed too. Media and playlists stay saved.`
         : `Remove ${label}? Screens, media, and playlists stay saved.`
     );
     if (!confirmed) {
