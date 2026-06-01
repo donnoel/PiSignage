@@ -12,6 +12,8 @@ type DayOption = {
 };
 
 type ScreenRecord = {
+  deviceHost: string | null;
+  deviceName: string | null;
   group: string;
   id: string;
   location: string;
@@ -128,7 +130,7 @@ function supportLabel(support: ScheduleSupport | undefined): string {
   }
 
   if (support.lastSuccessfulPublish) {
-    return "Published to Pi";
+    return "Published";
   }
 
   return "Ready to publish";
@@ -148,7 +150,7 @@ function supportDetail(support: ScheduleSupport | undefined): string {
   }
 
   if (support.lastSuccessfulPublish) {
-    return `Last successful Pi schedule publish was ${formatTimestamp(support.lastSuccessfulPublish.timestamp)}.`;
+    return `Last successful publish to the configured Pi${support.host ? ` at ${support.host}` : ""} was ${formatTimestamp(support.lastSuccessfulPublish.timestamp)}.`;
   }
 
   return `Pi ${support.host ?? "connection"} is configured. Saving a schedule will publish it and enable the local schedule timer.`;
@@ -242,6 +244,16 @@ function playlistsForScreens(
   return names.size ? Array.from(names).join(", ") : "No playlists assigned";
 }
 
+function screenPublishTarget(screen: ScreenRecord, support: ScheduleSupport | undefined): string {
+  if (!support?.piConfigured) {
+    return "Local only";
+  }
+
+  return screen.deviceHost && support.host && screen.deviceHost === support.host
+    ? `Publishes to ${support.host}`
+    : "Inventory only";
+}
+
 export function SchedulingPanel() {
   const router = useRouter();
   const [data, setData] = useState<ScheduleResponse | null>(null);
@@ -253,7 +265,7 @@ export function SchedulingPanel() {
   const [endTime, setEndTime] = useState("17:00");
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>(defaultDays);
   const [screenIds, setScreenIds] = useState<string[]>([]);
-  const [busyAction, setBusyAction] = useState<"delete" | "load" | "save" | null>(null);
+  const [busyAction, setBusyAction] = useState<"clear" | "delete" | "load" | "save" | null>(null);
   const [isPending, startTransition] = useTransition();
   const isBusy = Boolean(busyAction) || isPending;
 
@@ -300,6 +312,18 @@ export function SchedulingPanel() {
   const closedCount = data?.screenStates.filter((state) => state.state === "off").length ?? 0;
   const unassignedCount = data?.screenStates.filter((state) => state.state === "unassigned").length ?? 0;
   const scheduledCount = (data?.screenStates.length ?? 0) - unassignedCount;
+  const selectedFormScreens = screenIds.map((id) => screensById.get(id)).filter((screen): screen is ScreenRecord => Boolean(screen));
+  const formTitle = editingId
+    ? selectedFormScreens.length === 1
+      ? `Edit hours for ${selectedFormScreens[0].name}`
+      : selectedFormScreens.length > 1
+        ? `Edit hours for ${formatCount(selectedFormScreens.length, "screen")}`
+        : "Edit screen hours"
+    : selectedFormScreens.length === 1
+      ? `Set hours for ${selectedFormScreens[0].name}`
+      : selectedFormScreens.length > 1
+        ? `Set hours for ${formatCount(selectedFormScreens.length, "screen")}`
+        : "Select a screen to set hours";
   const days = data?.days ?? [
     { label: "Sun", value: 0 },
     { label: "Mon", value: 1 },
@@ -331,6 +355,29 @@ export function SchedulingPanel() {
     setScreenIds(schedule.screenIds);
   }
 
+  function setHoursForScreen(screen: ScreenRecord) {
+    setEditingId(null);
+    setName(`${screen.name} hours`);
+    setTimezone(data?.defaultTimezone ?? timezone);
+    setStartTime("07:00");
+    setEndTime("17:00");
+    setDaysOfWeek(defaultDays);
+    setScreenIds([screen.id]);
+    setMessage(`Setting hours for ${screen.name}.`);
+  }
+
+  function editScheduleForScreen(screen: ScreenRecord, schedule: ScheduleRecord) {
+    const firstRule = schedule.rules[0];
+    setEditingId(schedule.id);
+    setName(schedule.name);
+    setTimezone(schedule.timezone);
+    setStartTime(firstRule?.startTime ?? "07:00");
+    setEndTime(firstRule?.endTime ?? "17:00");
+    setDaysOfWeek(firstRule?.daysOfWeek ?? defaultDays);
+    setScreenIds([screen.id]);
+    setMessage(`Editing hours for ${screen.name}.`);
+  }
+
   function toggleDay(day: number) {
     setDaysOfWeek((current) =>
       current.includes(day)
@@ -350,6 +397,10 @@ export function SchedulingPanel() {
   async function saveSchedule(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isBusy) {
+      return;
+    }
+    if (screenIds.length === 0) {
+      setMessage("Choose at least one screen.");
       return;
     }
 
@@ -418,6 +469,56 @@ export function SchedulingPanel() {
     }
   }
 
+  async function clearScheduleForScreen(screen: ScreenRecord, schedule: ScheduleRecord) {
+    if (isBusy) {
+      return;
+    }
+
+    setBusyAction("clear");
+    setMessage(`Clearing hours for ${screen.name}...`);
+    try {
+      const remainingScreenIds = schedule.screenIds.filter((id) => id !== screen.id);
+      const response =
+        remainingScreenIds.length === 0
+          ? await fetch("/api/local-schedules", {
+              method: "DELETE",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({ id: schedule.id })
+            })
+          : await fetch("/api/local-schedules", {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                daysOfWeek: schedule.rules[0]?.daysOfWeek ?? defaultDays,
+                endTime: schedule.rules[0]?.endTime ?? "17:00",
+                id: schedule.id,
+                name: schedule.name,
+                screenIds: remainingScreenIds,
+                startTime: schedule.rules[0]?.startTime ?? "07:00",
+                timezone: schedule.timezone
+              })
+            });
+      const result = (await response.json()) as ScheduleResponse;
+      if (!response.ok || result.error) {
+        throw new Error(result.error ?? "Schedule clear failed.");
+      }
+      setData(result);
+      setMessage(result.publish?.message ?? `Cleared hours for ${screen.name}.`);
+      if (editingId === schedule.id) {
+        resetForm(result.defaultTimezone);
+      }
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Schedule clear failed.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   return (
     <div className="mt-6 space-y-4">
       <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
@@ -425,7 +526,7 @@ export function SchedulingPanel() {
           <div className="min-w-0">
             <h2 className="text-xl font-semibold">Screen schedules</h2>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-600">
-              Set local business-hour windows by screen. The playlist still comes from each screen assignment, and schedule changes publish to the configured Pi.
+              Set hours from each screen row. Playlists still come from screen assignments; schedule changes publish to the configured Pi when that screen is the live target.
             </p>
           </div>
           <div className="self-start">
@@ -433,28 +534,35 @@ export function SchedulingPanel() {
           </div>
         </div>
 
-        <dl className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-4">
+        <dl className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-5">
           <div className="rounded-md bg-zinc-50 p-4 ring-1 ring-zinc-200">
-            <dt className="text-xs font-semibold uppercase text-zinc-600">Screens</dt>
-            <dd className="mt-2 text-2xl font-semibold text-zinc-950">{data?.screens.length ?? 0}</dd>
-            <p className="mt-1 text-xs text-zinc-600">{formatCount(scheduledCount, "screen")} scheduled</p>
+            <dt className="text-xs font-semibold uppercase text-zinc-600">Scheduled</dt>
+            <dd className="mt-2 text-2xl font-semibold text-zinc-950">{scheduledCount}</dd>
+            <p className="mt-1 text-xs text-zinc-600">{formatCount(data?.screens.length ?? 0, "screen")} total</p>
+          </div>
+          <div className="rounded-md bg-zinc-50 p-4 ring-1 ring-zinc-200">
+            <dt className="text-xs font-semibold uppercase text-zinc-600">No hours set</dt>
+            <dd className="mt-2 text-2xl font-semibold text-zinc-950">{unassignedCount}</dd>
+            <p className="mt-1 text-xs text-zinc-600">Playback is not schedule-limited</p>
           </div>
           <div className="rounded-md bg-emerald-50 p-4 ring-1 ring-emerald-100">
-            <dt className="text-xs font-semibold uppercase text-emerald-800">Window open</dt>
+            <dt className="text-xs font-semibold uppercase text-emerald-800">Open now</dt>
             <dd className="mt-2 text-2xl font-semibold text-zinc-950">{openCount}</dd>
-            <p className="mt-1 text-xs text-emerald-900">Based on saved local schedules</p>
+            <p className="mt-1 text-xs text-emerald-900">Scheduled windows active</p>
           </div>
           <div className="rounded-md bg-sky-50 p-4 ring-1 ring-sky-100">
-            <dt className="text-xs font-semibold uppercase text-sky-800">Window closed</dt>
+            <dt className="text-xs font-semibold uppercase text-sky-800">Closed now</dt>
             <dd className="mt-2 text-2xl font-semibold text-zinc-950">{closedCount}</dd>
-            <p className="mt-1 text-xs text-sky-900">{formatCount(unassignedCount, "screen")} with no schedule</p>
+            <p className="mt-1 text-xs text-sky-900">Scheduled windows inactive</p>
           </div>
           <div className="rounded-md bg-amber-50 p-4 ring-1 ring-amber-100">
-            <dt className="text-xs font-semibold uppercase text-amber-900">Last publish</dt>
+            <dt className="text-xs font-semibold uppercase text-amber-900">Publish status</dt>
             <dd className="mt-2 break-words text-base font-semibold text-zinc-950">
-              {formatTimestamp(data?.scheduleSupport.lastSuccessfulPublish?.timestamp)}
+              {supportLabel(data?.scheduleSupport)}
             </dd>
-            <p className="mt-1 text-xs text-amber-950">Schedule store v{data?.storeVersion ?? "-"}</p>
+            <p className="mt-1 text-xs text-amber-950">
+              {data?.scheduleSupport.host ? `Configured Pi ${data.scheduleSupport.host}` : "No Pi configured"}
+            </p>
           </div>
         </dl>
 
@@ -479,7 +587,7 @@ export function SchedulingPanel() {
             <div className="flex flex-col gap-2 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h3 className="text-lg font-semibold">Screen plan</h3>
-                <p className="mt-1 text-sm text-zinc-600">What each screen will play and which schedule window applies.</p>
+                <p className="mt-1 text-sm text-zinc-600">Choose a screen, then set or edit its hours.</p>
               </div>
               <div className="self-start">
                 <StatusPill label={`${data?.screens.length ?? 0} screens`} tone="muted" />
@@ -492,10 +600,11 @@ export function SchedulingPanel() {
                 const playlist = screen.playlistId ? playlistsById.get(screen.playlistId) : null;
 
                 return (
-                  <li key={screen.id} className="grid gap-4 px-5 py-4 text-sm lg:grid-cols-[1fr_1fr_auto]">
+                  <li key={screen.id} className="grid gap-4 px-5 py-4 text-sm xl:grid-cols-[1fr_1fr_minmax(220px,auto)_auto]">
                     <div className="min-w-0">
                       <p className="font-semibold text-zinc-950">{screen.name}</p>
                       <p className="mt-1 break-words text-zinc-600">{screen.location} / {screen.group}</p>
+                      <p className="mt-1 break-words text-xs text-zinc-500">{screenPublishTarget(screen, data?.scheduleSupport)}</p>
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs font-semibold uppercase text-zinc-500">Playlist</p>
@@ -506,18 +615,37 @@ export function SchedulingPanel() {
                         {playlistDetail(playlist, screen.playlistId)}
                       </p>
                     </div>
-                    <div className="min-w-0 lg:min-w-52">
-                      <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
                         <StatusPill label={stateLabel(state)} tone={state ? stateTone(state.state) : "muted"} />
                       </div>
-                      <p className="mt-2 break-words font-semibold text-zinc-950 lg:text-right">
+                      <p className="mt-2 break-words font-semibold text-zinc-950">
                         {state?.scheduleName ?? "No schedule assigned"}
                       </p>
-                      <p className="mt-1 break-words text-xs leading-5 text-zinc-500 lg:text-right">
+                      <p className="mt-1 break-words text-xs leading-5 text-zinc-500">
                         {schedule
                           ? `${scheduleWindow(schedule)} / ${scheduleDays(schedule, days)} / ${schedule.timezone}`
                           : state?.detail ?? "No schedule state reported."}
                       </p>
+                    </div>
+                    <div className="flex flex-wrap items-start gap-2 xl:justify-end">
+                      <button
+                        type="button"
+                        onClick={() => (schedule ? editScheduleForScreen(screen, schedule) : setHoursForScreen(screen))}
+                        className="min-h-9 rounded-md bg-teal-700 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-800"
+                      >
+                        {schedule ? "Edit hours" : "Set hours"}
+                      </button>
+                      {schedule ? (
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => void clearScheduleForScreen(screen, schedule)}
+                          className="min-h-9 rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Clear
+                        </button>
+                      ) : null}
                     </div>
                   </li>
                 );
@@ -532,7 +660,7 @@ export function SchedulingPanel() {
             <div className="flex flex-col gap-2 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h3 className="text-lg font-semibold">Saved schedules</h3>
-                <p className="mt-1 text-sm text-zinc-600">Simple daily windows. Exceptions and holiday rules are still deferred.</p>
+                <p className="mt-1 text-sm text-zinc-600">Reusable windows created from screen rows. Exceptions and holiday rules are still deferred.</p>
               </div>
               <div className="self-start">
                 <StatusPill label={`${data?.schedules.length ?? 0} schedules`} tone="muted" />
@@ -584,9 +712,9 @@ export function SchedulingPanel() {
         <form onSubmit={saveSchedule} className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h3 className="text-lg font-semibold">{editingId ? "Edit screen hours" : "Add screen hours"}</h3>
+              <h3 className="text-lg font-semibold">{formTitle}</h3>
               <p className="mt-1 text-sm leading-6 text-zinc-600">
-                Choose screens, active days, and the on/off window. Beam saves this locally and publishes it to the Pi when configured.
+                Pick the on/off window. Beam saves it locally and publishes it to the configured Pi when applicable.
               </p>
             </div>
             {editingId ? (
@@ -609,14 +737,17 @@ export function SchedulingPanel() {
                 className="min-h-10 rounded-md border border-zinc-300 px-3 py-2 text-sm font-normal text-zinc-950"
               />
             </label>
-            <label className="grid gap-1 text-sm font-semibold text-zinc-800">
-              Timezone
-              <input
-                value={timezone}
-                onChange={(event) => setTimezone(event.currentTarget.value)}
-                className="min-h-10 rounded-md border border-zinc-300 px-3 py-2 text-sm font-normal text-zinc-950"
-              />
-            </label>
+            <details className="rounded-md border border-zinc-200 bg-zinc-50 p-3">
+              <summary className="cursor-pointer text-sm font-semibold text-zinc-800">Timezone</summary>
+              <label className="mt-3 grid gap-1 text-sm font-semibold text-zinc-800">
+                Schedule timezone
+                <input
+                  value={timezone}
+                  onChange={(event) => setTimezone(event.currentTarget.value)}
+                  className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-normal text-zinc-950"
+                />
+              </label>
+            </details>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="grid gap-1 text-sm font-semibold text-zinc-800">
                 On
@@ -693,7 +824,7 @@ export function SchedulingPanel() {
 
             <button
               type="submit"
-              disabled={isBusy}
+              disabled={isBusy || screenIds.length === 0}
               className="min-h-11 rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
             >
               {busyAction === "save" ? "Saving..." : editingId ? "Save hours" : "Add hours"}

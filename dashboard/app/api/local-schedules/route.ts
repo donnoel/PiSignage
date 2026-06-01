@@ -82,6 +82,9 @@ function validateInput(input: ScheduleInput, screenIds: Set<string>): {
   if (!endTime || !isValidTime(endTime)) {
     throw new Error("Choose a valid off time.");
   }
+  if (assignedScreenIds.length === 0) {
+    throw new Error("Choose at least one screen.");
+  }
 
   return {
     daysOfWeek: normalizeDays(input.daysOfWeek),
@@ -151,6 +154,24 @@ async function scheduleResponse(publish?: Awaited<ReturnType<typeof publishSched
       Number.isFinite(successTimestamp) &&
       storeUpdatedAt > successTimestamp
     : scheduleStore.items.length > 0;
+  const devicesById = new Map(inventory.devices.items.map((device) => [device.id, device]));
+  const devicesByScreenId = new Map(
+    inventory.devices.items
+      .filter((device) => device.screenId)
+      .map((device) => [device.screenId as string, device])
+  );
+  const screens = inventory.screens.items.map((screen) => {
+    const linkedDevice =
+      (screen.deviceId ? devicesById.get(screen.deviceId) : null) ??
+      devicesByScreenId.get(screen.id) ??
+      null;
+
+    return {
+      ...screen,
+      deviceHost: linkedDevice?.host ?? null,
+      deviceName: linkedDevice?.name ?? null
+    };
+  });
 
   return NextResponse.json({
     defaultTimezone: settings.defaultScheduleTimezone,
@@ -182,7 +203,7 @@ async function scheduleResponse(publish?: Awaited<ReturnType<typeof publishSched
       piConfigured: Boolean(piConfig)
     },
     schedules: scheduleStore.items,
-    screens: inventory.screens.items,
+    screens,
     screenStates,
     storeUpdatedAt: scheduleStore.updatedAt,
     storeVersion: scheduleStore.version
