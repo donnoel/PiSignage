@@ -13,8 +13,6 @@ The current repository provides a local-only foundation. It does not deploy AWS 
 - `sample-content/`: tracked seed playlist and local media fixtures.
 - `infra/`: future AWS notes only; no active cloud infrastructure is deployed from this repo.
 
-The original Apple/Xcode starter scaffold is still present as legacy starter material. The active signage POC foundation is the Node/TypeScript workspace described above.
-
 ## Local Requirements
 
 - Node.js 20 or newer.
