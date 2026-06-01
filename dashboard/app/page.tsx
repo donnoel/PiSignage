@@ -135,7 +135,7 @@ const navigationItems: Array<{ label: string; view: DashboardView }> = [
   { label: "Screen Status", view: "device-health" },
   { label: "Screens", view: "screens" },
   { label: "Scheduling", view: "scheduling" },
-  { label: "Troubleshooting", view: "troubleshooting" }
+  { label: "Recovery", view: "troubleshooting" }
 ];
 
 const viewCopy: Record<DashboardView, { eyebrow: string; title: string; description?: string }> = {
@@ -170,7 +170,7 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
   },
   troubleshooting: {
     eyebrow: "Support",
-    title: "Troubleshooting",
+    title: "Recovery",
     description: "Fix publish, playback, and Pi access issues."
   }
 };
@@ -1047,6 +1047,38 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const videoAssetCount = playlist.assets.filter((asset) => asset.type === "video").length;
   const imageAssetCount = playlist.assets.length - videoAssetCount;
   const piAssetIds = new Set(playlistReportedByPi ? (playerStatus?.assetIds ?? []) : []);
+  const troubleshootingDevicesById = new Map(inventory.devices.items.map((device) => [device.id, device]));
+  const troubleshootingDevicesByScreenId = new Map(
+    inventory.devices.items
+      .filter((device) => device.screenId)
+      .map((device) => [device.screenId as string, device])
+  );
+  const troubleshootingScreens = inventory.screens.items
+    .map((screen) => {
+      const linkedDevice =
+        (screen.deviceId ? troubleshootingDevicesById.get(screen.deviceId) : null) ??
+        troubleshootingDevicesByScreenId.get(screen.id) ??
+        null;
+      const assignedPlaylist = screen.playlistId
+        ? playlistStore.items.find((item) => item.playlistId === screen.playlistId)
+        : null;
+
+      return {
+        deviceHost: linkedDevice?.host ?? null,
+        deviceId: linkedDevice?.id ?? null,
+        deviceName: linkedDevice?.name ?? null,
+        group: screen.group,
+        id: screen.id,
+        location: screen.location,
+        name: screen.name,
+        playlistName: assignedPlaylist?.name ?? null
+      };
+    })
+    .sort(
+      (left, right) =>
+        left.location.localeCompare(right.location, undefined, { sensitivity: "base" }) ||
+        left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
+    );
   function playlistScreens(playlistId: string) {
     return inventory.screens.items
       .filter((screen) => screen.playlistId === playlistId)
@@ -1667,8 +1699,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             aria-labelledby="troubleshooting-heading"
             className={selectedView === "troubleshooting" ? "" : "hidden"}
           >
-            <h2 id="troubleshooting-heading" className="sr-only">Troubleshooting</h2>
-            <TroubleshootingPanel />
+            <h2 id="troubleshooting-heading" className="sr-only">Recovery</h2>
+            <TroubleshootingPanel screens={troubleshootingScreens} />
           </section>
 
           <section

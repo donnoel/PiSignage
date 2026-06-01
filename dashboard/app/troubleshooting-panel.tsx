@@ -51,6 +51,21 @@ type TroubleshootingResponse = {
   recoveryRuns: RecoveryRun[];
 };
 
+type TroubleshootingScreen = {
+  deviceHost: string | null;
+  deviceId: string | null;
+  deviceName: string | null;
+  group: string;
+  id: string;
+  location: string;
+  name: string;
+  playlistName: string | null;
+};
+
+type TroubleshootingPanelProps = {
+  screens: TroubleshootingScreen[];
+};
+
 type ActionResponse = {
   error?: string;
   message?: string;
@@ -211,6 +226,10 @@ function recoveryTone(run: RecoveryRun | null): "good" | "muted" | "warn" {
   return run.ok ? "good" : "warn";
 }
 
+function normalizeIdentity(value: string | null): string {
+  return value?.trim().toLowerCase() ?? "";
+}
+
 function formatTimestamp(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -223,12 +242,14 @@ function formatTimestamp(value: string): string {
   }).format(date);
 }
 
-export function TroubleshootingPanel() {
+export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
   const router = useRouter();
   const [data, setData] = useState<TroubleshootingResponse | null>(null);
   const [message, setMessage] = useState("Loading troubleshooting data...");
   const [copyMessage, setCopyMessage] = useState("");
   const [busyAction, setBusyAction] = useState<"publish" | "recover" | "refresh" | "restart" | null>(null);
+  const [screenFilter, setScreenFilter] = useState("");
+  const [selectedScreenId, setSelectedScreenId] = useState<string | null>(screens[0]?.id ?? null);
   const [isPending, startTransition] = useTransition();
   const isBusy = Boolean(busyAction) || isPending;
 
@@ -323,6 +344,21 @@ export function TroubleshootingPanel() {
   const playerDiagnostic = diagnosticByLabel(diagnostics, "Player status");
   const displayDiagnostic = diagnosticByLabel(diagnostics, "Display");
   const healthDiagnostic = diagnosticByLabel(diagnostics, "Health");
+  const filteredScreens = screens.filter((screen) => {
+    const query = screenFilter.trim().toLowerCase();
+    if (!query) {
+      return true;
+    }
+
+    return [screen.name, screen.location, screen.group, screen.deviceHost, screen.deviceName, screen.playlistName]
+      .filter(Boolean)
+      .some((value) => value?.toLowerCase().includes(query));
+  });
+  const selectedScreen =
+    screens.find((screen) => screen.id === selectedScreenId) ?? filteredScreens[0] ?? screens[0] ?? null;
+  const liveHost = normalizeIdentity(data?.pi.host ?? null);
+  const selectedHost = normalizeIdentity(selectedScreen?.deviceHost ?? null);
+  const selectedHasLiveDiagnostics = Boolean(liveHost && selectedHost && liveHost === selectedHost);
   const stateCards: {
     detail: string;
     label: string;
@@ -369,6 +405,100 @@ export function TroubleshootingPanel() {
 
   return (
     <div className="mt-6 space-y-4">
+      <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold">Screen scope</h2>
+            <p className="mt-1 text-sm leading-6 text-zinc-600">
+              Find a screen first. The list stays scrollable as inventory grows; live recovery actions currently target the configured Pi.
+            </p>
+          </div>
+          <StatusPill label={`${screens.length} screens`} tone="muted" />
+        </div>
+        <div className="grid gap-4 p-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div>
+            <label htmlFor="recovery-screen-filter" className="text-xs font-semibold uppercase text-zinc-500">
+              Search screens
+            </label>
+            <input
+              id="recovery-screen-filter"
+              type="search"
+              value={screenFilter}
+              onChange={(event) => setScreenFilter(event.target.value)}
+              placeholder="Search by screen, location, group, host, or playlist"
+              className="mt-2 min-h-10 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none ring-0 placeholder:text-zinc-400 focus:border-teal-500"
+            />
+            <div className="mt-3 max-h-96 overflow-auto rounded-md border border-zinc-200">
+              <ol className="divide-y divide-zinc-200">
+                {filteredScreens.map((screen) => {
+                  const isSelected = selectedScreen?.id === screen.id;
+                  const isLive = Boolean(
+                    liveHost && normalizeIdentity(screen.deviceHost) && liveHost === normalizeIdentity(screen.deviceHost)
+                  );
+
+                  return (
+                    <li key={screen.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedScreenId(screen.id)}
+                        aria-pressed={isSelected}
+                        className={`grid w-full gap-2 px-4 py-3 text-left text-sm sm:grid-cols-[minmax(0,1fr)_auto] ${
+                          isSelected ? "bg-teal-50" : "bg-white hover:bg-zinc-50"
+                        }`}
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate font-semibold text-zinc-950">{screen.name}</span>
+                          <span className="mt-1 block truncate text-xs text-zinc-600">
+                            {screen.location} · {screen.group} · {screen.playlistName ?? "No playlist assigned"}
+                          </span>
+                        </span>
+                        <span className="flex flex-wrap items-center gap-2 sm:justify-end">
+                          <StatusPill label={isLive ? "Live diagnostics" : "Inventory only"} tone={isLive ? "muted" : "muted"} />
+                          <span className="text-xs font-medium text-zinc-500">{screen.deviceHost ?? "No Pi host"}</span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+                {filteredScreens.length === 0 ? (
+                  <li className="px-4 py-6 text-sm text-zinc-600">No screens match this search.</li>
+                ) : null}
+              </ol>
+            </div>
+          </div>
+
+          <aside className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
+            <p className="text-xs font-semibold uppercase text-zinc-500">Selected screen</p>
+            {selectedScreen ? (
+              <>
+                <h3 className="mt-2 text-lg font-semibold text-zinc-950">{selectedScreen.name}</h3>
+                <dl className="mt-3 space-y-2 text-sm text-zinc-700">
+                  <div>
+                    <dt className="font-semibold text-zinc-900">Location</dt>
+                    <dd>{selectedScreen.location}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-zinc-900">Pi host</dt>
+                    <dd>{selectedScreen.deviceHost ?? "Not configured"}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-zinc-900">Playlist</dt>
+                    <dd>{selectedScreen.playlistName ?? "No playlist assigned"}</dd>
+                  </div>
+                </dl>
+                <p className="mt-4 text-sm leading-6 text-zinc-600">
+                  {selectedHasLiveDiagnostics
+                    ? "The evidence and recovery controls below match this screen's configured Pi."
+                    : "This screen is listed from local inventory. Live diagnostics below still come from the configured Pi connection."}
+                </p>
+              </>
+            ) : (
+              <p className="mt-2 text-sm text-zinc-600">Add screens before using this view as a recovery queue.</p>
+            )}
+          </aside>
+        </div>
+      </section>
+
       <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
