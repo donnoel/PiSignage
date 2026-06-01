@@ -399,7 +399,7 @@ export function SchedulingPanel() {
           </div>
         </div>
 
-        <dl className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-5">
+        <dl className="grid grid-cols-[repeat(auto-fit,minmax(148px,1fr))] gap-3 p-5">
           <div className="rounded-md bg-zinc-50 p-4 ring-1 ring-zinc-200">
             <dt className="text-xs font-semibold uppercase text-zinc-600">Scheduled</dt>
             <dd className="mt-2 text-2xl font-semibold text-zinc-950">{scheduledCount}</dd>

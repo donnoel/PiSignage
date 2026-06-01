@@ -1340,10 +1340,22 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     <main className="min-h-screen overflow-x-hidden bg-[#f3f6f8] text-zinc-950">
       {selectedView === "dashboard" || selectedView === "device-health" ? <DashboardAutoRefresh /> : null}
       <div className="grid min-h-screen lg:grid-cols-[220px_minmax(0,1fr)]">
-        <aside className="border-b border-cyan-200 bg-gradient-to-b from-cyan-50 via-white to-slate-100 px-5 py-5 text-slate-950 lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r lg:py-6">
+        <aside className="border-b border-cyan-200 bg-[radial-gradient(circle_at_top_left,rgba(94,234,212,0.34),transparent_44%),linear-gradient(180deg,#e4fbf7_0%,#f1fbff_48%,#ffffff_100%)] px-5 py-5 text-slate-950 shadow-[inset_-1px_0_0_rgba(20,184,166,0.2)] lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r lg:py-6">
           <div className="flex flex-wrap items-end justify-between gap-2 lg:block">
             <div>
-              <div className="text-2xl font-black tracking-tight">Beam</div>
+              <div className="inline-flex items-center gap-3" aria-label="Beam">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-950 shadow-sm" aria-hidden="true">
+                  <svg viewBox="0 0 36 36" className="h-9 w-9">
+                    <rect x="0" y="0" width="36" height="36" rx="8" fill="#0f172a" />
+                    <rect x="8" y="10" width="14" height="16" rx="2.5" fill="none" stroke="#f8fafc" strokeWidth="2.4" />
+                    <path d="M20 13.5L30 9.5V26.5L20 22.5V13.5Z" fill="#5eead4" />
+                    <path d="M20 16L30 13V23L20 20V16Z" fill="#ccfbf1" opacity="0.8" />
+                  </svg>
+                </span>
+                <span className="bg-gradient-to-r from-slate-950 via-teal-950 to-teal-700 bg-clip-text text-[2rem] font-black leading-none tracking-normal text-transparent [font-family:'Trebuchet_MS',ui-rounded,'Avenir_Next_Rounded','Arial_Rounded_MT_Bold',system-ui,sans-serif]">
+                  Beam
+                </span>
+              </div>
             </div>
           </div>
           <nav aria-label="Dashboard views" className="mt-5 grid grid-cols-2 gap-2 text-sm font-medium text-slate-700 sm:grid-cols-3 md:flex md:flex-wrap lg:mt-8 lg:block lg:space-y-1">
@@ -1355,8 +1367,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 key={item.view}
                 href={item.view === "dashboard" ? "/" : `/?view=${item.view}`}
                 aria-current={selected ? "page" : undefined}
-                className={`block whitespace-nowrap rounded-md px-3 py-2 text-center focus:outline-none focus:ring-2 focus:ring-teal-600 lg:text-left ${
-                  selected ? "bg-white text-teal-900 shadow-sm ring-1 ring-cyan-200" : "hover:bg-white/70"
+                className={`block whitespace-nowrap rounded-md px-3 py-2 text-center transition focus:outline-none focus:ring-2 focus:ring-teal-500 lg:text-left ${
+                  selected ? "bg-white text-teal-950 shadow-sm ring-1 ring-cyan-200" : "hover:bg-white/70 hover:text-teal-950"
                 }`}
               >
                 {item.label}

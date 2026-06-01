@@ -102,6 +102,41 @@ function screenActionClass(tone: ScreenActionTone): string {
   return "border-zinc-200 text-zinc-800 hover:bg-zinc-50";
 }
 
+function ScreenActionIcon({ name }: { name: "playlist" | "remove" | "rename" | "status" }) {
+  if (name === "playlist") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8">
+        <rect x="4" y="5" width="16" height="14" rx="3" />
+        <path d="M8 9.5h8M8 13h8M8 16.5h5" />
+      </svg>
+    );
+  }
+
+  if (name === "rename") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8">
+        <path d="M5 18.5 6.2 14 15.8 4.4a2 2 0 0 1 2.8 2.8L9 16.8 4.5 18l.5.5Z" />
+        <path d="m14.5 5.8 3.7 3.7" />
+      </svg>
+    );
+  }
+
+  if (name === "remove") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8">
+        <path d="M5 7h14M10 11v6M14 11v6M8 7l.6 12a2 2 0 0 0 2 1.9h2.8a2 2 0 0 0 2-1.9L16 7M9.5 7l.4-2h4.2l.4 2" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8">
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 11v5M12 8h.01" />
+    </svg>
+  );
+}
+
 function normalized(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
@@ -708,8 +743,8 @@ export function ScreenDeviceInventoryPanel({
           </div>
         </div>
 
-        <div className="overflow-x-auto p-4">
-          <dl className="grid min-w-[520px] grid-cols-5 gap-2">
+        <div className="p-4">
+          <dl className="grid grid-cols-[repeat(auto-fit,minmax(128px,1fr))] gap-2">
             <div className="rounded-md bg-emerald-50 p-3 ring-1 ring-emerald-100">
               <dt className="text-xs font-semibold uppercase text-emerald-800">Online</dt>
               <dd className="mt-1 text-xl font-semibold">{onlineCount}</dd>
@@ -744,7 +779,7 @@ export function ScreenDeviceInventoryPanel({
                 <th className="px-4 py-3">Sync</th>
                 <th className="px-4 py-3">Device</th>
                 <th className="px-4 py-3">Last seen</th>
-                <th className="px-4 py-3">Actions</th>
+                <th className="px-4 py-3 min-w-[168px]">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200">
@@ -806,26 +841,26 @@ export function ScreenDeviceInventoryPanel({
                     </p>
                   </td>
                   <td className="px-4 py-3">
-                    <p className="font-semibold text-zinc-950" title={row.lastSeenFull}>{row.lastSeenAge}</p>
+                    <p className="whitespace-nowrap font-semibold text-zinc-950" title={row.lastSeenFull}>{row.lastSeenAge}</p>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex min-w-[152px] flex-nowrap gap-2">
                       <a
                         href={`/?view=device-health&screen=${encodeURIComponent(row.screen.id)}`}
                         title="Status"
                         aria-label={`Open status for ${row.screen.name}`}
-                        className={`inline-flex h-10 w-10 items-center justify-center rounded-md border bg-white text-base font-semibold ${screenActionClass("neutral")}`}
+                        className={`inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white text-base font-semibold ${screenActionClass("neutral")}`}
                       >
-                        i
+                        <ScreenActionIcon name="status" />
                       </a>
                       {row.assignedPlaylistId ? (
                         <a
                           href={`/?view=playlist&playlist=${encodeURIComponent(row.assignedPlaylistId)}`}
                           title="Playlist"
                           aria-label={`Open playlist for ${row.screen.name}`}
-                          className={`inline-flex h-10 w-10 items-center justify-center rounded-md border bg-white text-base font-semibold ${screenActionClass("primary")}`}
+                          className={`inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white text-base font-semibold ${screenActionClass("primary")}`}
                         >
-                          ≡
+                          <ScreenActionIcon name="playlist" />
                         </a>
                       ) : null}
                       <button
@@ -834,9 +869,9 @@ export function ScreenDeviceInventoryPanel({
                         disabled={isBusy}
                         title="Rename"
                         aria-label={`Rename ${row.screen.name}`}
-                        className={`inline-flex h-10 w-10 items-center justify-center rounded-md border bg-white text-base font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${screenActionClass("neutral")}`}
+                        className={`inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white text-base font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${screenActionClass("neutral")}`}
                       >
-                        ✎
+                        <ScreenActionIcon name="rename" />
                       </button>
                       <button
                         type="button"
@@ -844,9 +879,9 @@ export function ScreenDeviceInventoryPanel({
                         disabled={isBusy}
                         title="Remove"
                         aria-label={`Remove ${row.screen.name}`}
-                        className={`inline-flex h-10 w-10 items-center justify-center rounded-md border bg-white text-lg font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${screenActionClass("danger")}`}
+                        className={`inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white text-lg font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${screenActionClass("danger")}`}
                       >
-                        ×
+                        <ScreenActionIcon name="remove" />
                       </button>
                     </div>
                   </td>

@@ -214,7 +214,7 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
             <p className="mt-1 text-sm text-zinc-600">Pick from ready local media.</p>
           </div>
           <form
-            className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:justify-end"
+            className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto lg:justify-end"
             onSubmit={(event) => {
               event.preventDefault();
               void loadMedia(mediaQuery);
@@ -224,12 +224,12 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
               value={mediaQuery}
               onChange={(event) => setMediaQuery(event.currentTarget.value)}
               placeholder="Search media"
-              className="min-h-10 min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 lg:w-64"
+              className="min-h-10 min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 sm:min-w-48 lg:w-64"
             />
             <button
               type="submit"
               disabled={isBusy}
-              className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100"
+              className="min-h-10 shrink-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100"
             >
               {isLoadingMedia ? "Searching..." : "Search"}
             </button>
@@ -237,11 +237,13 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
         </div>
         <div className="divide-y divide-zinc-200">
           {mediaItems.map((item) => (
-            <div key={item.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div key={item.id} className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
               <div className="min-w-0">
                 <p className="break-words font-semibold text-zinc-950">{item.title}</p>
-                <p className="mt-1 truncate text-sm text-zinc-600" title={item.playbackFileName}>
-                  {item.durationSeconds ?? 30}s · {item.playbackFileName}
+                <p className="mt-1 flex min-w-0 items-center gap-1 text-sm text-zinc-600" title={`${item.durationSeconds ?? 30}s · ${item.playbackFileName}`}>
+                  <span className="shrink-0">{item.durationSeconds ?? 30}s</span>
+                  <span aria-hidden="true" className="shrink-0">·</span>
+                  <span className="min-w-0 truncate">{item.playbackFileName}</span>
                 </p>
                 {item.tags.length > 0 ? (
                   <p className="mt-1 text-xs font-medium text-zinc-500">{item.tags.join(", ")}</p>
@@ -251,7 +253,7 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
                 type="button"
                 onClick={() => void addMediaToPlaylist(item.id, item.title)}
                 disabled={isBusy}
-                className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
+                className="min-h-10 shrink-0 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
               >
                 Add
               </button>

@@ -439,13 +439,13 @@ export function DeviceHealthFleetPanel({
               Check connection, playback, playlist update, and recovery actions for each screen.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex max-w-full gap-2 overflow-x-auto pb-1 xl:flex-wrap xl:justify-end xl:overflow-visible xl:pb-0">
             {filters.map((item) => (
               <button
                 key={item.key}
                 type="button"
                 onClick={() => setFilter(item.key)}
-                className={`min-h-9 rounded-md px-3 py-2 text-xs font-semibold ring-1 ${
+                className={`min-h-9 shrink-0 rounded-md px-3 py-2 text-xs font-semibold ring-1 ${
                   filter === item.key
                     ? "bg-teal-700 text-white ring-teal-700"
                     : "bg-white text-zinc-700 ring-zinc-200 hover:bg-zinc-50"
@@ -457,8 +457,8 @@ export function DeviceHealthFleetPanel({
           </div>
         </div>
 
-        <div className="overflow-x-auto p-4">
-          <dl className="grid min-w-[640px] grid-cols-6 gap-2">
+        <div className="p-4">
+          <dl className="grid grid-cols-[repeat(auto-fit,minmax(128px,1fr))] gap-2">
             <div className="rounded-md bg-emerald-50 p-3 ring-1 ring-emerald-100">
               <dt className="text-xs font-semibold uppercase text-emerald-800">Online</dt>
               <dd className="mt-1 text-xl font-semibold">{onlineCount}</dd>

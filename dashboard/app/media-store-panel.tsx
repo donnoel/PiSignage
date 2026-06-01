@@ -960,7 +960,7 @@ export function MediaStorePanel() {
                 <th className="px-4 py-3">Duration</th>
                 <th className="px-4 py-3">Size</th>
                 <th className="px-4 py-3">Updated</th>
-                {hasVisibleActions ? <th className="px-4 py-3">Actions</th> : null}
+                {hasVisibleActions ? <th className="min-w-[148px] px-4 py-3">Actions</th> : null}
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200">
@@ -993,18 +993,18 @@ export function MediaStorePanel() {
                     <td className="max-w-[160px] px-4 py-3 text-zinc-700">
                       <span className="block truncate" title={folderLabel(item)}>{folderLabel(item)}</span>
                     </td>
-                    <td className="px-4 py-3 text-zinc-700">{formatDuration(item.durationSeconds)}</td>
-                    <td className="px-4 py-3 text-zinc-700">{formatBytes(item.sizeBytes)}</td>
-                    <td className="px-4 py-3 text-zinc-700">{formatTimestamp(item.updatedAt)}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-zinc-700">{formatDuration(item.durationSeconds)}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-zinc-700">{formatBytes(item.sizeBytes)}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-zinc-700">{formatTimestamp(item.updatedAt)}</td>
                     {hasVisibleActions ? (
                       <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex min-w-[124px] flex-nowrap gap-2">
                           {canAdd ? (
                             <button
                               type="button"
                               onClick={() => void handleAddToPlaylist(item)}
                               disabled={isBusy}
-                              className="min-h-9 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
+                              className="min-h-9 shrink-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
                             >
                               {addingMediaId === item.id ? "Adding" : "Add"}
                             </button>
@@ -1014,7 +1014,7 @@ export function MediaStorePanel() {
                               type="button"
                               onClick={() => void handleDelete(item)}
                               disabled={isBusy}
-                              className="min-h-9 rounded-md border border-rose-200 bg-white px-3 py-1.5 text-sm font-semibold text-rose-700 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
+                              className="min-h-9 shrink-0 rounded-md border border-rose-200 bg-white px-3 py-1.5 text-sm font-semibold text-rose-700 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
                             >
                               {deleting ? "Deleting" : "Delete"}
                             </button>
