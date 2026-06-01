@@ -165,8 +165,7 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
   },
   scheduling: {
     eyebrow: "Hours",
-    title: "Scheduling",
-    description: "Local screen hours, assigned playlists, and Pi publish evidence."
+    title: "Scheduling"
   },
   troubleshooting: {
     eyebrow: "Support",

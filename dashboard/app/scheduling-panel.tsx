@@ -136,26 +136,6 @@ function supportLabel(support: ScheduleSupport | undefined): string {
   return "Ready to publish";
 }
 
-function supportDetail(support: ScheduleSupport | undefined): string {
-  if (!support) {
-    return "Loading schedule support from local state.";
-  }
-
-  if (!support.piConfigured) {
-    return "Pi SSH is not configured. Schedule edits are saved locally but cannot be enforced on a Pi yet.";
-  }
-
-  if (support.pendingLocalChanges) {
-    return "Local schedules changed after the last successful Pi publish.";
-  }
-
-  if (support.lastSuccessfulPublish) {
-    return `Last successful publish to the configured Pi${support.host ? ` at ${support.host}` : ""} was ${formatTimestamp(support.lastSuccessfulPublish.timestamp)}.`;
-  }
-
-  return `Pi ${support.host ?? "connection"} is configured. Saving a schedule will publish it and enable the local schedule timer.`;
-}
-
 function formatCount(count: number, noun: string): string {
   return `${count} ${count === 1 ? noun : `${noun}s`}`;
 }
@@ -173,24 +153,6 @@ function formatDays(days: DayOption[], selected: number[]): string {
     .filter((day) => selected.includes(day.value))
     .map((day) => day.label)
     .join(", ");
-}
-
-function formatTimestamp(timestamp: string | null | undefined): string {
-  if (!timestamp) {
-    return "Never";
-  }
-
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) {
-    return timestamp;
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    month: "short"
-  }).format(date);
 }
 
 function scheduleWindow(schedule: ScheduleRecord | null | undefined): string {
@@ -214,34 +176,9 @@ function playlistLabel(playlist: PlaylistSummary | null | undefined, playlistId:
   return playlistId ? "Playlist not found" : "No playlist assigned";
 }
 
-function playlistDetail(playlist: PlaylistSummary | null | undefined, playlistId: string | null): string {
-  if (playlist) {
-    return `v${playlist.version} / ${formatCount(playlist.assetCount, "media item")}`;
-  }
-
-  return playlistId
-    ? `Screen points to ${playlistId}, but Beam cannot find that playlist locally.`
-    : "Choose a playlist before relying on this screen for scheduled playback.";
-}
-
 function namesForScreens(screenIds: string[], screensById: Map<string, ScreenRecord>): string {
   const names = screenIds.map((id) => screensById.get(id)?.name ?? id);
   return names.length ? names.join(", ") : "No screens assigned";
-}
-
-function playlistsForScreens(
-  screenIds: string[],
-  screensById: Map<string, ScreenRecord>,
-  playlistsById: Map<string, PlaylistSummary>
-): string {
-  const names = new Set<string>();
-
-  for (const screenId of screenIds) {
-    const playlistId = screensById.get(screenId)?.playlistId ?? null;
-    names.add(playlistLabel(playlistId ? playlistsById.get(playlistId) : null, playlistId));
-  }
-
-  return names.size ? Array.from(names).join(", ") : "No playlists assigned";
 }
 
 function screenPublishTarget(screen: ScreenRecord, support: ScheduleSupport | undefined): string {
@@ -525,9 +462,6 @@ export function SchedulingPanel() {
         <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0">
             <h2 className="text-xl font-semibold">Screen schedules</h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-600">
-              Set hours from each screen row. Playlists still come from screen assignments; schedule changes publish to the configured Pi when that screen is the live target.
-            </p>
           </div>
           <div className="self-start">
             <StatusPill label={supportLabel(data?.scheduleSupport)} tone={supportTone(data?.scheduleSupport)} />
@@ -538,47 +472,26 @@ export function SchedulingPanel() {
           <div className="rounded-md bg-zinc-50 p-4 ring-1 ring-zinc-200">
             <dt className="text-xs font-semibold uppercase text-zinc-600">Scheduled</dt>
             <dd className="mt-2 text-2xl font-semibold text-zinc-950">{scheduledCount}</dd>
-            <p className="mt-1 text-xs text-zinc-600">{formatCount(data?.screens.length ?? 0, "screen")} total</p>
           </div>
           <div className="rounded-md bg-zinc-50 p-4 ring-1 ring-zinc-200">
             <dt className="text-xs font-semibold uppercase text-zinc-600">No hours set</dt>
             <dd className="mt-2 text-2xl font-semibold text-zinc-950">{unassignedCount}</dd>
-            <p className="mt-1 text-xs text-zinc-600">Playback is not schedule-limited</p>
           </div>
           <div className="rounded-md bg-emerald-50 p-4 ring-1 ring-emerald-100">
             <dt className="text-xs font-semibold uppercase text-emerald-800">Open now</dt>
             <dd className="mt-2 text-2xl font-semibold text-zinc-950">{openCount}</dd>
-            <p className="mt-1 text-xs text-emerald-900">Scheduled windows active</p>
           </div>
           <div className="rounded-md bg-sky-50 p-4 ring-1 ring-sky-100">
             <dt className="text-xs font-semibold uppercase text-sky-800">Closed now</dt>
             <dd className="mt-2 text-2xl font-semibold text-zinc-950">{closedCount}</dd>
-            <p className="mt-1 text-xs text-sky-900">Scheduled windows inactive</p>
           </div>
           <div className="rounded-md bg-amber-50 p-4 ring-1 ring-amber-100">
             <dt className="text-xs font-semibold uppercase text-amber-900">Publish status</dt>
             <dd className="mt-2 break-words text-base font-semibold text-zinc-950">
               {supportLabel(data?.scheduleSupport)}
             </dd>
-            <p className="mt-1 text-xs text-amber-950">
-              {data?.scheduleSupport.host ? `Configured Pi ${data.scheduleSupport.host}` : "No Pi configured"}
-            </p>
           </div>
         </dl>
-
-        <div className="border-t border-zinc-200 p-5">
-          <div className="flex flex-col gap-2 text-sm text-zinc-700 lg:flex-row lg:items-start lg:justify-between">
-            <p className="max-w-3xl leading-6">{supportDetail(data?.scheduleSupport)}</p>
-            <p className="text-xs font-medium text-zinc-500">
-              Store updated {formatTimestamp(data?.storeUpdatedAt)}
-            </p>
-          </div>
-          {data?.scheduleSupport.lastPublish ? (
-            <p className="mt-2 text-xs leading-5 text-zinc-500">
-              Latest publish record: {data.scheduleSupport.lastPublish.message}
-            </p>
-          ) : null}
-        </div>
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
@@ -587,7 +500,6 @@ export function SchedulingPanel() {
             <div className="flex flex-col gap-2 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h3 className="text-lg font-semibold">Screen plan</h3>
-                <p className="mt-1 text-sm text-zinc-600">Per-screen hours, playlist, and publish target.</p>
               </div>
               <div className="self-start">
                 <StatusPill label={`${data?.screens.length ?? 0} screens`} tone="muted" />
@@ -618,20 +530,17 @@ export function SchedulingPanel() {
                           <p className="mt-1 break-words font-semibold text-zinc-950">
                             {playlistLabel(playlist, screen.playlistId)}
                           </p>
-                          <p className="mt-1 break-words text-xs text-zinc-500">
-                            {playlistDetail(playlist, screen.playlistId)}
-                          </p>
                         </div>
                         <div className="min-w-0">
                           <p className="text-xs font-semibold uppercase text-zinc-500">Hours</p>
                           <p className="mt-1 break-words font-semibold text-zinc-950">
                             {state?.scheduleName ?? "No schedule assigned"}
                           </p>
-                          <p className="mt-1 break-words text-xs leading-5 text-zinc-500">
-                            {schedule
-                              ? `${scheduleWindow(schedule)} / ${scheduleDays(schedule, days)} / ${schedule.timezone}`
-                              : state?.detail ?? "No schedule state reported."}
-                          </p>
+                          {schedule ? (
+                            <p className="mt-1 break-words text-xs leading-5 text-zinc-500">
+                              {scheduleWindow(schedule)} / {scheduleDays(schedule, days)}
+                            </p>
+                          ) : null}
                         </div>
                       </div>
                     </div>
@@ -663,16 +572,13 @@ export function SchedulingPanel() {
             </ol>
           </section>
 
-          <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
-            <div className="flex flex-col gap-2 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h3 className="text-lg font-semibold">Saved schedules</h3>
-                <p className="mt-1 text-sm text-zinc-600">Reusable windows. Exceptions and holiday rules are deferred.</p>
-              </div>
-              <div className="self-start">
+          <details className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-5">
+              <span className="text-lg font-semibold">Saved schedules</span>
+              <span className="self-start">
                 <StatusPill label={`${data?.schedules.length ?? 0} schedules`} tone="muted" />
-              </div>
-            </div>
+              </span>
+            </summary>
             <ol className="divide-y divide-zinc-200">
               {(data?.schedules ?? []).map((schedule) => (
                 <li key={schedule.id} className="grid gap-4 px-5 py-4 text-sm xl:grid-cols-[minmax(0,1fr)_auto]">
@@ -683,9 +589,6 @@ export function SchedulingPanel() {
                     </p>
                     <p className="mt-1 break-words text-xs text-zinc-500">
                       Screens: {namesForScreens(schedule.screenIds, screensById)}
-                    </p>
-                    <p className="mt-1 break-words text-xs text-zinc-500">
-                      Playlists when active: {playlistsForScreens(schedule.screenIds, screensById, playlistsById)}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2 xl:justify-end">
@@ -709,20 +612,17 @@ export function SchedulingPanel() {
               ))}
               {(data?.schedules.length ?? 0) === 0 ? (
                 <li className="p-5 text-sm leading-6 text-zinc-600">
-                  No schedules are saved. Screens keep using their assigned playlists whenever the field player is running.
+                  No saved schedules.
                 </li>
               ) : null}
             </ol>
-          </section>
+          </details>
         </div>
 
         <form onSubmit={saveSchedule} className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h3 className="text-lg font-semibold">{formTitle}</h3>
-              <p className="mt-1 text-sm leading-6 text-zinc-600">
-                Choose days and on/off times.
-              </p>
             </div>
             {editingId ? (
               <button
