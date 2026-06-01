@@ -245,18 +245,12 @@ function matchesTypeFilter(item: MediaItem, filter: TypeFilter): boolean {
   return kind === "Video";
 }
 
-function actionLabel(item: MediaItem, addingMediaId: string | null): string {
-  if (addingMediaId === item.id) {
-    return "Adding";
-  }
-  if (isInPlaylist(item)) {
-    return "In playlist";
-  }
-  return playbackSafety(item).canUseInPlaylist ? "Add" : "Review";
-}
-
 function canDeleteMedia(item: MediaItem): boolean {
   return item.origin !== "playlist" && !isInPlaylist(item);
+}
+
+function canAddMediaToPlaylist(item: MediaItem): boolean {
+  return playbackSafety(item).canUseInPlaylist && !isInPlaylist(item) && item.origin !== "playlist";
 }
 
 function sidebarButtonClass(selected: boolean): string {
@@ -306,6 +300,10 @@ export function MediaStorePanel() {
           matchesTypeFilter(item, typeFilter)
       ),
     [folderFilter, items, safetyFilter, typeFilter]
+  );
+  const hasVisibleActions = useMemo(
+    () => visibleItems.some((item) => canAddMediaToPlaylist(item) || canDeleteMedia(item)),
+    [visibleItems]
   );
   const readyItemCount = useMemo(
     () => items.filter((item) => playbackSafety(item).canUseInPlaylist).length,
@@ -962,14 +960,13 @@ export function MediaStorePanel() {
                 <th className="px-4 py-3">Duration</th>
                 <th className="px-4 py-3">Size</th>
                 <th className="px-4 py-3">Updated</th>
-                <th className="px-4 py-3">Actions</th>
+                {hasVisibleActions ? <th className="px-4 py-3">Actions</th> : null}
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200">
               {visibleItems.map((item) => {
                 const safety = playbackSafety(item);
-                const inPlaylist = isInPlaylist(item);
-                const canAdd = safety.canUseInPlaylist && !inPlaylist && item.origin !== "playlist";
+                const canAdd = canAddMediaToPlaylist(item);
                 const deleting = deletingMediaId === item.id;
                 return (
                   <tr key={item.id} className="bg-white hover:bg-zinc-50">
@@ -999,34 +996,38 @@ export function MediaStorePanel() {
                     <td className="px-4 py-3 text-zinc-700">{formatDuration(item.durationSeconds)}</td>
                     <td className="px-4 py-3 text-zinc-700">{formatBytes(item.sizeBytes)}</td>
                     <td className="px-4 py-3 text-zinc-700">{formatTimestamp(item.updatedAt)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => void handleAddToPlaylist(item)}
-                          disabled={isBusy || !canAdd}
-                          className="min-h-9 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
-                        >
-                          {actionLabel(item, addingMediaId)}
-                        </button>
-                        {canDeleteMedia(item) ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleDelete(item)}
-                            disabled={isBusy}
-                            className="min-h-9 rounded-md border border-rose-200 bg-white px-3 py-1.5 text-sm font-semibold text-rose-700 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
-                          >
-                            {deleting ? "Deleting" : "Delete"}
-                          </button>
-                        ) : null}
-                      </div>
-                    </td>
+                    {hasVisibleActions ? (
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-2">
+                          {canAdd ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleAddToPlaylist(item)}
+                              disabled={isBusy}
+                              className="min-h-9 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
+                            >
+                              {addingMediaId === item.id ? "Adding" : "Add"}
+                            </button>
+                          ) : null}
+                          {canDeleteMedia(item) ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleDelete(item)}
+                              disabled={isBusy}
+                              className="min-h-9 rounded-md border border-rose-200 bg-white px-3 py-1.5 text-sm font-semibold text-rose-700 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
+                            >
+                              {deleting ? "Deleting" : "Delete"}
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    ) : null}
                   </tr>
                 );
               })}
               {visibleItems.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-8 text-zinc-600" colSpan={9}>
+                  <td className="px-4 py-8 text-zinc-600" colSpan={hasVisibleActions ? 9 : 8}>
                     {items.length === 0 ? message : "No media matches these filters."}
                   </td>
                 </tr>

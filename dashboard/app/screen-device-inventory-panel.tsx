@@ -679,16 +679,16 @@ export function ScreenDeviceInventoryPanel({
         </div>
 
         <div className="max-w-full overflow-x-auto border-t border-zinc-200">
-          <table className="w-full min-w-[1120px] text-left text-sm">
+          <table className="w-full min-w-[980px] text-left text-sm">
             <thead className="bg-zinc-50 text-xs uppercase text-zinc-500">
               <tr>
                 <th className="px-4 py-3">Screen</th>
-                <th className="px-4 py-3">Assigned playlist</th>
+                <th className="px-4 py-3">Playlist</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Now playing</th>
-                <th className="px-4 py-3">Playlist update</th>
-                <th className="px-4 py-3">Pi</th>
-                <th className="px-4 py-3">Last check-in</th>
+                <th className="px-4 py-3">Sync</th>
+                <th className="px-4 py-3">Device</th>
+                <th className="px-4 py-3">Last seen</th>
                 <th className="px-4 py-3">Actions</th>
               </tr>
             </thead>
@@ -729,23 +729,21 @@ export function ScreenDeviceInventoryPanel({
                         ? `${formatCount(row.assignedPlaylist.assetCount, "item")} · update ${row.assignedPlaylist.version}`
                         : "Choose a saved playlist."}
                     </p>
-                    {row.devicePlaylistLine ? (
-                      <p className="mt-1 text-xs text-amber-800">{row.devicePlaylistLine}</p>
-                    ) : (
-                      <p className="mt-1 text-xs text-zinc-500">{row.currentPlaylistLine}</p>
-                    )}
                   </td>
                   <td className="px-4 py-3">
-                    <StatusPill label={row.statusLabel} tone={row.statusTone} />
-                    <p className="mt-1 text-xs leading-5 text-zinc-600">{row.statusDetail}</p>
+                    <span title={row.statusDetail}>
+                      <StatusPill label={row.statusLabel} tone={row.statusTone} />
+                    </span>
                   </td>
                   <td className="px-4 py-3">
-                    <StatusPill label={row.playbackLabel} tone={row.playbackTone} />
-                    <p className="mt-1 text-xs leading-5 text-zinc-600">{row.playbackDetail}</p>
+                    <span title={row.playbackDetail}>
+                      <StatusPill label={row.playbackLabel} tone={row.playbackTone} />
+                    </span>
                   </td>
                   <td className="px-4 py-3">
-                    <StatusPill label={row.syncLabel} tone={row.syncTone} />
-                    <p className="mt-1 text-xs leading-5 text-zinc-600">{row.syncDetail}</p>
+                    <span title={row.syncDetail}>
+                      <StatusPill label={row.syncLabel} tone={row.syncTone} />
+                    </span>
                   </td>
                   <td className="px-4 py-3">
                     <p className="font-semibold text-zinc-950">{piLabel(row.device, row.screen)}</p>
