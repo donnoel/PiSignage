@@ -230,6 +230,55 @@ function normalizeIdentity(value: string | null): string {
   return value?.trim().toLowerCase() ?? "";
 }
 
+function unavailableStateCards(screen: TroubleshootingScreen | null): Array<{
+  detail: string;
+  label: string;
+  tone: "good" | "muted" | "warn";
+  value: string;
+}> {
+  const screenName = screen?.name ?? "Selected screen";
+  const host = screen?.deviceHost ?? "No Pi host saved";
+
+  return [
+    {
+      detail: `${screenName} is saved in local inventory at ${host}. Beam has not collected live diagnostics from this Pi yet.`,
+      label: "Pi access",
+      tone: "muted",
+      value: "Inventory only"
+    },
+    {
+      detail: "Service state is not available until this screen has a live diagnostics path.",
+      label: "VLC service",
+      tone: "muted",
+      value: "No live evidence"
+    },
+    {
+      detail: "Playback may continue locally, but Beam has not received a player status report from this screen.",
+      label: "Player status",
+      tone: "muted",
+      value: "Not reported"
+    },
+    {
+      detail: "Display mode is not available until this Pi reports diagnostics.",
+      label: "Display",
+      tone: "muted",
+      value: "Not reported"
+    },
+    {
+      detail: "Temperature, throttle, and uptime are not available for this screen yet.",
+      label: "Health",
+      tone: "muted",
+      value: "Not reported"
+    },
+    {
+      detail: "Recovery history is currently tied to the configured live Pi, not this inventory-only screen.",
+      label: "Last recovery",
+      tone: "muted",
+      value: "No screen-specific run"
+    }
+  ];
+}
+
 function formatTimestamp(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -359,7 +408,7 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
   const liveHost = normalizeIdentity(data?.pi.host ?? null);
   const selectedHost = normalizeIdentity(selectedScreen?.deviceHost ?? null);
   const selectedHasLiveDiagnostics = Boolean(liveHost && selectedHost && liveHost === selectedHost);
-  const stateCards: {
+  const liveStateCards: {
     detail: string;
     label: string;
     tone: "good" | "muted" | "warn";
@@ -402,6 +451,22 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
       value: latestRecovery ? formatTimestamp(latestRecovery.finishedAt) : "None recorded"
     }
   ];
+  const stateCards = selectedHasLiveDiagnostics ? liveStateCards : unavailableStateCards(selectedScreen);
+  const selectedScreenName = selectedScreen?.name ?? "selected screen";
+  const currentStateDetail = selectedHasLiveDiagnostics
+    ? `Latest live evidence for ${selectedScreenName}.`
+    : `${selectedScreenName} is selected, but live diagnostics are not connected for this screen yet.`;
+  const selectedStatusLabel = selectedHasLiveDiagnostics
+    ? data?.pi.reachable
+      ? "Live evidence"
+      : "Live target unavailable"
+    : "Inventory only";
+  const selectedStatusTone: "muted" | "warn" = selectedHasLiveDiagnostics && !data?.pi.reachable ? "warn" : "muted";
+  const selectedSshText = selectedHasLiveDiagnostics
+    ? data?.pi.sshCommand ?? "Pi SSH is not configured"
+    : selectedScreen?.deviceHost
+      ? `Host saved: ${selectedScreen.deviceHost}`
+      : "Pi host is not configured";
 
   return (
     <div className="mt-6 space-y-4">
@@ -410,7 +475,7 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
           <div>
             <h2 className="text-xl font-semibold">Screen scope</h2>
             <p className="mt-1 text-sm leading-6 text-zinc-600">
-              Find a screen first. The list stays scrollable as inventory grows; live recovery actions currently target the configured Pi.
+              Find a screen first. The list stays scrollable as inventory grows; live recovery evidence follows the selected screen.
             </p>
           </div>
           <StatusPill label={`${screens.length} screens`} tone="muted" />
@@ -489,7 +554,7 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
                 <p className="mt-4 text-sm leading-6 text-zinc-600">
                   {selectedHasLiveDiagnostics
                     ? "The evidence and recovery controls below match this screen's configured Pi."
-                    : "This screen is listed from local inventory. Live diagnostics below still come from the configured Pi connection."}
+                    : "This screen is listed from local inventory. Live diagnostics are not connected for this Pi yet."}
                 </p>
               </>
             ) : (
@@ -503,12 +568,12 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 className="text-xl font-semibold">Current state</h2>
-            <p className="mt-1 text-sm leading-6 text-zinc-600">Latest local evidence from the configured Pi and recovery log.</p>
+            <p className="mt-1 text-sm leading-6 text-zinc-600">{currentStateDetail}</p>
           </div>
           <div className="self-start">
             <StatusPill
-              label={stateCards.some((card) => card.tone === "warn") ? "Review needed" : "Evidence refreshed"}
-              tone={stateCards.some((card) => card.tone === "warn") ? "warn" : "muted"}
+              label={selectedStatusLabel}
+              tone={selectedStatusTone}
             />
           </div>
         </div>
@@ -534,12 +599,12 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
           <div>
             <h2 className="text-xl font-semibold">Recovery tools</h2>
             <p className="mt-1 text-sm leading-6 text-zinc-600">
-              Start with a fresh check, then use the narrowest action that matches the evidence.
+              Start with a fresh check, then use the narrowest action when live evidence matches the selected screen.
             </p>
           </div>
           <StatusPill
-            label={data?.pi.reachable ? "Pi reachable" : data?.pi.configured ? "Pi unavailable" : "Pi not configured"}
-            tone={data?.pi.reachable ? "muted" : "warn"}
+            label={selectedHasLiveDiagnostics ? (data?.pi.reachable ? "Pi reachable" : "Pi unavailable") : "Inventory only"}
+            tone={selectedHasLiveDiagnostics && !data?.pi.reachable ? "warn" : "muted"}
           />
         </div>
 
@@ -551,17 +616,17 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
                 <p className="text-xs font-semibold uppercase text-zinc-500">SSH</p>
                 <div className="mt-2 flex flex-col gap-2 lg:flex-row lg:items-center">
                   <code className="min-h-10 flex-1 overflow-x-auto rounded-md bg-white px-3 py-2 text-sm text-zinc-900 ring-1 ring-zinc-200">
-                    {data?.pi.sshCommand ?? "Pi SSH is not configured"}
+                    {selectedSshText}
                   </code>
                   <button
                     type="button"
-                    disabled={!data?.pi.sshCommand}
+                    disabled={!selectedHasLiveDiagnostics || !data?.pi.sshCommand}
                     onClick={copySshCommand}
                     className="min-h-10 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Copy
                   </button>
-                  {data?.pi.sshUrl ? (
+                  {selectedHasLiveDiagnostics && data?.pi.sshUrl ? (
                     <a
                       href={data.pi.sshUrl}
                       className="inline-flex min-h-10 items-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800"
@@ -574,7 +639,7 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                {data?.pi.playerUrl ? (
+                {selectedHasLiveDiagnostics && data?.pi.playerUrl ? (
                   <a
                     href={data.pi.playerUrl}
                     target="_blank"
@@ -584,7 +649,7 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
                     Open Pi player
                   </a>
                 ) : null}
-                {data?.pi.adminUrl ? (
+                {selectedHasLiveDiagnostics && data?.pi.adminUrl ? (
                   <a
                     href={data.pi.adminUrl}
                     target="_blank"
@@ -595,7 +660,7 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
                   </a>
                 ) : (
                   <span className="inline-flex min-h-10 items-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-600">
-                    Admin UI not configured
+                    {selectedHasLiveDiagnostics ? "Admin UI not configured" : "Live Pi links unavailable"}
                   </span>
                 )}
               </div>
@@ -615,7 +680,7 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
               </button>
               <button
                 type="button"
-                disabled={isBusy}
+                disabled={!selectedHasLiveDiagnostics || isBusy}
                 onClick={() => void runAction("publish")}
                 className="min-h-10 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -623,7 +688,7 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
               </button>
               <button
                 type="button"
-                disabled={isBusy}
+                disabled={!selectedHasLiveDiagnostics || isBusy}
                 onClick={() => void runAction("restart")}
                 className="min-h-10 rounded-md bg-zinc-900 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
               >
@@ -631,7 +696,7 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
               </button>
               <button
                 type="button"
-                disabled={isBusy}
+                disabled={!selectedHasLiveDiagnostics || isBusy}
                 onClick={() => void runAction("recover")}
                 className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
               >
@@ -665,6 +730,7 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
         </div>
       </section>
 
+      {selectedHasLiveDiagnostics ? (
       <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-200 p-5">
           <h3 className="text-lg font-semibold">Diagnostic evidence</h3>
@@ -699,7 +765,9 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
           ))}
         </ol>
       </section>
+      ) : null}
 
+      {selectedHasLiveDiagnostics ? (
       <section className="grid gap-4 xl:grid-cols-2">
         <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
           <div className="border-b border-zinc-200 p-5">
@@ -746,6 +814,7 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
           </ol>
         </div>
       </section>
+      ) : null}
 
       <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-200 p-5">
