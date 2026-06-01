@@ -258,15 +258,6 @@ function assetPlaybackLabel(asset: PlaylistAsset, playerStatus: PlayerStatus | n
   return "On Pi";
 }
 
-function assetLabel(playlist: Playlist, assetId: string | null | undefined): string {
-  if (!assetId) {
-    return "No asset reported";
-  }
-
-  const asset = playlist.assets.find((candidate) => candidate.assetId === assetId);
-  return asset?.altText ?? assetId;
-}
-
 function parseVlcStats(rawValue: string): Pick<PiProbe, "vlcMemoryMb" | "vlcCpuPercent"> {
   const [rssKbText, cpuText] = rawValue.trim().split(/\s+/);
   const rssKb = Number.parseFloat(rssKbText);
@@ -362,40 +353,6 @@ function statusAgeMs(timestamp: string | null | undefined): number | null {
   }
 
   return Math.max(0, Date.now() - statusDate.getTime());
-}
-
-function currentPlaybackLabel(
-  playlist: Playlist,
-  heartbeat: Heartbeat | null,
-  isHeartbeatFresh: boolean,
-  playbackHealthy: boolean
-): string {
-  if (isHeartbeatFresh && heartbeat?.currentAssetId) {
-    return assetLabel(playlist, heartbeat.currentAssetId);
-  }
-
-  if (playbackHealthy) {
-    return playlist.name;
-  }
-
-  return "Playback not confirmed";
-}
-
-function currentPlaybackDetail(
-  playlist: Playlist,
-  heartbeat: Heartbeat | null,
-  isHeartbeatFresh: boolean,
-  playbackHealthy: boolean
-): string {
-  if (isHeartbeatFresh && heartbeat?.currentAssetId) {
-    return `Local agent updated ${formatStatusAge(heartbeat?.timestamp)}.`;
-  }
-
-  if (playbackHealthy) {
-    return `VLC confirms this playlist is playing. Exact item position is not reported yet across the ${pluralize(playlist.assets.length, "item")} loop.`;
-  }
-
-  return "Waiting for a fresh VLC playback report.";
 }
 
 function screenLabel(pi: PiProbe, heartbeat: Heartbeat | null, isHeartbeatFresh: boolean): string {
@@ -844,6 +801,9 @@ type AttentionItem = {
 };
 
 type FleetCommandRow = {
+  assignedPlaylistAssetCount: number | null;
+  assignedPlaylistDuration: string | null;
+  assignedPlaylistName: string;
   detail: string;
   group: string;
   healthLabel: string;
@@ -877,8 +837,7 @@ function fleetCommandRows({
   pi,
   playbackHealthy,
   playbackLabel,
-  playlist,
-  playlistSyncState
+  playlistStore
 }: {
   inventory: DashboardState["inventory"];
   isPlaying: boolean;
@@ -887,10 +846,12 @@ function fleetCommandRows({
   pi: PiProbe;
   playbackHealthy: boolean;
   playbackLabel: string;
-  playlist: Playlist;
-  playlistSyncState: { detail: string; label: string; tone: "good" | "warn" | "muted" };
+  playlistStore: PlaylistStore;
 }): FleetCommandRow[] {
   const screensByDeviceId = new Map<string, ScreenRecord>();
+  const playlistsById = new Map(playlistStore.items.map((item) => [item.playlistId, item]));
+  const livePlaylistId = pi.playerStatus?.playlistId ?? null;
+  const livePlaylistVersion = pi.playerStatus?.playlistVersion;
 
   for (const screen of inventory.screens.items) {
     if (screen.deviceId) {
@@ -915,29 +876,65 @@ function fleetCommandRows({
     )
     .map((device) => {
       const linkedScreen = screensByDeviceId.get(device.id) ?? null;
+      const assignedPlaylistId = linkedScreen?.playlistId ?? device.playlistId;
+      const assignedPlaylist = assignedPlaylistId ? playlistsById.get(assignedPlaylistId) ?? null : null;
       const hostConfigured = Boolean(device.host.trim()) && device.host !== "Not configured";
       const isLive = Boolean(pi.host && normalizeIdentity(device.host) === normalizeIdentity(pi.host));
       const livePlaybackStale = isLive && isPlaying && !isPlayerStatusFresh;
       const healthLabel = !hostConfigured ? "No host" : isLive ? (pi.reachable ? "Online" : "Offline") : "Not reporting";
       const healthTone = !hostConfigured ? "warn" : isLive ? (pi.reachable ? "good" : "warn") : "muted";
-      const deviceAssignedToPlaylist = device.playlistId === playlist.playlistId;
-      const syncLabel = !deviceAssignedToPlaylist ? "Unassigned" : isLive ? playlistSyncState.label : "Unknown";
-      const syncTone = !deviceAssignedToPlaylist ? "warn" : isLive ? playlistSyncState.tone : "muted";
+      let syncDetail = "No playlist is assigned to this screen.";
+      let syncLabel = "Unassigned";
+      let syncTone: "good" | "warn" | "muted" = "warn";
+
+      if (assignedPlaylistId && !assignedPlaylist) {
+        syncDetail = "This screen points to a playlist Beam cannot find locally.";
+        syncLabel = "Review";
+      } else if (assignedPlaylist && !isLive) {
+        syncDetail = "No live playlist report has been received for this saved screen.";
+        syncLabel = "Unknown";
+        syncTone = "muted";
+      } else if (assignedPlaylist && !pi.reachable) {
+        syncDetail = "Beam cannot reach this screen to confirm the playlist.";
+        syncLabel = "Waiting";
+        syncTone = "muted";
+      } else if (assignedPlaylist && !livePlaylistId) {
+        syncDetail = "The screen has not reported a playlist update yet.";
+        syncLabel = "Unknown";
+      } else if (assignedPlaylist && livePlaylistId !== assignedPlaylist.playlistId) {
+        const reportedPlaylist = livePlaylistId ? playlistsById.get(livePlaylistId)?.name ?? "another playlist" : "another playlist";
+        syncDetail = `Assigned to ${assignedPlaylist.name}, but the screen reports ${reportedPlaylist}.`;
+        syncLabel = "Update needed";
+      } else if (assignedPlaylist && livePlaylistVersion === assignedPlaylist.version) {
+        syncDetail = `${assignedPlaylist.name} is on the screen.`;
+        syncLabel = "In sync";
+        syncTone = "good";
+      } else if (assignedPlaylist && typeof livePlaylistVersion === "number" && livePlaylistVersion < assignedPlaylist.version) {
+        syncDetail = `Beam has update ${assignedPlaylist.version}; the screen reports update ${livePlaylistVersion}.`;
+        syncLabel = "Update needed";
+      } else if (assignedPlaylist) {
+        syncDetail = `The screen reports update ${livePlaylistVersion ?? "unknown"}; Beam has update ${assignedPlaylist.version}.`;
+        syncLabel = "Review";
+      }
+
       const playback = isLive ? (!pi.reachable ? "No live report" : playbackHealthy ? "Playing" : playbackLabel) : "Unknown";
       const needsAttention =
         !hostConfigured ||
-        !deviceAssignedToPlaylist ||
-        (isLive && (!pi.reachable || !playbackHealthy || livePlaybackStale || playlistSyncState.tone !== "good")) ||
+        syncTone === "warn" ||
+        (isLive && (!pi.reachable || !playbackHealthy || livePlaybackStale)) ||
         (!isLive && hostConfigured);
       const detail = !hostConfigured
         ? "Add a local address before this Pi can report."
         : isLive
           ? pi.reachable
-            ? playlistSyncState.detail
+            ? syncDetail
             : offlinePlaybackDetail(lastKnownPlayback)
           : "This Pi is saved in Beam, but it is not checking in yet.";
 
       return {
+        assignedPlaylistAssetCount: assignedPlaylist?.assets.length ?? null,
+        assignedPlaylistDuration: assignedPlaylist ? formatDuration(assignedPlaylist.assets) : null,
+        assignedPlaylistName: assignedPlaylist?.name ?? "No playlist assigned",
         detail,
         group: linkedScreen?.group ?? device.group,
         healthLabel,
@@ -980,8 +977,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const playbackHealthy = isPlaying && isPlayerStatusFresh;
   const playbackLabel = playbackHealthy ? "Playing" : isPlaying ? "Stale" : playbackState;
   const playerFreshnessDetail = statusFreshnessDetail(pi, playerStatus, isPlayerStatusFresh);
-  const currentPlayback = currentPlaybackLabel(playlist, heartbeat, isHeartbeatFresh, playbackHealthy);
-  const currentPlaybackStatus = currentPlaybackDetail(playlist, heartbeat, isHeartbeatFresh, playbackHealthy);
   const localScreenName = screenLabel(pi, heartbeat, isHeartbeatFresh);
   const localLocationName = locationLabel();
   const localDeviceIdentifier = deviceIdentifier(pi, heartbeat, isHeartbeatFresh);
@@ -1101,8 +1096,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     pi,
     playbackHealthy,
     playbackLabel,
-    playlist,
-    playlistSyncState
+    playlistStore
   });
   const onlineDeviceCount = fleetRows.filter((row) => row.healthLabel === "Online").length;
   const offlineDeviceCount = fleetRows.filter((row) => row.healthLabel === "Offline").length;
@@ -1153,12 +1147,14 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     focusedScreenIsLive && !pi.reachable ? lastKnownPlaybackLabel(lastKnownPlayback) : null;
   const focusedScreenTitle = focusedScreenIsLive
     ? pi.reachable
-      ? currentPlayback
+      ? focusedScreen.assignedPlaylistName
       : "Screen offline"
     : "Waiting for check-in";
   const focusedScreenDetail = focusedScreenIsLive
     ? pi.reachable
-      ? currentPlaybackStatus
+      ? focusedScreen.syncTone === "good"
+        ? `VLC reports ${focusedScreen.assignedPlaylistName} is in sync. Exact item position is not reported yet across the ${pluralize(focusedScreen.assignedPlaylistAssetCount ?? 0, "item")} loop.`
+        : focusedScreen.detail
       : offlinePlaybackDetail(lastKnownPlayback)
     : "This screen is saved in Beam. Once it checks in, its current playback will appear here.";
   const focusedLastReportLabel = focusedScreenIsLive
@@ -1460,7 +1456,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                           </div>
                           <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/10">
                             <p className="font-semibold text-cyan-50/70">Loop</p>
-                            <p className="mt-1 font-semibold text-white">{playlist.assets.length} items · {totalDuration}</p>
+                            <p className="mt-1 font-semibold text-white">
+                              {focusedScreen?.assignedPlaylistAssetCount ?? playlist.assets.length} items · {focusedScreen?.assignedPlaylistDuration ?? totalDuration}
+                            </p>
                           </div>
                         </div>
                       </div>

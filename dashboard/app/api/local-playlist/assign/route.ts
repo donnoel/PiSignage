@@ -78,7 +78,7 @@ export async function POST(request: Request) {
 
     const timestamp = nowIso();
     if (body.targetType === "screen") {
-      const screenStore = await readScreenStore();
+      const [screenStore, deviceStore] = await Promise.all([readScreenStore(), readDeviceStore()]);
       const index = screenStore.items.findIndex((item) => item.id === body.targetId);
       if (index === -1) {
         return NextResponse.json({ error: "Screen was not found." }, { status: 404 });
@@ -97,8 +97,28 @@ export async function POST(request: Request) {
         updatedAt: timestamp,
         version: screenStore.version + 1
       });
+
+      const linkedDeviceId = nextItems[index].deviceId;
+      const nextDeviceItems = deviceStore.items.map((device) =>
+        device.id === linkedDeviceId || device.screenId === body.targetId
+          ? {
+              ...device,
+              playlistId: assignmentPlaylistId,
+              updatedAt: timestamp
+            }
+          : device
+      );
+
+      if (JSON.stringify(nextDeviceItems) !== JSON.stringify(deviceStore.items)) {
+        await writeDeviceStore({
+          ...deviceStore,
+          items: nextDeviceItems,
+          updatedAt: timestamp,
+          version: deviceStore.version + 1
+        });
+      }
     } else {
-      const deviceStore = await readDeviceStore();
+      const [deviceStore, screenStore] = await Promise.all([readDeviceStore(), readScreenStore()]);
       const index = deviceStore.items.findIndex((item) => item.id === body.targetId);
       if (index === -1) {
         return NextResponse.json({ error: "Device was not found." }, { status: 404 });
@@ -117,6 +137,26 @@ export async function POST(request: Request) {
         updatedAt: timestamp,
         version: deviceStore.version + 1
       });
+
+      const linkedScreenId = nextItems[index].screenId;
+      const nextScreenItems = screenStore.items.map((screen) =>
+        screen.id === linkedScreenId || screen.deviceId === body.targetId
+          ? {
+              ...screen,
+              playlistId: assignmentPlaylistId,
+              updatedAt: timestamp
+            }
+          : screen
+      );
+
+      if (JSON.stringify(nextScreenItems) !== JSON.stringify(screenStore.items)) {
+        await writeScreenStore({
+          ...screenStore,
+          items: nextScreenItems,
+          updatedAt: timestamp,
+          version: screenStore.version + 1
+        });
+      }
     }
 
     await appendActivityRecord({
