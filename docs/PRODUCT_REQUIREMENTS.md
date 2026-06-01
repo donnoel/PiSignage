@@ -6,7 +6,7 @@ Playback performance and recovery are the core product. Every feature should eit
 
 ## Real Product Rule
 
-This is being built and tested for real. Do not add placeholder implementation, fake devices, fake screens, fake health, fake media, fake activity, or fake success states. Seed data can exist only as tracked examples or first-run defaults; the application must operate on real local state, real uploaded media, real configured devices, and honest unavailable/error states when prerequisites are missing.
+This is being built and tested for real. Do not add placeholder implementation, fake devices, fake screens, fake health, fake media, fake activity, or fake success states. Seed data can exist only as tracked examples; screen and device inventory must come from real operator-created local state. The application must operate on real local state, real uploaded media, real configured devices, and honest unavailable/error states when prerequisites are missing.
 
 ## Product Direction
 

@@ -7,9 +7,8 @@ import {
   writeDeviceStore,
   writeScreenStore
 } from "../../../lib/local-data-store";
-import { ensureInventorySeed } from "../../../lib/local-inventory";
+import { readNormalizedInventory } from "../../../lib/local-inventory";
 import { readPlaylistStore, readStoredPlaylist, selectPlaylist } from "../../../lib/local-playlist";
-import { readPiConfig } from "../../../lib/pi-local";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,16 +20,9 @@ function nowIso(): string {
 }
 
 async function assignmentResponse(playlistId?: string | null) {
-  const [store, piConfig] = await Promise.all([readPlaylistStore(), Promise.resolve(readPiConfig())]);
+  const store = await readPlaylistStore();
   const playlist = selectPlaylist(store, playlistId);
-  const inventory = await ensureInventorySeed({
-    host: piConfig?.host ?? null,
-    location: process.env.PISIGNAGE_LOCATION_NAME?.trim() || "Primary location",
-    playlistId: playlist.playlistId,
-    rootPath: piConfig?.root ?? null,
-    screenName: process.env.PISIGNAGE_SCREEN_NAME?.trim() || "Primary Screen",
-    sshUser: piConfig?.user ?? null
-  });
+  const inventory = await readNormalizedInventory(playlist.playlistId);
 
   return NextResponse.json({
     devices: inventory.devices.items,

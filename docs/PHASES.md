@@ -47,7 +47,7 @@ Validation:
 
 ## Real Implementation Rule
 
-All phases must build real local product behavior. Do not use placeholder code, mock data, fake devices, fake health, fake activity, or fake success states to complete a phase. Seed data is acceptable only as tracked examples or first-run defaults. Missing hardware or configuration must produce honest unavailable/error states, and validation reports must say exactly what was tested for real.
+All phases must build real local product behavior. Do not use placeholder code, mock data, fake devices, fake health, fake activity, or fake success states to complete a phase. Seed data is acceptable only as tracked examples; screen and device inventory must come from real operator-created local state. Missing hardware or configuration must produce honest unavailable/error states, and validation reports must say exactly what was tested for real.
 
 ## Phase 1: Requirements And Information Architecture
 
@@ -116,6 +116,7 @@ Acceptance:
 - Writes are atomic where practical.
 - Runtime state lives under ignored local-state paths.
 - Tracked seed/baseline data remains separate from live editable state.
+- Empty screen and device stores remain empty until an operator creates real inventory.
 - Existing playlist behavior continues to use `dashboard/local-state/playlist.local.json` as the live editable source.
 
 Validation:

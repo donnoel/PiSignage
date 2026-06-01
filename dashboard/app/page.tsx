@@ -4,7 +4,7 @@ import { Metric, StatusPill } from "./dashboard-ui";
 import { DeviceHealthFleetPanel } from "./device-health-fleet-panel";
 import { ensureLocalDataFoundation } from "./lib/local-data-store";
 import type { DeviceStore, ScreenRecord, ScreenStore } from "./lib/local-data-store";
-import { ensureInventorySeed } from "./lib/local-inventory";
+import { readNormalizedInventory } from "./lib/local-inventory";
 import { localStateDirectory, publishStatusPath, readPlaylistStore, repoRoot, selectPlaylist, writeFileAtomic } from "./lib/local-playlist";
 import type { Playlist, PlaylistAsset, PlaylistStore } from "./lib/local-playlist";
 import { readPiConfig, runSsh } from "./lib/pi-local";
@@ -669,17 +669,9 @@ async function loadDashboardState(selectedPlaylistId?: string | null): Promise<D
   const playlistStore = await readPlaylistStore();
   const playlist = selectPlaylist(playlistStore, selectedPlaylistId);
   const seedPlaylistId = playlistStore.items[0]?.playlistId ?? playlist.playlistId;
-  const piConfig = readPiConfig();
   const [heartbeat, inventory, publishStatus, pi] = await Promise.all([
     readJsonFile<Heartbeat>(heartbeatPath),
-    ensureInventorySeed({
-      host: piConfig?.host ?? null,
-      location: process.env.PISIGNAGE_LOCATION_NAME?.trim() || "Primary location",
-      playlistId: seedPlaylistId,
-      rootPath: piConfig?.root ?? null,
-      screenName: process.env.PISIGNAGE_SCREEN_NAME?.trim() || "Primary Screen",
-      sshUser: piConfig?.user ?? null
-    }),
+    readNormalizedInventory(seedPlaylistId),
     readJsonFile<PublishStatus>(publishStatusPath()),
     loadPiProbe()
   ]);

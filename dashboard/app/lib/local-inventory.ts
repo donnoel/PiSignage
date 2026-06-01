@@ -8,15 +8,6 @@ import {
   writeScreenStore
 } from "./local-data-store";
 
-type InventorySeed = {
-  host: string | null;
-  location: string;
-  playlistId: string;
-  rootPath: string | null;
-  screenName: string;
-  sshUser: string | null;
-};
-
 function isoNow(): string {
   return new Date().toISOString();
 }
@@ -64,37 +55,18 @@ function recordsChanged<TRecord>(before: TRecord[], after: TRecord[]): boolean {
   return JSON.stringify(before) !== JSON.stringify(after);
 }
 
-export async function ensureInventorySeed(seed: InventorySeed): Promise<{
+export async function readNormalizedInventory(fallbackPlaylistId: string): Promise<{
   devices: DeviceStore;
   screens: ScreenStore;
 }> {
   const [rawScreens, rawDevices] = await Promise.all([readScreenStore(), readDeviceStore()]);
-  let screens = normalizeScreenStore(rawScreens, seed.playlistId);
-  let devices = normalizeDeviceStore(rawDevices, seed.playlistId);
+  let screens = normalizeScreenStore(rawScreens, fallbackPlaylistId);
+  let devices = normalizeDeviceStore(rawDevices, fallbackPlaylistId);
   const timestamp = isoNow();
-  let screensUpdated = recordsChanged(rawScreens.items, screens.items);
-  let devicesUpdated = recordsChanged(rawDevices.items, devices.items);
+  const screensUpdated = recordsChanged(rawScreens.items, screens.items);
+  const devicesUpdated = recordsChanged(rawDevices.items, devices.items);
 
-  if (screens.items.length === 0) {
-    screens = {
-      ...screens,
-      items: [
-        {
-          deviceId: "device-primary",
-          group: "Primary",
-          id: "screen-primary",
-          location: seed.location,
-          name: seed.screenName,
-          notes: "",
-          playlistId: seed.playlistId,
-          updatedAt: timestamp
-        }
-      ],
-      updatedAt: timestamp,
-      version: screens.version + 1
-    };
-    screensUpdated = true;
-  } else if (screensUpdated) {
+  if (screensUpdated) {
     screens = {
       ...screens,
       updatedAt: timestamp,
@@ -102,30 +74,7 @@ export async function ensureInventorySeed(seed: InventorySeed): Promise<{
     };
   }
 
-  if (devices.items.length === 0) {
-    devices = {
-      ...devices,
-      items: [
-        {
-          group: "Primary",
-          host: seed.host ?? "Not configured",
-          id: "device-primary",
-          location: seed.location,
-          name: "Primary Device",
-          notes: "",
-          playlistId: seed.playlistId,
-          playerType: "vlc",
-          rootPath: seed.rootPath ?? "~",
-          screenId: screens.items[0]?.id ?? null,
-          sshUser: seed.sshUser ?? "pi",
-          updatedAt: timestamp
-        }
-      ],
-      updatedAt: timestamp,
-      version: devices.version + 1
-    };
-    devicesUpdated = true;
-  } else if (devicesUpdated) {
+  if (devicesUpdated) {
     devices = {
       ...devices,
       updatedAt: timestamp,

@@ -11,26 +11,18 @@ import {
   createDevice,
   createScreen,
   createScreenWithDevice,
-  ensureInventorySeed,
+  readNormalizedInventory,
   removeDevice,
   removeScreen
 } from "../../lib/local-inventory";
 import { readLivePlaylist } from "../../lib/local-playlist";
-import { readPiConfig } from "../../lib/pi-local";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function getInventoryResponse() {
-  const [playlist, piConfig] = await Promise.all([readLivePlaylist(), Promise.resolve(readPiConfig())]);
-  const inventory = await ensureInventorySeed({
-    host: piConfig?.host ?? null,
-    location: process.env.PISIGNAGE_LOCATION_NAME?.trim() || "Primary location",
-    playlistId: playlist.playlistId,
-    rootPath: piConfig?.root ?? null,
-    screenName: process.env.PISIGNAGE_SCREEN_NAME?.trim() || "Primary Screen",
-    sshUser: piConfig?.user ?? null
-  });
+  const playlist = await readLivePlaylist();
+  const inventory = await readNormalizedInventory(playlist.playlistId);
 
   return NextResponse.json({
     devices: inventory.devices.items,

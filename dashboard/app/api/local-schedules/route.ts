@@ -11,7 +11,7 @@ import {
   type ScheduleStore,
   writeScheduleStore
 } from "../../lib/local-data-store";
-import { ensureInventorySeed } from "../../lib/local-inventory";
+import { readNormalizedInventory } from "../../lib/local-inventory";
 import { readLivePlaylist, readPlaylistStore } from "../../lib/local-playlist";
 import { publishScheduleStoreToPi, readPiConfig, runSsh } from "../../lib/pi-local";
 import {
@@ -97,15 +97,8 @@ function validateInput(input: ScheduleInput, screenIds: Set<string>): {
 }
 
 async function inventoryForSchedules() {
-  const [playlist, piConfig] = await Promise.all([readLivePlaylist(), Promise.resolve(readPiConfig())]);
-  return ensureInventorySeed({
-    host: piConfig?.host ?? null,
-    location: process.env.PISIGNAGE_LOCATION_NAME?.trim() || "Primary location",
-    playlistId: playlist.playlistId,
-    rootPath: piConfig?.root ?? null,
-    screenName: process.env.PISIGNAGE_SCREEN_NAME?.trim() || "Primary Screen",
-    sshUser: piConfig?.user ?? null
-  });
+  const playlist = await readLivePlaylist();
+  return readNormalizedInventory(playlist.playlistId);
 }
 
 async function publishSchedules() {
