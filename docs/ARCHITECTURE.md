@@ -19,24 +19,27 @@ Dashboard -> API Gateway/Lambda -> DynamoDB
 AWS IoT Core MQTT <-> Device Agent -> local playlist/cache -> Player
 ```
 
-In the current POC, cloud services are replaced by local JSON fixtures.
+In the current POC, cloud services are absent. Local JSON state, uploaded local media, and direct Pi SSH/SCP operations provide the real demo path.
 
 ## Repository Boundaries
 
-- `dashboard/` contains the Next.js dashboard mock.
-- `device-agent/` contains the local Raspberry Pi agent skeleton.
-- `player/` contains the fullscreen playback app.
-- `sample-content/` contains local playlists and mock media.
+- `dashboard/` contains the Next.js local operations dashboard.
+- `device-agent/` contains the local Raspberry Pi heartbeat/cache agent.
+- `player/` contains the browser playback fallback/experimental app.
+- `device/pi/` contains Pi service, display, static serving, scheduling, and VLC playback scripts.
+- `sample-content/` contains the tracked seed playlist and local media fixtures.
 - `docs/` contains architecture and operating guidance.
 - `infra/` is reserved for future IaC and must not deploy real resources yet.
 
 ## Local Data Flow
 
-1. `sample-content/playlist.local.json` defines a single local playlist.
-2. The player loads that playlist fixture and renders the current image full-viewport.
-3. The device agent reads the same playlist fixture.
-4. The device agent writes `device-agent/local-state/heartbeat.json` atomically.
-5. The dashboard reads the local playlist and optional heartbeat file to render one screen, one playlist, and one device status view.
+1. `sample-content/playlist.local.json` is the tracked seed playlist.
+2. `dashboard/local-state/playlist.local.json` and `dashboard/local-state/playlists.local.json` are ignored live playlist state.
+3. The dashboard Media Store writes uploaded local media under ignored `sample-content/assets/*` media paths and stores metadata in ignored local JSON.
+4. JPEG and PNG uploads are converted into Pi-safe MP4 still clips before they can enter active playback.
+5. The dashboard publishes local media and playlist JSON to a configured Pi with SSH/SCP.
+6. The VLC field player reads local playlist/cache files and writes `~/.local/state/pisignage/player-status.json`.
+7. The dashboard reads local JSON, optional device-agent heartbeat, and optional Pi SSH probe output to render status and recovery evidence.
 
 ## Future Cloud Data Flow
 
@@ -57,7 +60,7 @@ In the current POC, cloud services are replaced by local JSON fixtures.
 
 ## Assumptions
 
-- Raspberry Pi OS runs Chromium in kiosk mode.
-- One device is paired to one account for the initial POC.
-- Image playback comes before video, scheduling, screenshots, and remote control.
-- AWS credentials and infrastructure are intentionally absent until a later approved phase.
+- Raspberry Pi OS can run VLC appliance playback as the field path; Chromium/browser playback remains a fallback/experimental path.
+- One dashboard account and a small local fleet are enough for the current demo and soak.
+- Playback-safe MP4 assets come before transitions, screenshots, remote reboot, OTA updates, analytics, or fleet management.
+- AWS credentials and infrastructure are intentionally absent until after the demo, five-device soak, and explicit approval.

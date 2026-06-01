@@ -46,11 +46,9 @@ async function readPiDiagnostics() {
   const playerUrl =
     process.env.PISIGNAGE_PLAYER_URL?.trim() ||
     (config?.host ? `http://${config.host}:5173/?playlist=/playlist.local.json` : null);
-  const adminUrl = process.env.PISIGNAGE_PI_ADMIN_URL?.trim() || null;
 
   if (!config) {
     return {
-      adminUrl,
       configured,
       diagnostics: [
         {
@@ -119,7 +117,6 @@ async function readPiDiagnostics() {
     ];
 
     return {
-      adminUrl,
       configured,
       diagnostics,
       host: config.host,
@@ -131,7 +128,6 @@ async function readPiDiagnostics() {
     };
   } catch (error) {
     return {
-      adminUrl,
       configured,
       diagnostics: [
         {

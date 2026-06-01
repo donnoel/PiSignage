@@ -1,8 +1,8 @@
 # API Contract
 
-Phase 3 defines the API and MQTT contract before implementation. The current repository still uses local files and does not expose or deploy a real API.
+This document records the future API and MQTT contract before cloud implementation. The current repository still uses local files, local dashboard routes, and direct Pi SSH/SCP operations; it does not expose or deploy a real cloud API.
 
-These contracts are intentionally scoped to the initial proof of concept: one account, one screen, one Raspberry Pi, one playlist, and image playback. They must remain mockable until a future AWS phase is explicitly approved.
+These contracts are intentionally scoped to the initial product path: one account, a small local fleet, reusable media, playlists, and playback-safe assets. They must remain locally testable until a future AWS phase is explicitly approved.
 
 All examples are illustrative and contain no real secrets.
 
@@ -35,10 +35,10 @@ All examples are illustrative and contain no real secrets.
 
 Rules:
 
-- `type` starts with `image` only.
+- `type` starts with `image` and `video`; the current Pi field path should receive playback-safe MP4 assets.
 - `durationSeconds` must be at least `1`.
 - `altText` is required so dashboard/player UI has a meaningful accessible label.
-- `checksumSha256` is optional for the mock phase but expected before production device caching.
+- `checksumSha256` is optional for the local phase but expected before production device caching.
 
 ### Error Response
 
@@ -322,7 +322,7 @@ MQTT rules:
 - Device policies must scope each device to its own topics.
 - MQTT is not required for the current local POC.
 
-## Local Mock Mapping
+## Local-To-Cloud Mapping
 
 Current local files map to future contracts:
 

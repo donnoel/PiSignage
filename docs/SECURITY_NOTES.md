@@ -17,9 +17,9 @@ Use `.env.example` files later if configuration becomes necessary.
 
 ## Local Development
 
-- Local mocks should not make unexpected network calls.
+- Local dashboard operations should not make unexpected internet calls.
 - Runtime state should be ignored by git unless it is an intentional fixture.
-- Sample playlists must use mock media or local fixtures.
+- Sample playlists must use tracked fixtures or ignored local media, never private customer assets committed to git.
 
 ## Device Identity
 

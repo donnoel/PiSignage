@@ -22,9 +22,9 @@ Map/location UI is deferred. Near-term screen organization should use clear tabl
 ## Delivery Track
 
 - Team demo: Wednesday, June 3, 2026.
-- AWS buildout: after the team demo, with explicit approval before creating real AWS resources.
-- Five-system pilot: operate five real Raspberry Pi signage systems from the interface before production.
-- Production: only after pilot reliability, recovery, and control findings are resolved or explicitly accepted.
+- Five-system pilot and soak: after the demo, operate five real Raspberry Pi signage systems from the interface and validate playback, control, monitoring, recovery, and outage behavior.
+- AWS buildout: after the demo and five-device soak, with explicit approval before creating real AWS resources.
+- Production: only after local pilot and cloud reliability, recovery, and control findings are resolved or explicitly accepted.
 
 ## Phase 0: Existing Local Foundation
 
@@ -59,7 +59,7 @@ Acceptance:
 - `docs/PHASES.md` reflects the new roadmap.
 - Dashboard sections are locked: Dashboard, Media Store, Playlists, Screens, Devices, Activity, Troubleshooting, Settings.
 - Map/location UI is marked removed/deferred.
-- Demo, AWS buildout, five-system pilot, and production gates are explicit.
+- Demo, five-system soak, AWS buildout, and production gates are explicit.
 
 Validation:
 
@@ -283,9 +283,28 @@ Validation:
 - Login/logout smoke.
 - Confirm secrets are not written to tracked files.
 
-## Phase 12: AWS Buildout
+## Phase 12: Five-System Pilot
 
-Goal: build the real cloud portion after the team demo, with explicit approval before creating resources.
+Goal: operate five real Raspberry Pi signage systems from the interface before AWS buildout and production.
+
+Acceptance:
+
+- Five real Devices and Screens are configured.
+- Each system can be assigned media, playlist, and schedule from the interface.
+- Dashboard shows online/offline/stale/playback/sync status for each system.
+- Recovery can be run for one system without disrupting healthy systems.
+- Pilot findings are tracked and resolved or explicitly accepted before AWS buildout.
+
+Validation:
+
+- Five-device setup smoke.
+- Per-screen playlist publish smoke.
+- Network outage, power outage, service restart, and failed publish drills.
+- Recovery evidence review per system.
+
+## Phase 13: AWS Buildout
+
+Goal: build the real cloud portion after the team demo and five-device soak, with explicit approval before creating resources.
 
 Acceptance:
 
@@ -301,25 +320,6 @@ Validation:
 - Least-privilege IAM review.
 - Real upload, publish, heartbeat, and playlist fetch smoke against the AWS environment.
 - Network-outage playback validation against a previously synced device.
-
-## Phase 13: Five-System Pilot
-
-Goal: operate five real Raspberry Pi signage systems from the interface before production.
-
-Acceptance:
-
-- Five real Devices and Screens are configured.
-- Each system can be assigned media, playlist, and schedule from the interface.
-- Dashboard shows online/offline/stale/playback/sync status for each system.
-- Recovery can be run for one system without disrupting healthy systems.
-- Pilot findings are tracked and resolved or explicitly accepted before production.
-
-Validation:
-
-- Five-device setup smoke.
-- Per-screen playlist publish smoke.
-- Network outage, power outage, service restart, and failed publish drills.
-- Recovery evidence review per system.
 
 ## Phase 14: Playback Options And Transitions
 
@@ -341,7 +341,7 @@ Validation:
 
 ## Phase 15: Production Readiness
 
-Goal: prepare for production only after the five-system pilot proves the operational model.
+Goal: prepare for production only after the five-system pilot and approved cloud work prove the operational model.
 
 Acceptance:
 

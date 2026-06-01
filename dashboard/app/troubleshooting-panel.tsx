@@ -38,7 +38,6 @@ type TroubleshootingResponse = {
   activity: ActivityRecord[];
   error?: string;
   pi: {
-    adminUrl: string | null;
     configured: boolean;
     diagnostics: DiagnosticItem[];
     host: string | null;
@@ -626,14 +625,6 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
                   >
                     Copy
                   </button>
-                  {selectedHasLiveDiagnostics && data?.pi.sshUrl ? (
-                    <a
-                      href={data.pi.sshUrl}
-                      className="inline-flex min-h-10 items-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800"
-                    >
-                      Open SSH
-                    </a>
-                  ) : null}
                 </div>
                 {copyMessage ? <p className="mt-2 text-xs font-medium text-zinc-600">{copyMessage}</p> : null}
               </div>
@@ -649,20 +640,19 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
                     Open Pi player
                   </a>
                 ) : null}
-                {selectedHasLiveDiagnostics && data?.pi.adminUrl ? (
+                {selectedHasLiveDiagnostics && data?.pi.sshUrl ? (
                   <a
-                    href={data.pi.adminUrl}
-                    target="_blank"
-                    rel="noreferrer"
+                    href={data.pi.sshUrl}
                     className="inline-flex min-h-10 items-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800"
                   >
-                    Open admin UI
+                    Open SSH
                   </a>
-                ) : (
+                ) : null}
+                {!selectedHasLiveDiagnostics || (!data?.pi.playerUrl && !data?.pi.sshUrl) ? (
                   <span className="inline-flex min-h-10 items-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-600">
-                    {selectedHasLiveDiagnostics ? "Admin UI not configured" : "Live Pi links unavailable"}
+                    Live Pi links unavailable
                   </span>
-                )}
+                ) : null}
               </div>
             </div>
           </div>

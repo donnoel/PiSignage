@@ -19,20 +19,26 @@ This is not a full enterprise clone. The project should evolve incrementally fro
 Delivery path:
 
 - Team demo by Wednesday, June 3, 2026.
-- Real AWS buildout after the team demo, with explicit approval before resource creation.
-- Five real Raspberry Pi signage systems controlled from the interface before production.
-- Production only after the five-system pilot proves playback, control, monitoring, and recovery.
+- Five real Raspberry Pi signage systems controlled from the interface after the demo, with a soak period for playback, control, monitoring, recovery, and outage behavior.
+- Real AWS buildout only after the local demo and five-device soak prove the operating model, with explicit approval before resource creation.
+- Production only after the five-system pilot and later cloud work prove playback, control, monitoring, and recovery.
 
 ## Current Product Phase
 
 The repository is in a local product re-baseline phase. Product requirements now live in `docs/PRODUCT_REQUIREMENTS.md`, and implementation sequencing lives in `docs/PHASES.md`.
+
+Current implementation snapshot:
+
+- The dashboard currently exposes Dashboard, Media Store, Playlists, Screen Status, Screens, Scheduling, and Recovery views.
+- Device inventory and activity evidence exist in local JSON and are surfaced through the current status, screens, scheduling, and recovery workflows.
+- Dedicated Devices, Activity, Troubleshooting, and Settings sections remain product goals where the current UI has not split them out yet.
 
 Current goals:
 
 - Keep the dashboard focused on local operations: Dashboard, Media Store, Playlists, Screens, Devices, Activity, Troubleshooting, and Settings.
 - Keep dashboard, player, and device-agent boundaries clear.
 - Preserve the proven local playback and Pi recovery path while adding inventory, media, activity, scheduling, and recovery workflows.
-- Avoid creating AWS resources until the user explicitly approves that phase.
+- Avoid creating AWS resources until the demo and five-device local soak are complete and the user explicitly approves that phase.
 - Remove/defer map UI until the operations foundation is stronger.
 
 ## Non-Goals For The Initial Product
@@ -61,7 +67,7 @@ Target architecture:
 - `player/`: browser playback fallback/experimental app that can run from local playlist/cache data.
 - `device-agent/`: Node.js + TypeScript Raspberry Pi agent for playlist reads, local heartbeat writes, cache management, and future MQTT.
 - `docs/`: architecture, phases, setup, API, AWS design, and security documentation.
-- `infra/`: AWS architecture notes and future IaC placeholders only.
+- `infra/`: AWS architecture notes and future IaC planning only; no active cloud infrastructure.
 - `sample-content/`: tracked seed playlist and local media examples.
 
 Future AWS services are expected to include API Gateway, Lambda, DynamoDB, S3, CloudFront, Cognito, and AWS IoT Core MQTT. Greengrass is a later consideration, not a current requirement.
@@ -97,7 +103,7 @@ Near-term priority order:
 4. Add local data stores for media, screens, devices, activity, settings, and schedules.
 5. Build Media Store and playlist workflows around playback-safe assets.
 6. Add device inventory, troubleshooting, activity, scheduling, settings, and simple local login.
-7. Build AWS after approval, then validate with a five-system pilot before production.
+7. Run a five-device local soak after the demo, then build AWS only after approval and preserve the proven local playback/recovery contracts.
 
 ## Dashboard Rules
 
@@ -141,7 +147,7 @@ Heartbeat model starts with:
 
 ## AWS Rules
 
-- Do not create real AWS infrastructure until the user explicitly approves the AWS buildout phase.
+- Do not create real AWS infrastructure until the team demo and five-device local soak are complete and the user explicitly approves the AWS buildout phase.
 - Do not require AWS credentials for local demo work.
 - When AWS starts, build real resource-backed behavior rather than placeholder cloud flows.
 - Keep future AWS design least-privilege and easy to reason about.

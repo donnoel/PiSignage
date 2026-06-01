@@ -12,8 +12,8 @@ This is being built and tested for real. Do not add placeholder implementation, 
 
 - Start local-first with one account and a small number of Raspberry Pi devices.
 - Prepare for a team demo by Wednesday, June 3, 2026 with real local behavior and honest validation evidence.
-- Build the AWS portion after the team demo, once the local control and playback story is demonstrable.
-- Use a real five-system network pilot as the final test before a production environment.
+- After the demo, add five real Raspberry Pi signage systems and soak playback, control, monitoring, recovery, and outage behavior.
+- Build the AWS portion only after the local demo and five-device soak prove the operating model.
 - Treat VLC as the default field playback path for appliance mode.
 - Keep each Pi able to continue playback from cached local media and playlist state during network outages.
 - Keep dashboard operations from dirtying tracked source files.
@@ -41,20 +41,9 @@ Acceptance:
 - Any unimplemented area is named plainly in the UI or demo notes.
 - No placeholder data is presented as product behavior.
 
-### AWS Buildout
-
-AWS comes after the local demo and must preserve the same real-product rule.
-
-Requirements:
-
-- Implement real backend services only after explicit approval for AWS resource creation.
-- Keep least-privilege IAM, private media storage, and clear device identity boundaries.
-- Avoid fake cloud success states; if a cloud operation is not wired, show it as unavailable.
-- Preserve local cached playback during cloud/network outages.
-
 ### Five-System Pilot
 
-The five-system pilot is the proving ground before production.
+The five-system pilot is the proving ground before AWS buildout and production.
 
 Requirements:
 
@@ -71,6 +60,17 @@ Acceptance:
 - Each system can keep playing cached content through a network outage.
 - Recovery evidence is captured per system.
 - Production work does not begin until pilot findings are resolved or explicitly accepted.
+
+### AWS Buildout
+
+AWS comes after the local demo and five-device soak, and must preserve the same real-product rule.
+
+Requirements:
+
+- Implement real backend services only after explicit approval for AWS resource creation.
+- Keep least-privilege IAM, private media storage, and clear device identity boundaries.
+- Avoid fake cloud success states; if a cloud operation is not wired, show it as unavailable.
+- Preserve local cached playback during cloud/network outages.
 
 ## Locked App Sections
 
