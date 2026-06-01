@@ -358,7 +358,7 @@ export function ScreenDeviceInventoryPanel({
     if (livePlaylistId !== assignedPlaylist.playlistId) {
       return {
         detail: `Assigned to ${assignedPlaylist.name}, but the screen reports ${playlistName(livePlaylistId)}.`,
-        label: "Update needed",
+        label: "Sync needed",
         tone: "warn"
       };
     }
@@ -374,7 +374,7 @@ export function ScreenDeviceInventoryPanel({
     if (livePlaylistVersion < assignedPlaylist.version) {
       return {
         detail: `Beam has update ${assignedPlaylist.version}; the screen reports update ${livePlaylistVersion}.`,
-        label: "Update needed",
+        label: "Sync needed",
         tone: "warn"
       };
     }

@@ -46,6 +46,13 @@ type FleetDeviceHealthPanelProps = {
 
 type FilterKey = "all" | "attention" | "offline" | "stale" | "sync" | "waiting";
 
+type FilterItem = {
+  count: number;
+  hideWhenZero?: boolean;
+  key: FilterKey;
+  label: string;
+};
+
 type RowState = {
   assignedPlaylistId: string | null;
   assignedPlaylistName: string;
@@ -219,7 +226,7 @@ export function DeviceHealthFleetPanel({
           syncTone = "warn";
         } else if (isLive && liveReachable && livePlaylistVersion !== null && livePlaylistId) {
           if (livePlaylistId !== assignedPlaylist.playlistId) {
-            syncLabel = "Update needed";
+            syncLabel = "Sync needed";
             syncDetail = `Assigned to ${assignedPlaylist.name}, but the screen reported another playlist.`;
             syncTone = "warn";
           } else if (livePlaylistVersion === assignedPlaylist.version) {
@@ -227,7 +234,7 @@ export function DeviceHealthFleetPanel({
             syncDetail = `${assignedPlaylist.name} is on the screen.`;
             syncTone = "good";
           } else {
-            syncLabel = livePlaylistVersion < assignedPlaylist.version ? "Update needed" : "Review";
+            syncLabel = livePlaylistVersion < assignedPlaylist.version ? "Sync needed" : "Review";
             syncDetail =
               livePlaylistVersion < assignedPlaylist.version
                 ? "Beam has a newer saved update than the screen has reported."
@@ -249,9 +256,9 @@ export function DeviceHealthFleetPanel({
           : isOffline
             ? "screen offline"
             : isStale
-              ? "old check-in"
+              ? "stale report"
               : syncTone === "warn"
-                ? "playlist update pending"
+                ? "sync needed"
                 : isLive && !livePlaybackHealthy
                   ? "playback not confirmed"
                   : "no action needed";
@@ -407,14 +414,15 @@ export function DeviceHealthFleetPanel({
     }
   }
 
-  const filters: Array<{ count: number; key: FilterKey; label: string }> = [
+  const filterOptions: FilterItem[] = [
     { count: rows.length, key: "all", label: "All screens" },
     { count: attentionCount, key: "attention", label: "Needs attention" },
     { count: offlineCount, key: "offline", label: "Offline" },
-    { count: staleCount, key: "stale", label: "Old check-in" },
-    { count: syncIssueCount, key: "sync", label: "Update needed" },
+    { count: staleCount, hideWhenZero: true, key: "stale", label: "Stale report" },
+    { count: syncIssueCount, hideWhenZero: true, key: "sync", label: "Sync needed" },
     { count: waitingCount, key: "waiting", label: "Waiting" }
   ];
+  const filters = filterOptions.filter((item) => !item.hideWhenZero || item.count > 0);
 
   return (
     <section aria-labelledby="fleet-health-heading" className="mt-6 space-y-4">
@@ -455,7 +463,7 @@ export function DeviceHealthFleetPanel({
               <dd className="mt-1 text-xl font-semibold">{offlineCount}</dd>
             </div>
             <div className="rounded-md bg-amber-50 p-3 ring-1 ring-amber-100">
-              <dt className="text-xs font-semibold uppercase text-amber-900">Old check-in</dt>
+              <dt className="text-xs font-semibold uppercase text-amber-900">Stale report</dt>
               <dd className="mt-1 text-xl font-semibold">{staleCount}</dd>
             </div>
             <div className="rounded-md bg-sky-50 p-3 ring-1 ring-sky-100">

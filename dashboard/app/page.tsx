@@ -941,14 +941,14 @@ function fleetCommandRows({
       } else if (assignedPlaylist && livePlaylistId !== assignedPlaylist.playlistId) {
         const reportedPlaylist = livePlaylistId ? playlistsById.get(livePlaylistId)?.name ?? "another playlist" : "another playlist";
         syncDetail = `Assigned to ${assignedPlaylist.name}, but the screen reports ${reportedPlaylist}.`;
-        syncLabel = "Update needed";
+        syncLabel = "Sync needed";
       } else if (assignedPlaylist && livePlaylistVersion === assignedPlaylist.version) {
         syncDetail = `${assignedPlaylist.name} is on the screen.`;
         syncLabel = "In sync";
         syncTone = "good";
       } else if (assignedPlaylist && typeof livePlaylistVersion === "number" && livePlaylistVersion < assignedPlaylist.version) {
         syncDetail = `Beam has update ${assignedPlaylist.version}; the screen reports update ${livePlaylistVersion}.`;
-        syncLabel = "Update needed";
+        syncLabel = "Sync needed";
       } else if (assignedPlaylist) {
         syncDetail = `The screen reports update ${livePlaylistVersion ?? "unknown"}; Beam has update ${assignedPlaylist.version}.`;
         syncLabel = "Review";
