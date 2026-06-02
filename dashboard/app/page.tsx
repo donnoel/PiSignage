@@ -1532,9 +1532,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   </form>
                 </div>
                 <div className="p-5">
-                  <div className="rounded-[1.25rem] border border-zinc-800 bg-zinc-950 p-3 shadow-xl shadow-zinc-300/60">
-                    <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-950 via-zinc-900 to-teal-950 px-4 py-5 text-white ring-1 ring-white/10">
-                      <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white/10 to-transparent" />
+                  <div className="rounded-[1.25rem] border border-zinc-700 bg-zinc-900 p-3 shadow-xl shadow-zinc-300/60">
+                    <div className="relative overflow-hidden rounded-xl bg-[linear-gradient(145deg,#236b66_0%,#0f766e_38%,#0e7490_68%,#1e3a8a_100%)] px-4 pb-9 pt-5 text-white shadow-inner ring-1 ring-white/20">
+                      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.22)_0%,rgba(255,255,255,0.08)_34%,rgba(255,255,255,0)_70%)]" />
                       <div className="relative flex min-h-[260px] flex-col justify-between gap-5">
                         <div>
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1572,8 +1572,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                           </div>
                         </div>
                       </div>
+                      <div className="absolute bottom-3 left-1/2 h-2 w-24 -translate-x-1/2 rounded-full bg-white/30" aria-hidden="true" />
                     </div>
-                    <div className="mx-auto mt-3 h-2 w-24 rounded-full bg-zinc-700" aria-hidden="true" />
                   </div>
                 </div>
               </div>
