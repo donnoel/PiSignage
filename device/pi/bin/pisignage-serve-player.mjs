@@ -51,7 +51,11 @@ async function fileExists(filePath) {
 
 async function resolveRequestPath(pathname) {
   if (pathname === "/playlist.local.json") {
-    return pathWithin(contentRoot, "playlist.local.json");
+    const playlistFile = pathWithin(contentRoot, "playlist.local.json");
+    if (playlistFile && (await fileExists(playlistFile))) {
+      return playlistFile;
+    }
+    return null;
   }
 
   if (pathname.startsWith("/assets/")) {
@@ -59,6 +63,7 @@ async function resolveRequestPath(pathname) {
     if (contentAssetPath && (await fileExists(contentAssetPath))) {
       return contentAssetPath;
     }
+    return null;
   }
 
   const distPath = pathWithin(distRoot, pathname === "/" ? "index.html" : pathname);
@@ -149,7 +154,20 @@ const server = createServer(async (request, response) => {
 
   try {
     const requestUrl = new URL(request.url, `http://${request.headers.host ?? "localhost"}`);
-    const filePath = await resolveRequestPath(decodeURIComponent(requestUrl.pathname));
+    const requestPath = decodeURIComponent(requestUrl.pathname);
+    const filePath = await resolveRequestPath(requestPath);
+    if (!filePath) {
+      if (requestPath === "/playlist.local.json") {
+        textResponse(response, 404, "playlist.local.json was not found in sample-content.");
+        return;
+      }
+      if (requestPath.startsWith("/assets/")) {
+        textResponse(response, 404, `Asset not found: ${requestPath}`);
+        return;
+      }
+      textResponse(response, 404, "File not found");
+      return;
+    }
     await serveFile(request, response, filePath);
   } catch (error) {
     console.error(error);
