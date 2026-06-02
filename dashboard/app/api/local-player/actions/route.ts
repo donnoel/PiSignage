@@ -156,7 +156,7 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as { action?: string };
 
-    if (body.action !== "restart-vlc" && body.action !== "recover") {
+    if (body.action !== "restart-vlc" && body.action !== "recover" && body.action !== "reboot-pi") {
       return NextResponse.json({ error: "Unsupported player action." }, { status: 400 });
     }
 
@@ -180,6 +180,28 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         message: `Restarted VLC field player on ${config.host}.`
+      });
+    }
+
+    if (body.action === "reboot-pi") {
+      await runSsh(
+        config,
+        "nohup sh -c 'sleep 1; systemctl reboot' >/dev/null 2>&1 & echo reboot-requested",
+        { timeoutMs: 10_000 }
+      );
+      await appendActivityRecord({
+        id: randomUUID(),
+        action: "reboot-pi",
+        actor: "local-operator",
+        entityId: config.host,
+        entityType: "system",
+        message: `Requested Pi reboot on ${config.host}.`,
+        result: "success",
+        timestamp: nowIso()
+      });
+
+      return NextResponse.json({
+        message: `Reboot requested for Pi at ${config.host}. Waiting for the next fresh check-in will confirm it is back.`
       });
     }
 

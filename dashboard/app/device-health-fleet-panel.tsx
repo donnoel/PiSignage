@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { StatusPill } from "./dashboard-ui";
 
@@ -41,6 +41,7 @@ type FleetDeviceHealthPanelProps = {
     version: number;
   }>;
   statusAgeLabel: string;
+  statusUpdatedAt: string | null;
   statusTimestampLabel: string;
 };
 
@@ -128,6 +129,7 @@ export function DeviceHealthFleetPanel({
   liveStatusStale,
   playlists,
   statusAgeLabel,
+  statusUpdatedAt,
   statusTimestampLabel
 }: FleetDeviceHealthPanelProps) {
   const router = useRouter();
@@ -135,7 +137,12 @@ export function DeviceHealthFleetPanel({
   const [query, setQuery] = useState("");
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(devices[0]?.id ?? null);
   const [message, setMessage] = useState("");
-  const [busyAction, setBusyAction] = useState<"publish" | "recover" | "refresh" | "restart" | null>(null);
+  const [busyAction, setBusyAction] = useState<"publish" | "reboot" | "recover" | "refresh" | "restart" | null>(null);
+  const [rebootWatch, setRebootWatch] = useState<{
+    baselineStatusUpdatedAt: string | null;
+    deviceId: string;
+    requestedAt: string;
+  } | null>(null);
   const [isPending, startTransition] = useTransition();
   const isBusy = Boolean(busyAction) || isPending;
 
@@ -352,6 +359,29 @@ export function DeviceHealthFleetPanel({
   const attentionCount = rows.filter((row) => row.needsAttention).length;
   const syncIssueCount = rows.filter((row) => row.syncTone === "warn").length;
   const waitingCount = rows.filter((row) => row.healthLabel === "Waiting").length;
+  const rebootWatchApplies = Boolean(rebootWatch && selectedRow?.device.id === rebootWatch.deviceId);
+  const rebootBaselineTimestamp = rebootWatch?.baselineStatusUpdatedAt ?? rebootWatch?.requestedAt ?? null;
+  const hasNewerStatusAfterReboot =
+    Boolean(rebootBaselineTimestamp && statusUpdatedAt) &&
+    Date.parse(statusUpdatedAt ?? "") > Date.parse(rebootBaselineTimestamp ?? "");
+
+  useEffect(() => {
+    if (!rebootWatch) {
+      return;
+    }
+
+    if (rebootWatchApplies && liveReachable && hasNewerStatusAfterReboot) {
+      setMessage("Pi is back online with a fresh check-in after reboot.");
+      setRebootWatch(null);
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      startTransition(() => router.refresh());
+    }, 10_000);
+
+    return () => window.clearTimeout(timeout);
+  }, [hasNewerStatusAfterReboot, liveReachable, rebootWatch, rebootWatchApplies, router, startTransition]);
 
   function refreshStatus() {
     if (isBusy) {
@@ -381,7 +411,7 @@ export function DeviceHealthFleetPanel({
     return result;
   }
 
-  async function runAction(action: "publish" | "recover" | "restart", row: RowState) {
+  async function runAction(action: "publish" | "reboot" | "recover" | "restart", row: RowState) {
     if (!row.isLive || isBusy) {
       return;
     }
@@ -392,7 +422,9 @@ export function DeviceHealthFleetPanel({
         ? `Retrying playlist update for ${row.linkedScreen?.name ?? row.device.name}...`
         : action === "restart"
           ? `Restarting playback for ${row.linkedScreen?.name ?? row.device.name}...`
-          : `Running recovery for ${row.linkedScreen?.name ?? row.device.name}...`
+          : action === "reboot"
+            ? `Requesting reboot for ${row.linkedScreen?.name ?? row.device.name}...`
+            : `Running full recovery for ${row.linkedScreen?.name ?? row.device.name}...`
     );
     try {
       const result =
@@ -401,9 +433,16 @@ export function DeviceHealthFleetPanel({
               playlistId: row.linkedScreen?.playlistId ?? row.device.playlistId ?? undefined
             })
           : await postJson("/api/local-player/actions", {
-              action: action === "restart" ? "restart-vlc" : "recover"
+              action: action === "restart" ? "restart-vlc" : action === "reboot" ? "reboot-pi" : "recover"
             });
       const publishMessage = result.piPublish?.message ? ` ${result.piPublish.message}` : "";
+      if (action === "reboot") {
+        setRebootWatch({
+          baselineStatusUpdatedAt: statusUpdatedAt,
+          deviceId: row.device.id,
+          requestedAt: new Date().toISOString()
+        });
+      }
       setMessage(
         result.message ??
           (action === "publish"
@@ -664,9 +703,22 @@ export function DeviceHealthFleetPanel({
                     onClick={() => void runAction("recover", selectedRow)}
                     className="min-h-10 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {busyAction === "recover" ? "Recovering..." : "Run recovery"}
+                    {busyAction === "recover" ? "Recovering..." : "Run full recovery"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!selectedRow.isLive || isBusy}
+                    onClick={() => void runAction("reboot", selectedRow)}
+                    className="min-h-10 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busyAction === "reboot" ? "Rebooting..." : "Reboot Pi"}
                   </button>
                 </div>
+                {rebootWatchApplies ? (
+                  <p className="mt-3 text-sm font-medium text-amber-800" role="status" aria-live="polite">
+                    Waiting for a fresh check-in after reboot. Last check-in: {selectedRow.lastSeenAge}.
+                  </p>
+                ) : null}
               </div>
 
               <details className="mt-4 rounded-md border border-zinc-200 bg-white p-4">

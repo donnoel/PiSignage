@@ -1575,6 +1575,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 version: item.version
               }))}
               statusAgeLabel={lastPlayerHeartbeatAge}
+              statusUpdatedAt={playerStatus?.updatedAt ?? null}
               statusTimestampLabel={playerUpdatedAt}
             />
           </section>
