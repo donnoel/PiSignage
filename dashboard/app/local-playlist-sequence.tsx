@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { useRouter } from "next/navigation";
 import { StatusPill } from "./dashboard-ui";
 import { LocalPlaylistItemEditor } from "./local-playlist-item-editor";
@@ -60,6 +61,7 @@ function moveItem(items: PlaylistAsset[], fromIndex: number, toIndex: number): P
 
 export function LocalPlaylistSequence({ assets, piAssetIds, playlistId }: PlaylistSequenceProps) {
   const router = useRouter();
+  const pointerDragRef = useRef<{ pointerId: number; sourceAssetId: string } | null>(null);
   const [items, setItems] = useState(assets);
   const [draggedAssetId, setDraggedAssetId] = useState<string | null>(null);
   const [dropAssetId, setDropAssetId] = useState<string | null>(null);
@@ -163,6 +165,70 @@ export function LocalPlaylistSequence({ assets, piAssetIds, playlistId }: Playli
     void saveOrder(nextItems, sourceAssetId);
   }
 
+  function assetIdAtPointer(clientX: number, clientY: number): string | null {
+    const target = document.elementFromPoint(clientX, clientY);
+    if (!(target instanceof Element)) {
+      return null;
+    }
+
+    return target.closest<HTMLElement>("[data-playlist-asset-id]")?.dataset.playlistAssetId ?? null;
+  }
+
+  function startPointerDrag(event: ReactPointerEvent<HTMLButtonElement>, sourceAssetId: string) {
+    if (isBusy || event.pointerType === "mouse") {
+      return;
+    }
+
+    event.preventDefault();
+    pointerDragRef.current = { pointerId: event.pointerId, sourceAssetId };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDraggedAssetId(sourceAssetId);
+    setDropAssetId(null);
+  }
+
+  function movePointerDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    const pointerDrag = pointerDragRef.current;
+    if (!pointerDrag || pointerDrag.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    const targetAssetId = assetIdAtPointer(event.clientX, event.clientY);
+    setDropAssetId(targetAssetId && targetAssetId !== pointerDrag.sourceAssetId ? targetAssetId : null);
+  }
+
+  function finishPointerDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    const pointerDrag = pointerDragRef.current;
+    if (!pointerDrag || pointerDrag.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    const targetAssetId = dropAssetId ?? assetIdAtPointer(event.clientX, event.clientY);
+    pointerDragRef.current = null;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    setDraggedAssetId(null);
+    setDropAssetId(null);
+
+    if (targetAssetId) {
+      reorderByAssetId(pointerDrag.sourceAssetId, targetAssetId);
+    }
+  }
+
+  function cancelPointerDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    const pointerDrag = pointerDragRef.current;
+    if (!pointerDrag || pointerDrag.pointerId !== event.pointerId) {
+      return;
+    }
+
+    pointerDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setDraggedAssetId(null);
+    setDropAssetId(null);
+  }
+
   return (
     <ul className="divide-y divide-zinc-200">
       {items.map((asset, index) => {
@@ -174,6 +240,7 @@ export function LocalPlaylistSequence({ assets, piAssetIds, playlistId }: Playli
         return (
           <li
             key={asset.assetId}
+            data-playlist-asset-id={asset.assetId}
             className={`grid gap-3 px-5 py-4 text-sm lg:grid-cols-[44px_minmax(0,1fr)_auto] lg:items-start ${
               piAssetSet.has(asset.assetId) ? "bg-emerald-50/35" : ""
             } ${isDropTarget ? "ring-2 ring-inset ring-teal-300" : ""} ${isDragging ? "opacity-50" : "opacity-100"}`}
@@ -206,7 +273,11 @@ export function LocalPlaylistSequence({ assets, piAssetIds, playlistId }: Playli
                 setDropAssetId(null);
               }}
               disabled={isBusy}
-              className="flex h-10 w-10 cursor-grab items-center justify-center rounded-md bg-zinc-950 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-45"
+              onPointerDown={(event) => startPointerDrag(event, asset.assetId)}
+              onPointerMove={movePointerDrag}
+              onPointerUp={finishPointerDrag}
+              onPointerCancel={cancelPointerDrag}
+              className="flex h-10 w-10 touch-none cursor-grab items-center justify-center rounded-md bg-zinc-950 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-45"
               aria-label={`Drag ${assetName} to reorder`}
               title="Drag to reorder"
             >
