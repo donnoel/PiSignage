@@ -18,6 +18,21 @@ The helper:
 
 It does not deploy anything and does not require credentials.
 
+## Bad Media Playback Smoke (VLC + Browser)
+
+```sh
+npm run test:bad-playback
+```
+
+This smoke creates a temporary local fixture and verifies:
+
+- VLC dry-run quarantines a missing video asset instead of failing the entire playlist.
+- At least one remaining readable video asset is still accepted for playback.
+- Browser serve-player returns explicit `404` diagnostics for missing `/assets/*` media.
+- Browser serve-player returns explicit `404` diagnostics for missing `playlist.local.json`.
+
+It does not require Raspberry Pi hardware, TV output, or AWS credentials.
+
 ## Manual Missing Playlist Check
 
 ```sh
