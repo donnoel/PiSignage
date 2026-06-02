@@ -591,7 +591,6 @@ export function ScreenDeviceInventoryPanel({
         throw new Error(result.error ?? "Could not load screens.");
       }
       setInventory(result);
-      setMessage("Screens loaded.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not load screens.");
       setInventory(null);
