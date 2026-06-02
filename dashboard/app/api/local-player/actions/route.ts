@@ -145,6 +145,24 @@ async function runRecoverWorkflow(config: NonNullable<ReturnType<typeof readPiCo
   return run;
 }
 
+async function requestPiReboot(config: NonNullable<ReturnType<typeof readPiConfig>>): Promise<void> {
+  const sudoCheck = config.password ? "sudo -v && sudo -n true" : "sudo -n true 2>/dev/null";
+  const command = [
+    `if ${sudoCheck}; then`,
+    "  nohup sh -c 'sleep 1; sudo -n systemctl reboot' >/dev/null 2>&1 &",
+    "  echo reboot-requested",
+    "else",
+    "  echo 'reboot requires sudo permission for this Pi user' >&2",
+    "  exit 77",
+    "fi"
+  ].join(" ");
+
+  const stdout = await runSsh(config, command, { timeoutMs: 10_000 });
+  if (!stdout.includes("reboot-requested")) {
+    throw new Error("Pi reboot was not confirmed by the remote command.");
+  }
+}
+
 export async function GET() {
   const store = await readRecoveryStore();
   return NextResponse.json({
@@ -184,11 +202,30 @@ export async function POST(request: Request) {
     }
 
     if (body.action === "reboot-pi") {
-      await runSsh(
-        config,
-        "nohup sh -c 'sleep 1; systemctl reboot' >/dev/null 2>&1 & echo reboot-requested",
-        { timeoutMs: 10_000 }
-      );
+      try {
+        await requestPiReboot(config);
+      } catch (error) {
+        await appendActivityRecord({
+          id: randomUUID(),
+          action: "reboot-pi",
+          actor: "local-operator",
+          entityId: config.host,
+          entityType: "system",
+          message: `Pi reboot was not requested on ${config.host}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          result: "error",
+          timestamp: nowIso()
+        });
+
+        return NextResponse.json(
+          {
+            error:
+              "Pi reboot was not requested. Give the Pi SSH user sudo permission for reboot, or add the Pi password to dashboard/.env.local, then try again."
+          },
+          { status: 400 }
+        );
+      }
       await appendActivityRecord({
         id: randomUUID(),
         action: "reboot-pi",

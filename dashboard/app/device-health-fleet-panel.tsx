@@ -451,6 +451,9 @@ export function DeviceHealthFleetPanel({
       );
       startTransition(() => router.refresh());
     } catch (error) {
+      if (action === "reboot") {
+        setRebootWatch(null);
+      }
       setMessage(error instanceof Error ? error.message : "Action failed.");
     } finally {
       setBusyAction(null);
