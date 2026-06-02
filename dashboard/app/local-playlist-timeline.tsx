@@ -187,7 +187,7 @@ export function LocalPlaylistTimeline({ assets, piAssetIds, playlistId }: Playli
   }
 
   return (
-    <div className="border-b border-zinc-200 bg-[radial-gradient(circle_at_18%_12%,rgba(45,212,191,0.38),transparent_30%),radial-gradient(circle_at_82%_8%,rgba(251,191,36,0.24),transparent_24%),linear-gradient(135deg,#0f2f2e_0%,#123d32_42%,#3b2433_100%)] px-5 py-5 text-white">
+    <div className="m-4 overflow-hidden rounded-lg border border-white/20 bg-[radial-gradient(circle_at_18%_12%,rgba(45,212,191,0.38),transparent_30%),radial-gradient(circle_at_82%_8%,rgba(251,191,36,0.24),transparent_24%),linear-gradient(135deg,#0f2f2e_0%,#123d32_42%,#3b2433_100%)] px-5 py-5 text-white shadow-[0_18px_42px_rgba(15,47,46,0.18)]">
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h3 className="text-lg font-semibold">Preview</h3>
