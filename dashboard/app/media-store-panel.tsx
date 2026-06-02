@@ -64,6 +64,11 @@ type DeleteResponse = {
   error?: string;
 };
 
+type MediaUpdateResponse = {
+  error?: string;
+  item?: MediaItem;
+};
+
 type FolderCreateResponse = {
   error?: string;
   folder?: MediaFolder;
@@ -92,6 +97,15 @@ type PlaybackSafety = {
 };
 
 const folderFilterPrefix = "folder:";
+const cannedTags = [
+  "demo-ready",
+  "pi-safe",
+  "needs-review",
+  "problem",
+  "client",
+  "still",
+  "video"
+];
 
 function formatTimestamp(timestamp: string): string {
   const date = new Date(timestamp);
@@ -245,6 +259,35 @@ function matchesTypeFilter(item: MediaItem, filter: TypeFilter): boolean {
   return kind === "Video";
 }
 
+function normalizeTag(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function tagString(tags: string[]): string {
+  return tags.join(", ");
+}
+
+function tagsFromText(value: string): string[] {
+  return Array.from(
+    new Set(
+      value
+        .split(/[\n,]/)
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .map((entry) => entry.slice(0, 48))
+    )
+  );
+}
+
+function appendTagText(currentText: string, tag: string): string {
+  return tagString(Array.from(new Set([...tagsFromText(currentText), tag])));
+}
+
+function removeTagText(currentText: string, tag: string): string {
+  const normalized = normalizeTag(tag);
+  return tagString(tagsFromText(currentText).filter((entry) => normalizeTag(entry) !== normalized));
+}
+
 function canDeleteMedia(item: MediaItem): boolean {
   return item.origin !== "playlist" && !isInPlaylist(item);
 }
@@ -270,6 +313,7 @@ export function MediaStorePanel() {
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
   const [folderFilter, setFolderFilter] = useState("all");
+  const [tagFilter, setTagFilter] = useState("");
   const [safetyFilter, setSafetyFilter] = useState<SafetyFilter>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [showUpload, setShowUpload] = useState(false);
@@ -289,6 +333,9 @@ export function MediaStorePanel() {
   const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
   const [addingMediaId, setAddingMediaId] = useState<string | null>(null);
   const [deletingMediaId, setDeletingMediaId] = useState<string | null>(null);
+  const [editingTagMediaId, setEditingTagMediaId] = useState<string | null>(null);
+  const [editingTags, setEditingTags] = useState("");
+  const [updatingTagMediaId, setUpdatingTagMediaId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const selectedIds = useMemo(() => new Set(selectedMediaIds), [selectedMediaIds]);
   const visibleItems = useMemo(
@@ -296,13 +343,14 @@ export function MediaStorePanel() {
       items.filter(
         (item) =>
           matchesFolderFilter(item, folderFilter) &&
+          (!tagFilter || item.tags.some((tag) => normalizeTag(tag) === normalizeTag(tagFilter))) &&
           matchesSafetyFilter(item, safetyFilter) &&
           matchesTypeFilter(item, typeFilter)
       ),
-    [folderFilter, items, safetyFilter, typeFilter]
+    [folderFilter, items, safetyFilter, tagFilter, typeFilter]
   );
   const hasVisibleActions = useMemo(
-    () => visibleItems.some((item) => canAddMediaToPlaylist(item) || canDeleteMedia(item)),
+    () => visibleItems.length > 0,
     [visibleItems]
   );
   const readyItemCount = useMemo(
@@ -327,6 +375,13 @@ export function MediaStorePanel() {
     }
     return counts;
   }, [folders, items]);
+  const availableTags = useMemo(
+    () =>
+      Array.from(new Set([...cannedTags, ...items.flatMap((item) => item.tags)]))
+        .filter(Boolean)
+        .sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" })),
+    [items]
+  );
   const selectedFolderId = selectedCustomFolderId(folderFilter);
   const selectedFolder = folders.find((folder) => folder.id === selectedFolderId) ?? null;
   const visibleIds = visibleItems.map((item) => item.id);
@@ -339,7 +394,8 @@ export function MediaStorePanel() {
     isCreatingFolder ||
     deletingFolderId !== null ||
     addingMediaId !== null ||
-    deletingMediaId !== null;
+    deletingMediaId !== null ||
+    updatingTagMediaId !== null;
 
   useEffect(() => {
     if (selectedFolderId) {
@@ -354,6 +410,10 @@ export function MediaStorePanel() {
 
     if (requestedQuery) {
       params.set("q", requestedQuery);
+    }
+
+    if (tagFilter) {
+      params.set("tag", tagFilter);
     }
 
     setIsLoading(true);
@@ -390,7 +450,7 @@ export function MediaStorePanel() {
   useEffect(() => {
     void loadMedia(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
+  }, [query, tagFilter]);
 
   async function handleCreateFolder(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -662,6 +722,49 @@ export function MediaStorePanel() {
     }
   }
 
+  function startEditingTags(item: MediaItem) {
+    setEditingTagMediaId(item.id);
+    setEditingTags(tagString(item.tags));
+  }
+
+  async function handleSaveTags(item: MediaItem) {
+    if (isBusy) {
+      return;
+    }
+
+    setUpdatingTagMediaId(item.id);
+    setMessage(`Updating tags for ${item.title}...`);
+    setMessageTone("idle");
+    try {
+      const response = await fetch(`/api/media/${encodeURIComponent(item.id)}`, {
+        method: "PATCH",
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          tags: editingTags
+        })
+      });
+      const result = (await response.json()) as MediaUpdateResponse;
+      if (!response.ok || result.error || !result.item) {
+        throw new Error(result.error ?? "Could not update tags.");
+      }
+
+      setEditingTagMediaId(null);
+      setEditingTags("");
+      await loadMedia(true);
+      setMessage(`Updated tags for ${result.item.title}.`);
+      setMessageTone("success");
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update tags.");
+      setMessageTone("error");
+    } finally {
+      setUpdatingTagMediaId(null);
+    }
+  }
+
   function toggleMediaSelection(mediaId: string, checked: boolean) {
     setSelectedMediaIds((current) =>
       checked ? Array.from(new Set([...current, mediaId])) : current.filter((id) => id !== mediaId)
@@ -686,6 +789,23 @@ export function MediaStorePanel() {
         onClick={() => setFolderFilter(value)}
         aria-pressed={selected}
         className={`flex min-h-10 max-w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-semibold ring-1 ${sidebarButtonClass(selected)}`}
+      >
+        <span className="truncate">{label}</span>
+        <span className="shrink-0 text-xs text-zinc-500">{count}</span>
+      </button>
+    );
+  }
+
+  function renderTagFilterButton(label: string) {
+    const selected = normalizeTag(tagFilter) === normalizeTag(label);
+    const count = items.filter((item) => item.tags.some((tag) => normalizeTag(tag) === normalizeTag(label))).length;
+    return (
+      <button
+        key={label}
+        type="button"
+        onClick={() => setTagFilter(selected ? "" : label)}
+        aria-pressed={selected}
+        className={`flex min-h-9 max-w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm font-semibold ring-1 ${sidebarButtonClass(selected)}`}
       >
         <span className="truncate">{label}</span>
         <span className="shrink-0 text-xs text-zinc-500">{count}</span>
@@ -738,6 +858,10 @@ export function MediaStorePanel() {
                     <span className="shrink-0 text-xs text-amber-700">{reviewItemCount}</span>
                   </button>
                 ) : null}
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="text-sm font-semibold text-zinc-950">Tags</span>
+                {availableTags.map(renderTagFilterButton)}
               </div>
             </div>
 
@@ -823,10 +947,11 @@ export function MediaStorePanel() {
               </button>
               <button
                 type="button"
-                disabled={isBusy || (!query && !queryInput && safetyFilter === "all" && typeFilter === "all" && folderFilter === "all")}
+                disabled={isBusy || (!query && !queryInput && !tagFilter && safetyFilter === "all" && typeFilter === "all" && folderFilter === "all")}
                 onClick={() => {
                   setQueryInput("");
                   setQuery("");
+                  setTagFilter("");
                   setSafetyFilter("all");
                   setTypeFilter("all");
                   setFolderFilter("all");
@@ -913,6 +1038,19 @@ export function MediaStorePanel() {
                 disabled={isBusy}
                 className="mt-1 min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
               />
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {cannedTags.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => setUploadTags((current) => appendTagText(current, tag))}
+                    disabled={isBusy}
+                    className="min-h-8 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs font-semibold text-zinc-700 disabled:cursor-not-allowed disabled:bg-zinc-100"
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
             </div>
             <div>
               <label htmlFor="upload-media-folder" className="text-sm font-semibold text-zinc-950">Folder</label>
@@ -983,6 +1121,73 @@ export function MediaStorePanel() {
                     <td className="max-w-[380px] px-4 py-3">
                       <p className="truncate font-semibold text-zinc-950" title={item.title}>{item.title}</p>
                       <p className="mt-1 truncate text-xs text-zinc-500" title={item.playbackFileName}>{item.playbackFileName}</p>
+                      {editingTagMediaId === item.id ? (
+                        <div className="mt-3 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+                          <label className="sr-only" htmlFor={`tags-${item.id}`}>Tags for {item.title}</label>
+                          <input
+                            id={`tags-${item.id}`}
+                            value={editingTags}
+                            onChange={(event) => setEditingTags(event.currentTarget.value)}
+                            disabled={isBusy}
+                            className="min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+                          />
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {cannedTags.map((tag) => {
+                              const selected = tagsFromText(editingTags).some((entry) => normalizeTag(entry) === normalizeTag(tag));
+                              return (
+                                <button
+                                  key={tag}
+                                  type="button"
+                                  onClick={() =>
+                                    setEditingTags((current) => selected ? removeTagText(current, tag) : appendTagText(current, tag))
+                                  }
+                                  disabled={isBusy}
+                                  aria-pressed={selected}
+                                  className={`min-h-8 rounded-md px-2 py-1 text-xs font-semibold ring-1 disabled:cursor-not-allowed disabled:bg-zinc-100 ${
+                                    selected ? "bg-teal-50 text-teal-950 ring-teal-200" : "bg-white text-zinc-700 ring-zinc-300"
+                                  }`}
+                                >
+                                  {tag}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void handleSaveTags(item)}
+                              disabled={isBusy}
+                              className="min-h-9 rounded-md bg-teal-700 px-3 py-1.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
+                            >
+                              {updatingTagMediaId === item.id ? "Saving" : "Save tags"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingTagMediaId(null);
+                                setEditingTags("");
+                              }}
+                              disabled={isBusy}
+                              className="min-h-9 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : item.tags.length > 0 ? (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {item.tags.map((tag) => (
+                            <button
+                              key={tag}
+                              type="button"
+                              onClick={() => setTagFilter(tag)}
+                              className="min-h-7 rounded-md bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-700 hover:bg-teal-50 hover:text-teal-900"
+                            >
+                              {tag}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3">
                       <span title={safety.detail}>
@@ -1019,6 +1224,14 @@ export function MediaStorePanel() {
                               {deleting ? "Deleting" : "Delete"}
                             </button>
                           ) : null}
+                          <button
+                            type="button"
+                            onClick={() => startEditingTags(item)}
+                            disabled={isBusy}
+                            className="min-h-9 shrink-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
+                          >
+                            Tags
+                          </button>
                         </div>
                       </td>
                     ) : null}

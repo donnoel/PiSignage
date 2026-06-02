@@ -37,6 +37,28 @@ function parseTags(value: unknown): string[] {
   );
 }
 
+function baseTitleFromFileName(fileName: string): string {
+  const title = path.basename(fileName, path.extname(fileName)).replace(/[-_]+/g, " ").trim();
+  return title || "Untitled media";
+}
+
+function mimeTypeFromExtension(fileName: string): string {
+  const extension = path.extname(fileName).toLowerCase();
+  if (extension === ".mp4") {
+    return "video/mp4";
+  }
+  if (extension === ".mov") {
+    return "video/quicktime";
+  }
+  if (extension === ".jpg" || extension === ".jpeg") {
+    return "image/jpeg";
+  }
+  if (extension === ".png") {
+    return "image/png";
+  }
+  return "application/octet-stream";
+}
+
 function playlistAssetFileName(asset: PlaylistAsset): string | null {
   if (!asset.uri.startsWith("assets/")) {
     return null;
@@ -50,6 +72,23 @@ async function playlistUsesFile(fileName: string): Promise<boolean> {
   return playlistStore.items.some((playlist) =>
     playlist.assets.some((asset) => playlistAssetFileName(asset) === fileName)
   );
+}
+
+async function playlistAssetForMediaId(mediaId: string): Promise<PlaylistAsset | null> {
+  if (!mediaId.startsWith("playlist:")) {
+    return null;
+  }
+
+  const assetId = mediaId.replace(/^playlist:/, "");
+  const playlistStore = await readPlaylistStore();
+  for (const playlist of playlistStore.items) {
+    const asset = playlist.assets.find((candidate) => candidate.assetId === assetId);
+    if (asset) {
+      return asset;
+    }
+  }
+
+  return null;
 }
 
 export async function GET(_request: Request, context: RouteContext) {
@@ -79,11 +118,32 @@ export async function PATCH(request: Request, context: RouteContext) {
     const mediaStore = await readMediaStore();
     const index = mediaStore.items.findIndex((candidate) => candidate.id === mediaId);
 
-    if (index === -1) {
+    const playlistAsset = index === -1 ? await playlistAssetForMediaId(mediaId) : null;
+    if (index === -1 && !playlistAsset) {
       return NextResponse.json({ error: "Media item not found." }, { status: 404 });
     }
 
-    const current = mediaStore.items[index];
+    const playbackFileName = playlistAsset ? playlistAssetFileName(playlistAsset) : null;
+    if (playlistAsset && !playbackFileName) {
+      return NextResponse.json({ error: "Only local playlist media can be tagged." }, { status: 400 });
+    }
+
+    const current = index === -1 && playlistAsset && playbackFileName
+      ? {
+          id: randomUUID(),
+          title: playlistAsset.altText?.trim() || baseTitleFromFileName(playbackFileName),
+          description: "",
+          tags: [],
+          sourceFileName: playbackFileName,
+          playbackFileName,
+          mimeType: mimeTypeFromExtension(playbackFileName),
+          sizeBytes: 0,
+          durationSeconds: playlistAsset.durationSeconds ?? null,
+          status: "ready" as const,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      : mediaStore.items[index];
     const nextTitle = typeof body.title === "string" ? body.title.trim().slice(0, 120) : current.title;
     if (!nextTitle) {
       return NextResponse.json({ error: "Title is required." }, { status: 400 });
@@ -102,7 +162,11 @@ export async function PATCH(request: Request, context: RouteContext) {
     };
 
     const nextItems = [...mediaStore.items];
-    nextItems[index] = updated;
+    if (index === -1) {
+      nextItems.unshift(updated);
+    } else {
+      nextItems[index] = updated;
+    }
     await writeMediaStore({
       ...mediaStore,
       items: nextItems,
