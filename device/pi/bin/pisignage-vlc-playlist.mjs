@@ -37,9 +37,15 @@ const statusHeartbeatIntervalMs = Number.parseInt(
   10
 );
 const dryRun = process.argv.includes("--dry-run");
+const assetQuarantineWindowMs = Number.parseInt(
+  process.env.PISIGNAGE_ASSET_QUARANTINE_WINDOW_MS ?? "300000",
+  10
+);
 
 let stopping = false;
 let activePlayer;
+let lastLoadedPlaylistModifiedMs = null;
+const assetQuarantine = new Map();
 let activeStatus = {
   mode: "vlc",
   state: "starting",
@@ -55,6 +61,7 @@ let activeStatus = {
   playlistVersion: null,
   assetCount: 0,
   assetIds: [],
+  quarantinedAssetIds: [],
   lastError: null
 };
 
@@ -102,6 +109,67 @@ function playlistAssetPath(asset) {
   return resolvedPath;
 }
 
+function quarantineKey(asset) {
+  return `${asset.assetId}|${asset.path}`;
+}
+
+function activeQuarantineEntry(asset) {
+  const entry = assetQuarantine.get(quarantineKey(asset));
+  if (!entry) {
+    return null;
+  }
+  if (Date.now() >= entry.untilMs) {
+    assetQuarantine.delete(quarantineKey(asset));
+    return null;
+  }
+  return entry;
+}
+
+function quarantineAsset(asset, reason) {
+  const now = Date.now();
+  const entry = {
+    assetId: asset.assetId,
+    path: asset.path,
+    reason,
+    quarantinedAt: new Date(now).toISOString(),
+    untilMs: now + Math.max(assetQuarantineWindowMs, 1_000)
+  };
+  assetQuarantine.set(quarantineKey(asset), entry);
+  log(`quarantining asset ${asset.assetId}: ${reason}`);
+}
+
+function quarantinedAssetStatusList() {
+  const now = Date.now();
+  const items = [];
+  for (const entry of assetQuarantine.values()) {
+    if (entry.untilMs <= now) {
+      continue;
+    }
+    items.push({
+      assetId: entry.assetId,
+      path: entry.path,
+      reason: entry.reason,
+      quarantinedAt: entry.quarantinedAt,
+      quarantineEndsAt: new Date(entry.untilMs).toISOString()
+    });
+  }
+  return items;
+}
+
+async function writePlaybackStatus(playlist, state, extra = {}) {
+  const quarantinedAssets = quarantinedAssetStatusList();
+  await writeStatus({
+    state,
+    playlistId: playlist.playlistId,
+    playlistVersion: playlist.version,
+    assetCount: playlist.assets.length,
+    assetIds: playlist.assets.map((asset) => asset.assetId),
+    quarantinedAssets,
+    quarantinedAssetIds: quarantinedAssets.map((entry) => entry.assetId),
+    ...extra
+  });
+}
+
 async function playableAssetsFromPlaylist() {
   const rawPlaylist = await readFile(playlistPath, "utf8");
   const playlist = JSON.parse(rawPlaylist);
@@ -118,15 +186,35 @@ async function playableAssetsFromPlaylist() {
 
     const assetPath = playlistAssetPath(asset);
     if (!assetPath) {
-      throw new Error(`Invalid ${asset?.type ?? "media"} asset path for ${asset?.assetId ?? "unknown asset"}`);
+      const assetId = asset?.assetId ?? "unknown asset";
+      quarantineAsset(
+        { assetId, path: String(asset?.uri ?? "") },
+        `invalid ${asset?.type ?? "media"} asset path`
+      );
+      continue;
     }
 
-    await access(assetPath, fsConstants.R_OK);
-    playableAssets.push({
+    const playableAsset = {
       assetId: asset.assetId ?? path.basename(assetPath),
       path: assetPath,
       type: asset.type
-    });
+    };
+    if (activeQuarantineEntry(playableAsset)) {
+      log(`skipping quarantined asset ${playableAsset.assetId}`);
+      continue;
+    }
+
+    try {
+      await access(assetPath, fsConstants.R_OK);
+    } catch (error) {
+      quarantineAsset(
+        playableAsset,
+        `media file is unreadable: ${error instanceof Error ? error.message : String(error)}`
+      );
+      continue;
+    }
+
+    playableAssets.push(playableAsset);
   }
 
   if (playableAssets.length === 0) {
@@ -307,18 +395,32 @@ async function run() {
 
   while (!stopping) {
     const playlist = await playableAssetsFromPlaylist();
+    if (lastLoadedPlaylistModifiedMs !== playlist.modifiedMs) {
+      assetQuarantine.clear();
+      lastLoadedPlaylistModifiedMs = playlist.modifiedMs;
+      log("playlist changed; cleared VLC asset quarantine");
+    }
     log(
       `loaded ${playlist.assets.length} media asset(s) from ${playlist.playlistId} version ${playlist.version}`
     );
-    await writeStatus({
-      state: "playing",
-      playlistId: playlist.playlistId,
-      playlistVersion: playlist.version,
-      assetCount: playlist.assets.length,
-      assetIds: playlist.assets.map((asset) => asset.assetId),
-      lastError: null
-    });
-    await playPlaylist(playlist);
+    await writePlaybackStatus(playlist, "playing", { lastError: null });
+    try {
+      await playPlaylist(playlist);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (playlist.assets.length > 1) {
+        const fallbackAsset = playlist.assets.find((asset) => !activeQuarantineEntry(asset));
+        if (fallbackAsset) {
+          quarantineAsset(fallbackAsset, `VLC exited unexpectedly: ${message}`);
+          await writePlaybackStatus(playlist, "recovering", { lastError: message });
+          log(
+            `VLC exited unexpectedly; retrying without quarantined asset ${fallbackAsset.assetId}`
+          );
+          continue;
+        }
+      }
+      throw error;
+    }
   }
 
   await writeStatus({ state: "stopped" });
