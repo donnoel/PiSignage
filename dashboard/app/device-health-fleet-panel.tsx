@@ -704,12 +704,12 @@ export function DeviceHealthFleetPanel({
                 <p className="mt-1 text-sm text-zinc-600">
                   Retry sync sends the saved playlist again. Playback controls use the connected local Pi.
                 </p>
-                <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7">
+                <div className="mt-4 flex flex-wrap gap-2">
                   <button
                     type="button"
                     disabled={!selectedRow.isLive || !selectedRow.assignedPlaylistId || isBusy}
                     onClick={() => void runAction("publish", selectedRow)}
-                    className="min-h-10 w-full rounded-md bg-teal-700 px-3 py-2 text-center text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                    className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
                   >
                     {busyAction === "publish" ? "Syncing..." : "Retry sync"}
                   </button>
@@ -717,7 +717,7 @@ export function DeviceHealthFleetPanel({
                     type="button"
                     disabled={isBusy}
                     onClick={refreshStatus}
-                    className="min-h-10 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-center text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="min-h-10 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {busyAction === "refresh" ? "Refreshing..." : "Refresh status"}
                   </button>
@@ -725,7 +725,7 @@ export function DeviceHealthFleetPanel({
                     type="button"
                     disabled={!selectedRow.isLive || isBusy}
                     onClick={() => void runAction("restart", selectedRow)}
-                    className="min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-center text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {busyAction === "restart" ? "Restarting..." : "Restart playback"}
                   </button>
@@ -733,7 +733,7 @@ export function DeviceHealthFleetPanel({
                     type="button"
                     disabled={!selectedRow.isLive || isBusy}
                     onClick={() => void runAction("recover", selectedRow)}
-                    className="min-h-10 w-full rounded-md border border-emerald-200 bg-white px-3 py-2 text-center text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="min-h-10 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {busyAction === "recover" ? "Recovering..." : "Run full recovery"}
                   </button>
@@ -742,7 +742,7 @@ export function DeviceHealthFleetPanel({
                       href={selectedPlayerUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex min-h-10 w-full items-center justify-center rounded-md bg-zinc-900 px-3 py-2 text-center text-sm font-semibold text-white hover:bg-zinc-800"
+                      className="inline-flex min-h-10 items-center rounded-md bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
                     >
                       Open Pi player
                     </a>
@@ -750,7 +750,7 @@ export function DeviceHealthFleetPanel({
                   {selectedSshUrl ? (
                     <a
                       href={selectedSshUrl}
-                      className="inline-flex min-h-10 w-full items-center justify-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-center text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
+                      className="inline-flex min-h-10 items-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
                     >
                       Open SSH
                     </a>
@@ -759,7 +759,7 @@ export function DeviceHealthFleetPanel({
                     type="button"
                     disabled={!selectedRow.isLive || isBusy}
                     onClick={() => void runAction("reboot", selectedRow)}
-                    className="min-h-10 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-center text-sm font-semibold text-amber-800 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="min-h-10 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {busyAction === "reboot" ? "Rebooting..." : "Reboot Pi"}
                   </button>
