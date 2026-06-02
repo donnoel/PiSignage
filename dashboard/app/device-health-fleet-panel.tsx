@@ -416,6 +416,15 @@ export function DeviceHealthFleetPanel({
       return;
     }
 
+    if (
+      action === "reboot" &&
+      !window.confirm(
+        `Reboot ${row.linkedScreen?.name ?? row.device.name} Pi?\n\nPlayback will stop while the Pi restarts. Beam will wait for a fresh check-in after reboot.`
+      )
+    ) {
+      return;
+    }
+
     setBusyAction(action);
     setMessage(
       action === "publish"
