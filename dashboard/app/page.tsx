@@ -724,7 +724,7 @@ function publishStateLabel(publishStatus: PublishStatus | null): string {
     return "Sent";
   }
 
-  return publishStatus.piPublishEnabled ? "Publish failed" : "Pending publish";
+  return publishStatus.piPublishEnabled ? "Publish not verified" : "Pending publish";
 }
 
 function shortPublishDetail(publishStatus: PublishStatus | null): string {
@@ -737,6 +737,18 @@ function shortPublishDetail(publishStatus: PublishStatus | null): string {
   }
 
   return publishStatus.piPublishEnabled ? "Needs attention" : "Saved locally";
+}
+
+function publishStatusDisplayMessage(publishStatus: PublishStatus): string {
+  if (publishStatus.message.includes("could not verify every media file on the Pi")) {
+    return "Saved locally. Beam cannot verify every media file on the Pi until the Pi and media are available.";
+  }
+
+  if (publishStatus.message.includes("did not complete")) {
+    return "Saved locally. Beam could not complete the Pi publish check. Check Pi connectivity and publish again.";
+  }
+
+  return publishStatus.message;
 }
 
 function playlistLiveStatus(
@@ -754,8 +766,8 @@ function playlistLiveStatus(
 
   if (publishStatus && !publishStatus.ok && publishStatus.piPublishEnabled) {
     return {
-      detail: "The last publish did not complete.",
-      label: "Publish failed",
+      detail: "The playlist is saved locally, but Beam could not verify it on the Pi.",
+      label: "Publish not verified",
       tone: "warn"
     };
   }
@@ -1141,8 +1153,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   if (publishStatusForSelected && !publishStatusForSelected.ok && publishStatusForSelected.piPublishEnabled) {
     attentionItems.push({
-      detail: publishStatusForSelected.message,
-      label: "Publish failed",
+      detail: publishStatusDisplayMessage(publishStatusForSelected),
+      label: "Publish not verified",
       tone: "warn"
     });
   }
@@ -1183,7 +1195,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     .filter((row) => row.needsAttention)
     .sort((left, right) => Number(right.isLive) - Number(left.isLive))
     .slice(0, 8);
-  const systemExceptions = attentionItems.filter((item) => item.label === "Publish failed");
+  const systemExceptions = attentionItems.filter((item) => item.label === "Publish not verified");
   const commandAttentionCount = fleetAttentionCount + systemExceptions.length;
   const commandCenterReady = commandAttentionCount === 0 && onlineDeviceCount > 0;
   const systemStatusLabel = commandCenterReady ? "Ready" : commandAttentionCount > 0 ? "Review" : "Watching";
@@ -1278,7 +1290,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             : "Pending publish"
         : "Not recorded",
       detail: publishStatusForSelected
-        ? `${actionLabel(publishStatusForSelected.action)} wrote playlist v${publishStatusForSelected.playlistVersion}. ${publishStatusForSelected.message}`
+        ? `${actionLabel(publishStatusForSelected.action)} wrote playlist v${publishStatusForSelected.playlistVersion}. ${publishStatusDisplayMessage(publishStatusForSelected)}`
         : "No local publish status file has been written yet.",
       tone: publishStatusForSelected
         ? publishStatusForSelected.ok
@@ -1422,16 +1434,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               {systemExceptions.length > 0 || fleetExceptions.length > 0 ? (
                 <ol className="divide-y divide-zinc-200">
                   {systemExceptions.map((item) => (
-                    <li key={`${item.label}-${item.detail}`} className="grid gap-3 px-5 py-4 text-sm lg:grid-cols-[minmax(180px,0.7fr)_minmax(0,1fr)_auto] lg:items-start">
+                    <li key={`${item.label}-${item.detail}`} className="grid gap-3 px-5 py-4 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
                       <div className="min-w-0">
-                        <p className="break-words font-semibold text-zinc-950">{item.label}</p>
-                        <p className="mt-1 break-words text-zinc-600">Local operation</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="break-words font-semibold text-zinc-950">{item.label}</p>
+                          <StatusPill label="Expected while offline" tone="warn" />
+                        </div>
+                        <p className="mt-1 break-words text-zinc-600">Local playlist is saved. Pi verification is unavailable right now.</p>
                       </div>
-                      <div className="min-w-0">
-                        <StatusPill label="Check" tone={item.tone} />
-                        <p className="mt-2 break-words leading-6 text-zinc-600">{item.detail}</p>
-                      </div>
-                      <div className="lg:justify-self-end">
+                      <div className="sm:justify-self-end">
                         <a
                           href="/?view=playlist"
                           className="inline-flex min-h-10 items-center rounded-md px-3 py-2 font-semibold text-teal-800 ring-1 ring-teal-200 hover:bg-teal-50 focus:outline-none focus:ring-2 focus:ring-teal-600"

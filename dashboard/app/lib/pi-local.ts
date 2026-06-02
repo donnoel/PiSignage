@@ -30,10 +30,10 @@ export function describePiPublishFailure(error: unknown): string {
   }
 
   if (message.includes("No such file") || message.includes("test -f")) {
-    return "Pi publish could not verify every media file on the Pi. The playlist stayed saved locally; publish again after the missing media is available.";
+    return "Saved locally. Beam could not verify every media file on the Pi. Publish again when the Pi and media are available.";
   }
 
-  return "Pi publish did not complete. The playlist stayed saved locally; check Pi connectivity and try publish again.";
+  return "Saved locally. Beam could not complete the Pi publish check. Check Pi connectivity and publish again.";
 }
 
 export function readPiConfig(): PiConfig | null {
