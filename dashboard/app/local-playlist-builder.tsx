@@ -77,6 +77,7 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
   const [isSaving, setIsSaving] = useState(false);
   const [isPending, startTransition] = useTransition();
   const isBusy = isLoadingMedia || isSaving || isPending;
+  const shouldShowHeaderMessage = mediaItems.length > 0;
 
   async function loadMedia(query = "") {
     setIsLoadingMedia(true);
@@ -153,7 +154,9 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
         <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h3 className="text-lg font-semibold">Add media to playlist</h3>
-            <p className="mt-1 text-sm text-zinc-600">{mediaMessage}</p>
+            {shouldShowHeaderMessage ? (
+              <p className="mt-1 text-sm text-zinc-600" aria-live="polite">{mediaMessage}</p>
+            ) : null}
           </div>
           <form
             className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto lg:justify-end"
@@ -202,7 +205,7 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
             </div>
           ))}
           {mediaItems.length === 0 ? (
-            <p className="px-5 py-4 text-sm text-zinc-600">{isLoadingMedia ? "Loading media..." : mediaMessage}</p>
+            <p className="px-5 py-4 text-sm text-zinc-600" aria-live="polite">{isLoadingMedia ? "Loading media..." : mediaMessage}</p>
           ) : null}
         </div>
       </section>
