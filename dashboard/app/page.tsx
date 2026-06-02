@@ -1559,6 +1559,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               devices={inventory.devices.items}
               screens={inventory.screens.items}
               liveHost={pi.host}
+              livePlayerUrl={piPlayerUrl}
               livePlaylistId={playerStatus?.playlistId ?? null}
               livePlaybackHealthy={playbackHealthy}
               livePlaybackState={playbackLabel}
