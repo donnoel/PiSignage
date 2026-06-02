@@ -265,7 +265,11 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
         </div>
       </section>
 
-      <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+      <section
+        id="playlist-screen-assignment"
+        tabIndex={-1}
+        className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm outline-none transition-shadow"
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h3 className="text-lg font-semibold">Screens using this playlist</h3>

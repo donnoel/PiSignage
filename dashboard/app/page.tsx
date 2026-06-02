@@ -1729,15 +1729,17 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <p className="text-sm font-semibold uppercase text-teal-700">Current playlist</p>
-                    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
+                    <div className="mt-1 flex min-w-0 items-center gap-2">
                       <h2 id="playlist-heading" className="min-w-0 truncate text-3xl font-semibold" title={playlist.name}>{playlist.name}</h2>
-                      <LocalPlaylistRenameButton name={playlist.name} playlistId={playlist.playlistId} />
-                      <LocalPlaylistDeleteButton
-                        assignedScreenCount={assignedScreens.length}
-                        isOnlyPlaylist={playlistOptions.length <= 1}
-                        name={playlist.name}
-                        playlistId={playlist.playlistId}
-                      />
+                      <div className="flex shrink-0 items-center gap-2">
+                        <LocalPlaylistRenameButton name={playlist.name} playlistId={playlist.playlistId} />
+                        <LocalPlaylistDeleteButton
+                          assignedScreenCount={assignedScreens.length}
+                          isOnlyPlaylist={playlistOptions.length <= 1}
+                          name={playlist.name}
+                          playlistId={playlist.playlistId}
+                        />
+                      </div>
                     </div>
                     <p className="mt-2 text-sm text-zinc-600">
                       {playlist.assets.length} items · {totalDuration} · {assignedScreens.length === 0 ? "No screens assigned" : assignedScreensLabel}
@@ -1876,7 +1878,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                       <dd className="mt-1 text-zinc-700">{assignedScreensLabel}</dd>
                     </div>
                   </dl>
-                  <LocalPublishForm assetCount={playlist.assets.length} playlistId={playlist.playlistId} />
+                  <LocalPublishForm
+                    assetCount={playlist.assets.length}
+                    assignedScreenCount={assignedScreens.length}
+                    assignmentTargetId="playlist-screen-assignment"
+                    playlistId={playlist.playlistId}
+                  />
                 </div>
               </aside>
             </div>

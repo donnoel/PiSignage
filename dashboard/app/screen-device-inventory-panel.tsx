@@ -45,6 +45,16 @@ type InventoryResponse = {
   screens: ScreenRecord[];
 };
 
+type PublishResponse = {
+  error?: string;
+  message?: string;
+  piPublish?: {
+    message: string;
+    ok: boolean;
+  };
+  playlistVersion?: number;
+};
+
 type InventoryPanelProps = {
   liveHost: string | null;
   livePlaybackHealthy: boolean;
@@ -211,6 +221,7 @@ export function ScreenDeviceInventoryPanel({
   const [message, setMessage] = useState("Loading screens...");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [publishingScreenId, setPublishingScreenId] = useState<string | null>(null);
   const [screenName, setScreenName] = useState("");
   const [screenLocation, setScreenLocation] = useState("");
   const [screenGroup, setScreenGroup] = useState("");
@@ -537,6 +548,37 @@ export function ScreenDeviceInventoryPanel({
   const upToDateCount = screenRows.filter((row) => row.syncLabel === "Up to date").length;
   const attentionCount = screenRows.filter((row) => row.needsAttention).length;
 
+  async function publishPlaylistForScreen(row: ScreenRow) {
+    if (isBusy || !row.assignedPlaylistId) {
+      return;
+    }
+
+    setIsSaving(true);
+    setPublishingScreenId(row.screen.id);
+    setMessage(`Publishing ${row.assignedPlaylist?.name ?? "playlist"} to ${row.screen.name}...`);
+    try {
+      const response = await fetch("/api/local-playlist/publish", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ playlistId: row.assignedPlaylistId })
+      });
+      const result = (await response.json()) as PublishResponse;
+      if (!response.ok || result.error) {
+        throw new Error(result.error ?? "Publish failed.");
+      }
+
+      setMessage(result.piPublish?.message ?? result.message ?? "Publish sent.");
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Publish failed.");
+    } finally {
+      setPublishingScreenId(null);
+      setIsSaving(false);
+    }
+  }
+
   async function loadInventory() {
     setIsLoading(true);
     try {
@@ -831,9 +873,22 @@ export function ScreenDeviceInventoryPanel({
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <span title={row.syncDetail}>
-                      <StatusPill label={row.syncLabel} tone={row.syncTone} />
-                    </span>
+                    {row.syncLabel === "Publish required" && row.assignedPlaylistId ? (
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => void publishPlaylistForScreen(row)}
+                        title={row.syncDetail}
+                        aria-label={`Publish ${row.assignedPlaylist?.name ?? "playlist"} to ${row.screen.name}`}
+                        className="inline-flex whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {publishingScreenId === row.screen.id ? "Publishing..." : row.syncLabel}
+                      </button>
+                    ) : (
+                      <span title={row.syncDetail}>
+                        <StatusPill label={row.syncLabel} tone={row.syncTone} />
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <p className="break-words font-semibold text-zinc-950" title={piLabel(row.device, row.screen)}>
