@@ -9,7 +9,7 @@ import { localStateDirectory, publishStatusPath, readPlaylistStore, repoRoot, se
 import type { Playlist, PlaylistAsset, PlaylistStore } from "./lib/local-playlist";
 import { readPiConfig, runSsh } from "./lib/pi-local";
 import { MediaStorePanel } from "./media-store-panel";
-import { LocalPlaylistBuilder } from "./local-playlist-builder";
+import { LocalPlaylistBuilder, LocalPlaylistScreenAssignment } from "./local-playlist-builder";
 import { LocalPlaylistCreateForm } from "./local-playlist-create-form";
 import { LocalPlaylistDeleteButton } from "./local-playlist-delete-button";
 import { LocalPlaylistRenameButton } from "./local-playlist-rename-button";
@@ -1768,6 +1768,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     <dd className="mt-1 text-zinc-600">{shortPublishDetail(publishStatusForSelected)}</dd>
                   </div>
                 </dl>
+                <LocalPlaylistScreenAssignment playlistId={playlist.playlistId} />
               </div>
 
               <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">

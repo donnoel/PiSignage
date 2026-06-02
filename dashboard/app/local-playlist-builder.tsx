@@ -50,6 +50,10 @@ type PlaylistBuilderProps = {
   playlistId: string;
 };
 
+type PlaylistScreenAssignmentProps = {
+  playlistId: string;
+};
+
 function isPlaylistSafeMedia(item: MediaItem, selectedFileNames: Set<string>): boolean {
   return item.status === "ready" && !selectedFileNames.has(item.playbackFileName) && /\.mp4$/i.test(item.playbackFileName);
 }
@@ -69,13 +73,10 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [mediaQuery, setMediaQuery] = useState("");
   const [mediaMessage, setMediaMessage] = useState("Loading media...");
-  const [assignments, setAssignments] = useState<AssignmentResponse | null>(null);
-  const [assignmentMessage, setAssignmentMessage] = useState("");
   const [isLoadingMedia, setIsLoadingMedia] = useState(false);
-  const [isLoadingAssignments, setIsLoadingAssignments] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isPending, startTransition] = useTransition();
-  const isBusy = isLoadingMedia || isLoadingAssignments || isSaving || isPending;
+  const isBusy = isLoadingMedia || isSaving || isPending;
 
   async function loadMedia(query = "") {
     setIsLoadingMedia(true);
@@ -109,32 +110,8 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
     }
   }
 
-  async function loadAssignments() {
-    setIsLoadingAssignments(true);
-    try {
-      const params = new URLSearchParams({ playlistId });
-      const response = await fetch(`/api/local-playlist/assign?${params.toString()}`, {
-        cache: "no-store",
-        method: "GET"
-      });
-      const result = (await response.json()) as AssignmentResponse;
-      if (!response.ok || result.error) {
-        throw new Error(result.error ?? "Could not load playlist assignments.");
-      }
-
-      setAssignments(result);
-      setAssignmentMessage("");
-    } catch (error) {
-      setAssignments(null);
-      setAssignmentMessage(error instanceof Error ? error.message : "Could not load playlist assignments.");
-    } finally {
-      setIsLoadingAssignments(false);
-    }
-  }
-
   useEffect(() => {
     void loadMedia("");
-    void loadAssignments();
   }, [playlistAssetKey, playlistId]);
 
   async function addMediaToPlaylist(mediaId: string, mediaLabel: string) {
@@ -170,43 +147,8 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
     }
   }
 
-  async function saveScreenAssignment(targetId: string, assigned: boolean) {
-    if (isBusy) {
-      return;
-    }
-
-    setIsSaving(true);
-    setAssignmentMessage("Saving screen...");
-    try {
-      const response = await fetch("/api/local-playlist/assign", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          assigned,
-          playlistId,
-          targetId,
-          targetType: "screen"
-        })
-      });
-      const result = (await response.json()) as AssignmentResponse;
-      if (!response.ok || result.error) {
-        throw new Error(result.error ?? "Could not save playlist assignment.");
-      }
-
-      setAssignments(result);
-      setAssignmentMessage("Saved.");
-      startTransition(() => router.refresh());
-    } catch (error) {
-      setAssignmentMessage(error instanceof Error ? error.message : "Could not save playlist assignment.");
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
   return (
-    <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+    <div>
       <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
         <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -264,60 +206,134 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
           ) : null}
         </div>
       </section>
-
-      <section
-        id="playlist-screen-assignment"
-        tabIndex={-1}
-        className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm outline-none transition-shadow"
-      >
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h3 className="text-lg font-semibold">Screens using this playlist</h3>
-            <p className="mt-1 text-sm text-zinc-600">
-              {isLoadingAssignments
-                ? "Loading screens..."
-                : `${(assignments?.screens ?? []).filter((screen) => screen.playlistId === playlistId).length} selected`}
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-4 space-y-3">
-          {(assignments?.screens ?? []).map((screen) => {
-            const assigned = screen.playlistId === playlistId;
-            return (
-              <label
-                key={screen.id}
-                className={`flex items-start gap-3 rounded-md border p-3 ${
-                  assigned ? "border-teal-200 bg-teal-50" : "border-zinc-200 bg-zinc-50"
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={assigned}
-                  disabled={isBusy}
-                  onChange={(event) => {
-                    void saveScreenAssignment(screen.id, event.currentTarget.checked);
-                  }}
-                  className="mt-1 h-4 w-4 accent-teal-700"
-                />
-                <span className="min-w-0">
-                  <span className="block break-words font-semibold text-zinc-950">{screen.name}</span>
-                  <span className="block text-sm text-zinc-600">{screen.location}</span>
-                </span>
-              </label>
-            );
-          })}
-          {(assignments?.screens ?? []).length === 0 ? (
-            <p className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-600">
-              {isLoadingAssignments ? "Loading screen assignments..." : "No screen recorded."}
-            </p>
-          ) : null}
-        </div>
-
-        {assignmentMessage ? (
-          <p className="mt-4 text-sm text-zinc-600" role="status" aria-live="polite">{assignmentMessage}</p>
-        ) : null}
-      </section>
     </div>
+  );
+}
+
+export function LocalPlaylistScreenAssignment({ playlistId }: PlaylistScreenAssignmentProps) {
+  const router = useRouter();
+  const [assignments, setAssignments] = useState<AssignmentResponse | null>(null);
+  const [assignmentMessage, setAssignmentMessage] = useState("Loading screens...");
+  const [isLoadingAssignments, setIsLoadingAssignments] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isPending, startTransition] = useTransition();
+  const isBusy = isLoadingAssignments || isSaving || isPending;
+
+  async function loadAssignments() {
+    setIsLoadingAssignments(true);
+    try {
+      const params = new URLSearchParams({ playlistId });
+      const response = await fetch(`/api/local-playlist/assign?${params.toString()}`, {
+        cache: "no-store",
+        method: "GET"
+      });
+      const result = (await response.json()) as AssignmentResponse;
+      if (!response.ok || result.error) {
+        throw new Error(result.error ?? "Could not load playlist assignments.");
+      }
+
+      setAssignments(result);
+      setAssignmentMessage("");
+    } catch (error) {
+      setAssignments(null);
+      setAssignmentMessage(error instanceof Error ? error.message : "Could not load playlist assignments.");
+    } finally {
+      setIsLoadingAssignments(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadAssignments();
+  }, [playlistId]);
+
+  async function saveScreenAssignment(targetId: string, assigned: boolean) {
+    if (isBusy) {
+      return;
+    }
+
+    setIsSaving(true);
+    setAssignmentMessage("Saving screen...");
+    try {
+      const response = await fetch("/api/local-playlist/assign", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          assigned,
+          playlistId,
+          targetId,
+          targetType: "screen"
+        })
+      });
+      const result = (await response.json()) as AssignmentResponse;
+      if (!response.ok || result.error) {
+        throw new Error(result.error ?? "Could not save playlist assignment.");
+      }
+
+      setAssignments(result);
+      setAssignmentMessage("Saved.");
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setAssignmentMessage(error instanceof Error ? error.message : "Could not save playlist assignment.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <section
+      id="playlist-screen-assignment"
+      tabIndex={-1}
+      className="mt-5 rounded-md border border-zinc-200 bg-zinc-50 p-4 outline-none transition-shadow"
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">Screens using this playlist</h3>
+          <p className="mt-1 text-sm text-zinc-600">
+            {isLoadingAssignments
+              ? "Loading screens..."
+              : `${(assignments?.screens ?? []).filter((screen) => screen.playlistId === playlistId).length} selected`}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {(assignments?.screens ?? []).map((screen) => {
+          const assigned = screen.playlistId === playlistId;
+          return (
+            <label
+              key={screen.id}
+              className={`flex items-start gap-3 rounded-md border p-3 ${
+                assigned ? "border-teal-200 bg-teal-50" : "border-zinc-200 bg-white"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={assigned}
+                disabled={isBusy}
+                onChange={(event) => {
+                  void saveScreenAssignment(screen.id, event.currentTarget.checked);
+                }}
+                className="mt-1 h-4 w-4 accent-teal-700"
+              />
+              <span className="min-w-0">
+                <span className="block break-words font-semibold text-zinc-950">{screen.name}</span>
+                <span className="block text-sm text-zinc-600">{screen.location}</span>
+              </span>
+            </label>
+          );
+        })}
+        {(assignments?.screens ?? []).length === 0 ? (
+          <p className="rounded-md border border-zinc-200 bg-white p-3 text-sm text-zinc-600">
+            {isLoadingAssignments ? "Loading screen assignments..." : "No screen recorded."}
+          </p>
+        ) : null}
+      </div>
+
+      {assignmentMessage ? (
+        <p className="mt-4 text-sm text-zinc-600" role="status" aria-live="polite">{assignmentMessage}</p>
+      ) : null}
+    </section>
   );
 }
