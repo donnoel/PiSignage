@@ -627,12 +627,11 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
           />
         </div>
 
-        <div className="grid gap-4 p-5 xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="p-5">
           <div className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
-            <h3 className="text-base font-semibold">Access helpers</h3>
-            <div className="mt-4 grid gap-3">
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
               <div>
-                <p className="text-xs font-semibold uppercase text-zinc-500">SSH</p>
+                <p className="text-xs font-semibold uppercase text-zinc-500">SSH command</p>
                 <div className="mt-2 flex flex-col gap-2 lg:flex-row lg:items-center">
                   <code className="min-h-10 flex-1 overflow-x-auto rounded-md bg-white px-3 py-2 text-sm text-zinc-900 ring-1 ring-zinc-200">
                     {selectedSshText}
@@ -649,7 +648,7 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
                 {copyMessage ? <p className="mt-2 text-xs font-medium text-zinc-600">{copyMessage}</p> : null}
               </div>
 
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 lg:justify-end">
                 {selectedHasLiveDiagnostics && data?.pi.playerUrl ? (
                   <a
                     href={data.pi.playerUrl}
@@ -675,11 +674,8 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
                 ) : null}
               </div>
             </div>
-          </div>
 
-          <div className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
-            <h3 className="text-base font-semibold">Actions</h3>
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               <button
                 type="button"
                 disabled={isBusy}
@@ -713,7 +709,7 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
                 {busyAction === "recover" ? "Recovering..." : "Run safe recovery"}
               </button>
             </div>
-            <dl className="mt-4 grid gap-2 text-xs text-zinc-600 sm:grid-cols-2">
+            <dl className="mt-4 grid gap-2 text-xs text-zinc-600 sm:grid-cols-2 xl:grid-cols-4">
               <div>
                 <dt className="font-semibold text-zinc-800">Refresh</dt>
                 <dd>Reads evidence only.</dd>
