@@ -1,50 +1,15 @@
 {
   "playlistId": "playlist-local-demo",
   "name": "Local Demo Playlist",
-  "version": 13,
-  "updatedAt": "2026-05-28T21:17:26.059Z",
+  "version": 14,
+  "updatedAt": "2026-06-02T00:00:00.000Z",
   "assets": [
     {
-      "assetId": "asset-demo-video",
+      "assetId": "asset-welcome-demo",
       "type": "video",
-      "uri": "assets/demo.signage-720p.mp4",
-      "durationSeconds": 30,
-      "altText": "Beam demo video"
-    },
-    {
-      "assetId": "asset-2026-03-17-adams-ave-barber",
-      "type": "video",
-      "uri": "assets/2026-03-17-Adams-Ave-Barber.signage-720p.mp4",
-      "durationSeconds": 30,
-      "altText": "2026-03-17-Adams-Ave-Barber"
-    },
-    {
-      "assetId": "asset-ace-commercial-master",
-      "type": "video",
-      "uri": "assets/Ace-COMMERCIAL-MASTER.signage-720p.mp4",
-      "durationSeconds": 30,
-      "altText": "Ace-COMMERCIAL-MASTER"
-    },
-    {
-      "assetId": "asset-demo-video-1",
-      "type": "video",
-      "uri": "assets/demo1.signage-720p.mp4",
-      "durationSeconds": 30,
-      "altText": "Beam second demo video"
-    },
-    {
-      "assetId": "asset-2022-03-23-alone-book-meet-and-greet",
-      "type": "video",
-      "uri": "assets/2022-03-23-Alone-Book-Meet-and-Greet.signage-720p.mp4",
-      "durationSeconds": 15,
-      "altText": "2022-03-23-Alone-Book-Meet-and-Greet"
-    },
-    {
-      "assetId": "asset-2026-american-red-cross-blood-drive",
-      "type": "video",
-      "uri": "assets/2026-American-Red-Cross-Blood-Drive.signage-720p.mp4",
-      "durationSeconds": 20,
-      "altText": "2026-American-Red-Cross-Blood-Drive"
+      "uri": "assets/welcome-demo.mp4",
+      "durationSeconds": 3,
+      "altText": "Beam welcome demo clip"
     }
   ]
 }

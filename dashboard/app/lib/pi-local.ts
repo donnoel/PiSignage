@@ -30,7 +30,7 @@ export function describePiPublishFailure(error: unknown): string {
   }
 
   if (message.includes("No such file") || message.includes("test -f")) {
-    return "Pi publish could not verify every media file on the Pi. The playlist stayed saved locally; publish again after the missing media is available.";
+    return "Pi publish could not sync every media file. The playlist stayed saved locally; fix the missing media and publish again.";
   }
 
   return "Pi publish did not complete. The playlist stayed saved locally; check Pi connectivity and try publish again.";
@@ -219,6 +219,38 @@ export function requiredRemoteAssetPaths(config: PiConfig, playlist: Playlist): 
   });
 }
 
+type AssetTransfer = {
+  assetId: string;
+  localPath: string;
+  remotePath: string;
+};
+
+async function requiredAssetTransfers(config: PiConfig, playlist: Playlist): Promise<AssetTransfer[]> {
+  const transfers: AssetTransfer[] = [];
+
+  for (const asset of playlist.assets) {
+    const normalizedUri = path.posix.normalize(asset.uri);
+    if (
+      path.posix.isAbsolute(normalizedUri) ||
+      normalizedUri === ".." ||
+      normalizedUri.startsWith("../")
+    ) {
+      throw new Error(`Playlist asset path is not local: ${asset.assetId}`);
+    }
+
+    const relativeRepoPath = path.posix.join("sample-content", normalizedUri);
+    const localPath = await repoFilePath(relativeRepoPath);
+    const remotePath = path.posix.join(config.root, relativeRepoPath);
+    transfers.push({
+      assetId: asset.assetId,
+      localPath,
+      remotePath
+    });
+  }
+
+  return transfers;
+}
+
 export async function publishPlaylistToPi(
   playlistPath: string,
   playlist: Playlist,
@@ -238,12 +270,36 @@ export async function publishPlaylistToPi(
   const temporaryPlaylistPath = `${remotePlaylistPath}.${Date.now()}.tmp`;
 
   try {
-    await runSsh(
-      config,
-      requiredRemoteAssetPaths(config, playlist)
-        .map((assetPath) => `test -f ${quoteRemoteShell(assetPath)}`)
-        .join(" && ")
+    const assetTransfers = await requiredAssetTransfers(config, playlist);
+    const remoteAssetDirectories = Array.from(
+      new Set(assetTransfers.map((transfer) => path.posix.dirname(transfer.remotePath)))
     );
+
+    if (remoteAssetDirectories.length > 0) {
+      await runSsh(
+        config,
+        `mkdir -p ${remoteAssetDirectories.map((directory) => quoteRemoteShell(directory)).join(" ")}`
+      );
+    }
+
+    for (const [index, transfer] of assetTransfers.entries()) {
+      const temporaryAssetPath = `${transfer.remotePath}.${Date.now()}.${index}.tmp`;
+      await runScp(config, transfer.localPath, temporaryAssetPath);
+      await runSsh(
+        config,
+        `mv ${quoteRemoteShell(temporaryAssetPath)} ${quoteRemoteShell(transfer.remotePath)}`
+      );
+    }
+
+    if (assetTransfers.length > 0) {
+      await runSsh(
+        config,
+        assetTransfers
+          .map((transfer) => `test -f ${quoteRemoteShell(transfer.remotePath)}`)
+          .join(" && ")
+      );
+    }
+
     await runScp(config, playlistPath, temporaryPlaylistPath);
     await runSsh(
       config,
@@ -253,7 +309,9 @@ export async function publishPlaylistToPi(
     return {
       enabled: true,
       ok: true,
-      message: messages.success ?? `Published playlist to Pi at ${config.host}.`
+      message:
+        messages.success ??
+        `Published playlist and ${assetTransfers.length} media file(s) to Pi at ${config.host}.`
     };
   } catch (error) {
     console.error("local playlist publish failed", error);
