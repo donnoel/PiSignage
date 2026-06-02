@@ -44,14 +44,7 @@ type FleetDeviceHealthPanelProps = {
   statusTimestampLabel: string;
 };
 
-type FilterKey = "all" | "attention" | "offline" | "stale" | "sync" | "waiting";
-
-type FilterItem = {
-  count: number;
-  hideWhenZero?: boolean;
-  key: FilterKey;
-  label: string;
-};
+type FilterKey = "all" | "attention" | "offline" | "online" | "playing" | "stale" | "sync" | "waiting";
 
 type RowState = {
   assignedPlaylistId: string | null;
@@ -328,8 +321,14 @@ export function DeviceHealthFleetPanel({
     if (filter === "attention") {
       return row.needsAttention;
     }
+    if (filter === "online") {
+      return row.healthLabel === "Online";
+    }
     if (filter === "offline") {
       return row.healthLabel === "Offline";
+    }
+    if (filter === "playing") {
+      return row.isLive && livePlaybackHealthy;
     }
     if (filter === "stale") {
       return row.isLive && liveStatusStale;
@@ -419,71 +418,103 @@ export function DeviceHealthFleetPanel({
     }
   }
 
-  const filterOptions: FilterItem[] = [
-    { count: rows.length, key: "all", label: "All screens" },
-    { count: attentionCount, key: "attention", label: "Needs attention" },
-    { count: offlineCount, key: "offline", label: "Offline" },
-    { count: staleCount, hideWhenZero: true, key: "stale", label: "Stale report" },
-    { count: syncIssueCount, hideWhenZero: true, key: "sync", label: "Publish required" },
-    { count: waitingCount, key: "waiting", label: "Waiting" }
+  const summaryCardOptions: Array<{
+    count: number;
+    hideWhenZero?: boolean;
+    key: FilterKey;
+    label: string;
+    toneClassName: string;
+  }> = [
+    {
+      count: onlineCount,
+      key: "online",
+      label: "Online",
+      toneClassName: "bg-emerald-50 text-emerald-800 ring-emerald-100 hover:bg-emerald-100"
+    },
+    {
+      count: offlineCount,
+      key: "offline",
+      label: "Offline",
+      toneClassName: "bg-rose-50 text-rose-800 ring-rose-100 hover:bg-rose-100"
+    },
+    {
+      count: staleCount,
+      key: "stale",
+      label: "Stale report",
+      toneClassName: "bg-amber-50 text-amber-900 ring-amber-100 hover:bg-amber-100"
+    },
+    {
+      count: playingCount,
+      key: "playing",
+      label: "Playing now",
+      toneClassName: "bg-sky-50 text-sky-800 ring-sky-100 hover:bg-sky-100"
+    },
+    {
+      count: attentionCount,
+      key: "attention",
+      label: "Needs attention",
+      toneClassName: "bg-orange-50 text-orange-800 ring-orange-100 hover:bg-orange-100"
+    },
+    {
+      count: rows.length,
+      key: "all",
+      label: "Saved screens",
+      toneClassName: "bg-zinc-50 text-zinc-700 ring-zinc-200 hover:bg-zinc-100"
+    },
+    {
+      count: syncIssueCount,
+      hideWhenZero: true,
+      key: "sync",
+      label: "Publish required",
+      toneClassName: "bg-yellow-50 text-yellow-900 ring-yellow-100 hover:bg-yellow-100"
+    },
+    {
+      count: waitingCount,
+      hideWhenZero: true,
+      key: "waiting",
+      label: "Waiting",
+      toneClassName: "bg-zinc-50 text-zinc-600 ring-zinc-200 hover:bg-zinc-100"
+    }
   ];
-  const filters = filterOptions.filter((item) => !item.hideWhenZero || item.count > 0);
+  const summaryCards = summaryCardOptions.filter((item) => !item.hideWhenZero || item.count > 0);
 
   return (
     <section aria-labelledby="fleet-health-heading" className="mt-6 space-y-4">
       <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-4 border-b border-zinc-200 p-5 xl:flex-row xl:items-start xl:justify-between">
+        <div className="border-b border-zinc-200 p-5">
           <div>
             <h2 id="fleet-health-heading" className="text-xl font-semibold">Screen Status</h2>
             <p className="mt-1 text-sm text-zinc-600">
               Check connection, playback, playlist update, and recovery actions for each screen.
             </p>
           </div>
-          <div className="flex max-w-full gap-2 overflow-x-auto pb-1 xl:flex-wrap xl:justify-end xl:overflow-visible xl:pb-0">
-            {filters.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => setFilter(item.key)}
-                className={`min-h-9 shrink-0 rounded-md px-3 py-2 text-xs font-semibold ring-1 ${
-                  filter === item.key
-                    ? "bg-teal-700 text-white ring-teal-700"
-                    : "bg-white text-zinc-700 ring-zinc-200 hover:bg-zinc-50"
-                }`}
-              >
-                {item.label} {item.count}
-              </button>
-            ))}
-          </div>
         </div>
 
         <div className="p-4">
-          <dl className="grid grid-cols-[repeat(auto-fit,minmax(128px,1fr))] gap-2">
-            <div className="rounded-md bg-emerald-50 p-3 ring-1 ring-emerald-100">
-              <dt className="text-xs font-semibold uppercase text-emerald-800">Online</dt>
-              <dd className="mt-1 text-xl font-semibold">{onlineCount}</dd>
-            </div>
-            <div className="rounded-md bg-rose-50 p-3 ring-1 ring-rose-100">
-              <dt className="text-xs font-semibold uppercase text-rose-800">Offline</dt>
-              <dd className="mt-1 text-xl font-semibold">{offlineCount}</dd>
-            </div>
-            <div className="rounded-md bg-amber-50 p-3 ring-1 ring-amber-100">
-              <dt className="text-xs font-semibold uppercase text-amber-900">Stale report</dt>
-              <dd className="mt-1 text-xl font-semibold">{staleCount}</dd>
-            </div>
-            <div className="rounded-md bg-sky-50 p-3 ring-1 ring-sky-100">
-              <dt className="text-xs font-semibold uppercase text-sky-800">Playing now</dt>
-              <dd className="mt-1 text-xl font-semibold">{playingCount}</dd>
-            </div>
-            <div className="rounded-md bg-orange-50 p-3 ring-1 ring-orange-100">
-              <dt className="text-xs font-semibold uppercase text-orange-800">Needs attention</dt>
-              <dd className="mt-1 text-xl font-semibold">{attentionCount}</dd>
-            </div>
-            <div className="rounded-md bg-zinc-50 p-3 ring-1 ring-zinc-200">
-              <dt className="text-xs font-semibold uppercase text-zinc-600">Saved screens</dt>
-              <dd className="mt-1 text-xl font-semibold">{rows.length}</dd>
-            </div>
-          </dl>
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(128px,1fr))] gap-2" aria-label="Screen status filters">
+            {summaryCards.map((item) => {
+              const isActive = filter === item.key;
+
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  aria-pressed={isActive}
+                  aria-label={`${item.label}: ${item.count}. ${isActive ? "Filtering list." : "Filter screen list."}`}
+                  onClick={() => setFilter(item.key)}
+                  className={`min-h-24 w-full rounded-md p-3 text-left ring-1 transition focus:outline-none focus:ring-2 focus:ring-teal-700 ${
+                    isActive ? "bg-teal-700 text-white ring-teal-700 hover:bg-teal-800" : item.toneClassName
+                  }`}
+                >
+                  <span className="block text-xs font-semibold uppercase">{item.label}</span>
+                  <span className="mt-1 block text-xl font-semibold">{item.count}</span>
+                  <span className={`mt-2 block text-xs font-medium ${isActive ? "text-teal-50" : "text-zinc-500"}`}>
+                    {isActive ? "Filtering list" : item.key === "all" ? "Show all" : "Filter list"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="border-t border-zinc-200 p-5">
