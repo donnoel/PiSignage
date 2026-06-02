@@ -861,6 +861,8 @@ export function MediaStorePanel() {
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <span className="text-sm font-semibold text-zinc-950">Tags</span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
                 {availableTags.map(renderTagFilterButton)}
               </div>
             </div>
