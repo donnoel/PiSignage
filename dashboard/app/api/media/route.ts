@@ -16,6 +16,7 @@ import {
 import { readPlaylistStore, sampleAssetsDirectory, writeFileAtomic } from "../../lib/local-playlist";
 import type { PlaylistAsset } from "../../lib/local-playlist";
 import {
+  createPlaybackSafeVideoClip,
   createStillVideoClip,
   defaultDurationSeconds,
   formatUploadLimit,
@@ -25,6 +26,7 @@ import {
   mediaSourceTypeFromFileName,
   sanitizeMediaFileName,
   stillClipFileName,
+  transcodedVideoFileName,
   uniqueFileName
 } from "../../lib/media-processing";
 
@@ -76,6 +78,10 @@ function mimeTypeFromExtension(fileName: string): string {
     return "image/png";
   }
   return "application/octet-stream";
+}
+
+function isMovFile(fileName: string): boolean {
+  return path.extname(fileName).toLowerCase() === ".mov";
 }
 
 function parsePositiveInt(value: string | null, fallback: number, maximum: number): number {
@@ -315,9 +321,14 @@ export async function POST(request: Request) {
     const stillDurationSeconds = imageDurationFromForm(formData.get("durationSeconds"));
     const uploadedBytes = Buffer.from(await file.arrayBuffer());
     const assetsDirectory = sampleAssetsDirectory();
+    const isMovSource = sourceType === "video" && isMovFile(safeFileName);
     const playbackFileName = await uniqueFileName(
       assetsDirectory,
-      sourceType === "image" ? stillClipFileName(safeFileName, stillDurationSeconds) : safeFileName
+      sourceType === "image"
+        ? stillClipFileName(safeFileName, stillDurationSeconds)
+        : isMovSource
+          ? transcodedVideoFileName(safeFileName)
+          : safeFileName
     );
     const playbackFilePath = path.join(assetsDirectory, playbackFileName);
 
@@ -328,6 +339,16 @@ export async function POST(request: Request) {
       try {
         await writeFileAtomic(sourceImagePath, uploadedBytes);
         await createStillVideoClip(sourceImagePath, playbackFilePath, stillDurationSeconds);
+      } finally {
+        await fs.rm(temporaryDirectory, { force: true, recursive: true });
+      }
+    } else if (isMovSource) {
+      const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "pisignage-media-store-video-"));
+      const sourceVideoPath = path.join(temporaryDirectory, safeFileName);
+
+      try {
+        await writeFileAtomic(sourceVideoPath, uploadedBytes);
+        await createPlaybackSafeVideoClip(sourceVideoPath, playbackFilePath);
       } finally {
         await fs.rm(temporaryDirectory, { force: true, recursive: true });
       }
@@ -349,7 +370,12 @@ export async function POST(request: Request) {
       tags: parseTags(formData.get("tags")),
       sourceFileName: safeFileName,
       playbackFileName,
-      mimeType: file.type || mimeTypeFromExtension(safeFileName),
+      mimeType:
+        sourceType === "image"
+          ? "video/mp4"
+          : isMovSource
+            ? "video/mp4"
+            : file.type || mimeTypeFromExtension(safeFileName),
       sizeBytes: uploadedBytes.byteLength,
       durationSeconds: sourceType === "image" ? stillDurationSeconds : defaultDurationSeconds,
       status: "ready" as const,

@@ -110,6 +110,11 @@ export function stillClipFileName(fileName: string, durationSeconds: number): st
   return `${baseName}.still-${durationSeconds}s.mp4`;
 }
 
+export function transcodedVideoFileName(fileName: string): string {
+  const baseName = path.basename(fileName, path.extname(fileName));
+  return `${baseName}.transcoded.mp4`;
+}
+
 export async function createStillVideoClip(
   sourceImagePath: string,
   outputVideoPath: string,
@@ -207,7 +212,85 @@ export async function createStillVideoClip(
   }
 }
 
+export async function createPlaybackSafeVideoClip(
+  sourceVideoPath: string,
+  outputVideoPath: string
+): Promise<void> {
+  const temporaryOutputPath = `${outputVideoPath}.${process.pid}.tmp.mp4`;
+
+  try {
+    await execFileAsync(
+      ffmpegBinary,
+      [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        sourceVideoPath,
+        "-vf",
+        "scale=1280:720:force_original_aspect_ratio=decrease:in_range=full:out_range=tv,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,format=yuv420p",
+        "-r",
+        "30",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "slow",
+        "-profile:v",
+        "baseline",
+        "-level:v",
+        "3.1",
+        "-pix_fmt",
+        "yuv420p",
+        "-x264-params",
+        "keyint=30:min-keyint=30:scenecut=0:bframes=0",
+        "-movflags",
+        "+faststart",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-ar",
+        "48000",
+        "-ac",
+        "2",
+        temporaryOutputPath
+      ],
+      { timeout: 300_000, maxBuffer: 1024 * 1024 * 4 }
+    );
+    await fs.rename(temporaryOutputPath, outputVideoPath);
+  } catch (error) {
+    await fs.rm(temporaryOutputPath, { force: true });
+    const nodeError = error as NodeJS.ErrnoException & {
+      killed?: boolean;
+      signal?: NodeJS.Signals;
+      stderr?: string;
+    };
+
+    if (nodeError.code === "ENOENT") {
+      throw new MediaUploadError(
+        "MOV uploads need ffmpeg conversion before Pi playback. Install ffmpeg locally or set PISIGNAGE_FFMPEG_BIN, then try again.",
+        503
+      );
+    }
+
+    if (nodeError.killed || nodeError.signal === "SIGTERM") {
+      throw new MediaUploadError(
+        "The MOV conversion timed out before ffmpeg finished. Try a shorter or smaller source video.",
+        504
+      );
+    }
+
+    const detail = typeof nodeError.stderr === "string" && nodeError.stderr.trim()
+      ? ` ffmpeg said: ${nodeError.stderr.trim().split("\n").at(-1)}`
+      : "";
+    throw new MediaUploadError(
+      `That MOV file could not be converted into a Pi-safe MP4.${detail}`,
+      422
+    );
+  }
+}
+
 export function formatUploadLimit(bytes: number): string {
   return `${Math.floor(bytes / (1024 * 1024))} MB`;
 }
-
