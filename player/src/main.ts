@@ -37,6 +37,8 @@ const failedAssetIds = new Set<string>();
 const defaultPlaylistUrl = "/playlist.local.json";
 const playlistRefreshIntervalMs = 5000;
 const videoWatchdogIntervalMs = 10_000;
+const failedAssetCooldownMs = 5 * 60 * 1000;
+const failedAssetStorageKeyPrefix = "pisignage.failed-assets.";
 
 function requireElement<TElement extends Element>(
   element: TElement | null,
@@ -139,6 +141,67 @@ function playlistSignature(playlist: Playlist): string {
   });
 }
 
+function failedAssetStorageKey(playlist: Playlist): string {
+  return `${failedAssetStorageKeyPrefix}${playlist.playlistId}:${playlist.version}`;
+}
+
+function loadPersistedFailedAssets(playlist: Playlist): Set<string> {
+  const now = Date.now();
+  const key = failedAssetStorageKey(playlist);
+
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) {
+      return new Set<string>();
+    }
+
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const nextFailed = new Set<string>();
+    const nextRecord: Record<string, number> = {};
+
+    for (const asset of playlist.assets) {
+      const value = parsed[asset.assetId];
+      if (typeof value === "number" && value > now) {
+        nextFailed.add(asset.assetId);
+        nextRecord[asset.assetId] = value;
+      }
+    }
+
+    if (Object.keys(nextRecord).length > 0) {
+      window.localStorage.setItem(key, JSON.stringify(nextRecord));
+    } else {
+      window.localStorage.removeItem(key);
+    }
+
+    return nextFailed;
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function persistFailedAsset(playlist: Playlist, assetId: string): void {
+  const key = failedAssetStorageKey(playlist);
+  const expiresAt = Date.now() + failedAssetCooldownMs;
+
+  try {
+    const raw = window.localStorage.getItem(key);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    const nextRecord: Record<string, number> = {};
+    const now = Date.now();
+
+    for (const [candidateAssetId, value] of Object.entries(parsed)) {
+      if (typeof value === "number" && value > now) {
+        nextRecord[candidateAssetId] = value;
+      }
+    }
+
+    nextRecord[assetId] = expiresAt;
+    window.localStorage.setItem(key, JSON.stringify(nextRecord));
+  } catch {
+    // Keep playback resilient even if storage is unavailable.
+  }
+}
+
 function activeAsset(): PlaylistAsset | undefined {
   return activePlaylist?.assets[currentIndex];
 }
@@ -221,6 +284,9 @@ function failActiveAsset(assetId: string, reason: string): void {
   }
 
   failedAssetIds.add(assetId);
+  if (activePlaylist) {
+    persistFailedAsset(activePlaylist, assetId);
+  }
   console.error(`Playback failed for ${assetId}: ${reason}`);
   assetStatusLabel.textContent = `Skipping unavailable asset ${assetId}`;
   clearVideoWatchdog();
@@ -366,6 +432,9 @@ function applyPlaylist(playlist: Playlist, playlistUrl: URL): void {
   activePlaylistUrl = playlistUrl;
   activePlaylistSignature = nextSignature;
   failedAssetIds.clear();
+  for (const failedAssetId of loadPersistedFailedAssets(playlist)) {
+    failedAssetIds.add(failedAssetId);
+  }
 
   if (!wasPlaying) {
     showAsset(0);
