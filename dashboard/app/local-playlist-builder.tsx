@@ -210,8 +210,8 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
       <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
         <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h3 className="text-lg font-semibold">Add media</h3>
-            <p className="mt-1 text-sm text-zinc-600">Pick from ready local media.</p>
+            <h3 className="text-lg font-semibold">Add media to playlist</h3>
+            <p className="mt-1 text-sm text-zinc-600">{mediaMessage}</p>
           </div>
           <form
             className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto lg:justify-end"
@@ -255,7 +255,7 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
                 disabled={isBusy}
                 className="min-h-10 shrink-0 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
               >
-                Add
+                Add to playlist
               </button>
             </div>
           ))}
@@ -266,15 +266,27 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
       </section>
 
       <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold">Screen</h3>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-lg font-semibold">Screens using this playlist</h3>
+            <p className="mt-1 text-sm text-zinc-600">
+              {isLoadingAssignments
+                ? "Loading screens..."
+                : `${(assignments?.screens ?? []).filter((screen) => screen.playlistId === playlistId).length} selected`}
+            </p>
+          </div>
         </div>
 
         <div className="mt-4 space-y-3">
           {(assignments?.screens ?? []).map((screen) => {
             const assigned = screen.playlistId === playlistId;
             return (
-              <label key={screen.id} className="flex items-start gap-3 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+              <label
+                key={screen.id}
+                className={`flex items-start gap-3 rounded-md border p-3 ${
+                  assigned ? "border-teal-200 bg-teal-50" : "border-zinc-200 bg-zinc-50"
+                }`}
+              >
                 <input
                   type="checkbox"
                   checked={assigned}
@@ -284,15 +296,17 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
                   }}
                   className="mt-1 h-4 w-4 accent-teal-700"
                 />
-                <span>
-                  <span className="block font-semibold text-zinc-950">{screen.name}</span>
+                <span className="min-w-0">
+                  <span className="block break-words font-semibold text-zinc-950">{screen.name}</span>
                   <span className="block text-sm text-zinc-600">{screen.location}</span>
                 </span>
               </label>
             );
           })}
           {(assignments?.screens ?? []).length === 0 ? (
-            <p className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-600">No screen recorded.</p>
+            <p className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-600">
+              {isLoadingAssignments ? "Loading screen assignments..." : "No screen recorded."}
+            </p>
           ) : null}
         </div>
 

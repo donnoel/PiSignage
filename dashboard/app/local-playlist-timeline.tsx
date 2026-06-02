@@ -114,18 +114,6 @@ export function LocalPlaylistTimeline({ assets, piAssetIds, playlistId }: Playli
     void saveOrder(nextItems);
   }
 
-  function scrollTimeline(direction: "left" | "right") {
-    const scroller = scrollerRef.current;
-    if (!scroller) {
-      return;
-    }
-
-    scroller.scrollBy({
-      left: direction === "left" ? -520 : 520,
-      behavior: "smooth"
-    });
-  }
-
   return (
     <div className="border-b border-zinc-200 bg-zinc-950 px-5 py-5 text-white">
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -133,26 +121,6 @@ export function LocalPlaylistTimeline({ assets, piAssetIds, playlistId }: Playli
           <h3 className="text-lg font-semibold">Preview</h3>
         </div>
         <div className="flex flex-col gap-2 sm:items-end">
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => scrollTimeline("left")}
-              className="flex h-9 w-9 items-center justify-center rounded bg-white/10 text-base font-semibold text-white hover:bg-white/20"
-              aria-label="Scroll playlist timeline left"
-              title="Scroll left"
-            >
-              ←
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollTimeline("right")}
-              className="flex h-9 w-9 items-center justify-center rounded bg-white/10 text-base font-semibold text-white hover:bg-white/20"
-              aria-label="Scroll playlist timeline right"
-              title="Scroll right"
-            >
-              →
-            </button>
-          </div>
           {message ? (
             <p className="text-sm text-zinc-300" role="status" aria-live="polite">
               {message}
@@ -245,28 +213,7 @@ export function LocalPlaylistTimeline({ assets, piAssetIds, playlistId }: Playli
                   </div>
                   <div className="mt-3 flex items-center justify-between gap-2">
                     <span className="text-xs font-semibold text-zinc-300">{formatSeconds(asset.durationSeconds ?? 0)}</span>
-                    <div className="flex gap-1">
-                      <button
-                        type="button"
-                        disabled={isBusy || index === 0}
-                        onClick={() => reorderByIndex(index, index - 1)}
-                        className="flex h-7 w-7 items-center justify-center rounded bg-white/10 text-sm font-semibold hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-30"
-                        aria-label={`Move ${assetName} earlier`}
-                        title="Move earlier"
-                      >
-                        ←
-                      </button>
-                      <button
-                        type="button"
-                        disabled={isBusy || index === items.length - 1}
-                        onClick={() => reorderByIndex(index, index + 1)}
-                        className="flex h-7 w-7 items-center justify-center rounded bg-white/10 text-sm font-semibold hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-30"
-                        aria-label={`Move ${assetName} later`}
-                        title="Move later"
-                      >
-                        →
-                      </button>
-                    </div>
+                    <span className="text-xs font-semibold text-zinc-500">Drag to reorder</span>
                   </div>
                 </div>
               </li>
