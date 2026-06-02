@@ -1,7 +1,19 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { appendActivityRecord } from "../../lib/local-data-store";
-import { readPlaylistStore, writePlaylistStore } from "../../lib/local-playlist";
+import {
+  appendActivityRecord,
+  readDeviceStore,
+  readScreenStore,
+  writeDeviceStore,
+  writeScreenStore
+} from "../../lib/local-data-store";
+import {
+  livePlaylistPath,
+  readLivePlaylist,
+  readPlaylistStore,
+  writePlaylist,
+  writePlaylistStore
+} from "../../lib/local-playlist";
 import type { Playlist } from "../../lib/local-playlist";
 import { slugify } from "../../lib/media-processing";
 
@@ -137,6 +149,96 @@ export async function PATCH(request: Request) {
     console.error("playlist rename failed", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Playlist rename failed." },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const body = (await request.json()) as {
+      playlistId?: string;
+    };
+    const playlistId = body.playlistId?.trim();
+
+    if (!playlistId) {
+      return NextResponse.json({ error: "Choose a playlist." }, { status: 400 });
+    }
+
+    const store = await readPlaylistStore();
+    if (store.items.length <= 1) {
+      return NextResponse.json({ error: "Keep at least one playlist." }, { status: 400 });
+    }
+
+    const playlist = store.items.find((item) => item.playlistId === playlistId);
+    if (!playlist) {
+      return NextResponse.json({ error: "Playlist was not found." }, { status: 404 });
+    }
+
+    const timestamp = nowIso();
+    const nextItems = store.items.filter((item) => item.playlistId !== playlistId);
+    const fallbackPlaylist = nextItems[0];
+    if (!fallbackPlaylist) {
+      return NextResponse.json({ error: "Keep at least one playlist." }, { status: 400 });
+    }
+
+    await writePlaylistStore({
+      ...store,
+      items: nextItems,
+      updatedAt: timestamp,
+      version: store.version + 1
+    });
+
+    const livePlaylist = await readLivePlaylist();
+    if (livePlaylist.playlistId === playlistId) {
+      await writePlaylist(livePlaylistPath(), fallbackPlaylist);
+    }
+
+    const [screenStore, deviceStore] = await Promise.all([readScreenStore(), readDeviceStore()]);
+    const nextScreens = screenStore.items.map((screen) =>
+      screen.playlistId === playlistId ? { ...screen, playlistId: null, updatedAt: timestamp } : screen
+    );
+    const nextDevices = deviceStore.items.map((device) =>
+      device.playlistId === playlistId ? { ...device, playlistId: null, updatedAt: timestamp } : device
+    );
+
+    if (JSON.stringify(nextScreens) !== JSON.stringify(screenStore.items)) {
+      await writeScreenStore({
+        ...screenStore,
+        items: nextScreens,
+        updatedAt: timestamp,
+        version: screenStore.version + 1
+      });
+    }
+
+    if (JSON.stringify(nextDevices) !== JSON.stringify(deviceStore.items)) {
+      await writeDeviceStore({
+        ...deviceStore,
+        items: nextDevices,
+        updatedAt: timestamp,
+        version: deviceStore.version + 1
+      });
+    }
+
+    await appendActivityRecord({
+      id: randomUUID(),
+      action: "playlist-delete",
+      actor: "local-operator",
+      entityId: playlist.playlistId,
+      entityType: "playlist",
+      message: `Deleted playlist ${playlist.name}. Publish the replacement playlist manually if a screen should change.`,
+      result: "success",
+      timestamp
+    });
+
+    return NextResponse.json({
+      nextPlaylistId: fallbackPlaylist.playlistId,
+      playlistId: playlist.playlistId
+    });
+  } catch (error) {
+    console.error("playlist delete failed", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Playlist delete failed." },
       { status: 500 }
     );
   }

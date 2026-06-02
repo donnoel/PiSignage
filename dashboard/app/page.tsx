@@ -11,6 +11,7 @@ import { readPiConfig, runSsh } from "./lib/pi-local";
 import { MediaStorePanel } from "./media-store-panel";
 import { LocalPlaylistBuilder } from "./local-playlist-builder";
 import { LocalPlaylistCreateForm } from "./local-playlist-create-form";
+import { LocalPlaylistDeleteButton } from "./local-playlist-delete-button";
 import { LocalPlaylistRenameButton } from "./local-playlist-rename-button";
 import { LocalPublishForm } from "./local-publish-form";
 import { LocalPlaylistControls } from "./local-playlist-controls";
@@ -1807,6 +1808,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   <div className="mt-1 flex min-w-0 items-center gap-2">
                     <h3 className="min-w-0 truncate text-2xl font-semibold" title={playlist.name}>{playlist.name}</h3>
                     <LocalPlaylistRenameButton name={playlist.name} playlistId={playlist.playlistId} />
+                    <LocalPlaylistDeleteButton
+                      assignedScreenCount={assignedScreens.length}
+                      isOnlyPlaylist={playlistOptions.length <= 1}
+                      name={playlist.name}
+                      playlistId={playlist.playlistId}
+                    />
                   </div>
                   <p className="mt-1 text-sm text-zinc-600">
                     {playlist.assets.length} items · {totalDuration} · {assignedScreens.length === 0 ? "no screens yet" : assignedScreensLabel}
