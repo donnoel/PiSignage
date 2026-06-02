@@ -740,13 +740,12 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
         </div>
       </section>
 
-      {selectedHasLiveDiagnostics ? (
       <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-200 p-5">
           <h3 className="text-lg font-semibold">Diagnostic evidence</h3>
         </div>
         <ol className="divide-y divide-zinc-200">
-          {diagnostics.map((item) => (
+          {selectedHasLiveDiagnostics && diagnostics.length > 0 ? diagnostics.map((item) => (
             <li key={item.label} className="grid gap-3 px-5 py-4 text-sm lg:grid-cols-[180px_1fr_auto]">
               <div>
                 <p className="font-semibold text-zinc-950">{item.label}</p>
@@ -772,19 +771,23 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
                 />
               </div>
             </li>
-          ))}
+          )) : null}
+          {selectedHasLiveDiagnostics && diagnostics.length === 0 ? (
+            <li className="p-5 text-sm text-zinc-600">No diagnostic evidence loaded yet.</li>
+          ) : null}
+          {!selectedHasLiveDiagnostics ? (
+            <li className="p-5 text-sm text-zinc-600">Live diagnostic evidence is unavailable for this inventory-only screen.</li>
+          ) : null}
         </ol>
       </section>
-      ) : null}
 
-      {selectedHasLiveDiagnostics ? (
       <section className="grid gap-4 xl:grid-cols-2">
         <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
           <div className="border-b border-zinc-200 p-5">
             <h3 className="text-lg font-semibold">Recent Pi logs</h3>
           </div>
           <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-words p-5 text-xs leading-5 text-zinc-700">
-            {logs}
+            {selectedHasLiveDiagnostics ? logs : "Live Pi logs are unavailable for this inventory-only screen."}
           </pre>
         </div>
 
@@ -824,7 +827,6 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
           </ol>
         </div>
       </section>
-      ) : null}
 
       <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-200 p-5">

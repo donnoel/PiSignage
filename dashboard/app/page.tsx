@@ -117,8 +117,7 @@ type DashboardView =
   | "playlist"
   | "device-health"
   | "screens"
-  | "scheduling"
-  | "troubleshooting";
+  | "scheduling";
 
 type DashboardPageProps = {
   searchParams?: Promise<{
@@ -132,10 +131,9 @@ const navigationItems: Array<{ label: string; view: DashboardView }> = [
   { label: "Dashboard", view: "dashboard" },
   { label: "Media Store", view: "media-store" },
   { label: "Playlists", view: "playlist" },
-  { label: "Screen Status", view: "device-health" },
+  { label: "Screen Health", view: "device-health" },
   { label: "Screens", view: "screens" },
-  { label: "Scheduling", view: "scheduling" },
-  { label: "Recovery", view: "troubleshooting" }
+  { label: "Scheduling", view: "scheduling" }
 ];
 
 const viewCopy: Record<DashboardView, { eyebrow: string; title: string; description?: string }> = {
@@ -154,9 +152,9 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
     description: "Create a playlist, choose screens, then publish."
   },
   "device-health": {
-    eyebrow: "Status",
-    title: "Screen Status",
-    description: "Connection, playback, playlist update, and recovery evidence for local screens."
+    eyebrow: "Health",
+    title: "Screen Health",
+    description: "Connection, playback, playlist update, recovery tools, logs, and Pi evidence for local screens."
   },
   screens: {
     eyebrow: "Inventory",
@@ -166,16 +164,14 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
   scheduling: {
     eyebrow: "Hours",
     title: "Scheduling"
-  },
-  troubleshooting: {
-    eyebrow: "Support",
-    title: "Recovery",
-    description: "Fix publish, playback, and Pi access issues."
   }
 };
 
 function dashboardViewFrom(value: string | string[] | undefined): DashboardView {
   const candidate = Array.isArray(value) ? value[0] : value;
+  if (candidate === "troubleshooting") {
+    return "device-health";
+  }
 
   return navigationItems.some((item) => item.view === candidate) ? (candidate as DashboardView) : "dashboard";
 }
@@ -1419,7 +1415,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     href="/?view=device-health"
                     className="inline-flex min-h-10 items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-950 ring-1 ring-zinc-200 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-teal-600"
                   >
-                    Screen Status
+                    Screen Health
                   </a>
                 </div>
               </div>
@@ -1669,6 +1665,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </section>
 
           <section
+            id="screen-health-diagnostics"
+            aria-labelledby="screen-health-diagnostics-heading"
+            className={selectedView === "device-health" ? "mt-6" : "hidden"}
+          >
+            <h2 id="screen-health-diagnostics-heading" className="sr-only">Screen Health Diagnostics</h2>
+            <TroubleshootingPanel screens={troubleshootingScreens} />
+          </section>
+
+          <section
             id="media-store"
             aria-labelledby="media-store-heading"
             className={selectedView === "media-store" ? "mt-6" : "hidden"}
@@ -1703,15 +1708,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 statusTimestampLabel={playerUpdatedAt}
               />
             </div>
-          </section>
-
-          <section
-            id="troubleshooting"
-            aria-labelledby="troubleshooting-heading"
-            className={selectedView === "troubleshooting" ? "" : "hidden"}
-          >
-            <h2 id="troubleshooting-heading" className="sr-only">Recovery</h2>
-            <TroubleshootingPanel screens={troubleshootingScreens} />
           </section>
 
           <section

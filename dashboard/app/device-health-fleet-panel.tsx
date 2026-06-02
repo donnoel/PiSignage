@@ -534,7 +534,7 @@ export function DeviceHealthFleetPanel({
       <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-200 p-5">
           <div>
-            <h2 id="fleet-health-heading" className="text-xl font-semibold">Screen Status</h2>
+            <h2 id="fleet-health-heading" className="text-xl font-semibold">Screen Health</h2>
             <p className="mt-1 text-sm text-zinc-600">
               Check connection, playback, playlist update, and recovery actions for each screen.
             </p>
