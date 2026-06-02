@@ -187,7 +187,7 @@ export function LocalPlaylistTimeline({ assets, piAssetIds, playlistId }: Playli
   }
 
   return (
-    <div className="border-b border-zinc-200 bg-zinc-950 px-5 py-5 text-white">
+    <div className="border-b border-zinc-200 bg-[radial-gradient(circle_at_18%_12%,rgba(45,212,191,0.38),transparent_30%),radial-gradient(circle_at_82%_8%,rgba(251,191,36,0.24),transparent_24%),linear-gradient(135deg,#0f2f2e_0%,#123d32_42%,#3b2433_100%)] px-5 py-5 text-white">
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h3 className="text-lg font-semibold">Preview</h3>
@@ -224,8 +224,8 @@ export function LocalPlaylistTimeline({ assets, piAssetIds, playlistId }: Playli
               <li
                 key={asset.assetId}
                 data-playlist-timeline-asset-id={asset.assetId}
-                className={`group relative flex w-[172px] shrink-0 flex-col overflow-hidden rounded-lg border bg-zinc-900 shadow-sm transition ${
-                  isDropTarget ? "border-cyan-300 ring-2 ring-cyan-300" : "border-white/10"
+                className={`group relative flex w-[172px] shrink-0 flex-col overflow-hidden rounded-lg border bg-white/10 shadow-[0_14px_34px_rgba(0,0,0,0.28)] backdrop-blur transition ${
+                  isDropTarget ? "border-cyan-200 ring-2 ring-cyan-200" : "border-white/20"
                 } ${isDragging ? "opacity-45" : "opacity-100"}`}
                 draggable={!isBusy}
                 onDragStart={(event) => {
@@ -255,7 +255,7 @@ export function LocalPlaylistTimeline({ assets, piAssetIds, playlistId }: Playli
                   setDropAssetId(null);
                 }}
               >
-                <div className="relative aspect-video bg-zinc-800">
+                <div className="relative aspect-video bg-black/25">
                   <span className="absolute inset-0 flex items-center justify-center px-3 text-center text-xs font-semibold text-zinc-500">
                     Frame unavailable
                   </span>
@@ -277,7 +277,7 @@ export function LocalPlaylistTimeline({ assets, piAssetIds, playlistId }: Playli
                     </span>
                   ) : null}
                 </div>
-                <div className="flex min-h-[82px] flex-col justify-between p-3">
+                <div className="flex min-h-[82px] flex-col justify-between bg-black/20 p-3">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold" title={assetName}>{assetName}</p>
                     <p className="mt-1 truncate text-xs text-zinc-400" title={fileNameFromUri(asset.uri)}>
