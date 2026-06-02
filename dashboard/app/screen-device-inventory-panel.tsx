@@ -218,7 +218,7 @@ export function ScreenDeviceInventoryPanel({
 }: InventoryPanelProps) {
   const router = useRouter();
   const [inventory, setInventory] = useState<InventoryResponse | null>(null);
-  const [message, setMessage] = useState("Loading screens...");
+  const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [publishingScreenId, setPublishingScreenId] = useState<string | null>(null);
