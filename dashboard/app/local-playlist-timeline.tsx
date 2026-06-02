@@ -30,10 +30,6 @@ function savedMessage(piPublish: PlaylistEditResponse["piPublish"]): string {
   return piPublish.message;
 }
 
-function fileNameFromUri(uri: string): string {
-  return uri.split("/").filter(Boolean).at(-1) ?? uri;
-}
-
 function formatSeconds(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) {
     return "Duration unknown";
@@ -280,9 +276,6 @@ export function LocalPlaylistTimeline({ assets, piAssetIds, playlistId }: Playli
                 <div className="flex min-h-[82px] flex-col justify-between bg-black/20 p-3">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold" title={assetName}>{assetName}</p>
-                    <p className="mt-1 truncate text-xs text-zinc-400" title={fileNameFromUri(asset.uri)}>
-                      {fileNameFromUri(asset.uri)}
-                    </p>
                   </div>
                   <div className="mt-3 flex items-center justify-between gap-2">
                     <span className="text-xs font-semibold text-zinc-300">{formatSeconds(asset.durationSeconds ?? 0)}</span>

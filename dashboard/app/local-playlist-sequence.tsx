@@ -290,10 +290,12 @@ export function LocalPlaylistSequence({ assets, piAssetIds, playlistId }: Playli
                 defaultTitle={assetName}
                 playlistId={playlistId}
               />
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-zinc-600">
-                <span className="truncate" title={fileName}>{fileName}</span>
-                <StatusPill label={assetTypeLabel(asset)} tone={assetTypeTone(asset)} />
-                {piAssetSet.has(asset.assetId) ? <StatusPill label="On device" tone="good" /> : null}
+              <div className="mt-2 grid gap-2 text-xs text-zinc-600 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                <span className="min-w-0 truncate" title={fileName}>{fileName}</span>
+                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  <StatusPill label={assetTypeLabel(asset)} tone={assetTypeTone(asset)} />
+                  {piAssetSet.has(asset.assetId) ? <StatusPill label="On device" tone="good" /> : null}
+                </div>
               </div>
               {messageByAssetId[asset.assetId] ? (
                 <p className="mt-2 text-xs font-medium text-zinc-600" role="status" aria-live="polite">
