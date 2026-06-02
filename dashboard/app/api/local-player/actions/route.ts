@@ -146,16 +146,17 @@ async function runRecoverWorkflow(config: NonNullable<ReturnType<typeof readPiCo
 }
 
 async function requestPiReboot(config: NonNullable<ReturnType<typeof readPiConfig>>): Promise<void> {
-  const sudoCheck = config.password ? "sudo -v && sudo -n true" : "sudo -n true 2>/dev/null";
-  const command = [
-    `if ${sudoCheck}; then`,
-    "  nohup sh -c 'sleep 1; sudo -n systemctl reboot' >/dev/null 2>&1 &",
-    "  echo reboot-requested",
-    "else",
-    "  echo 'reboot requires sudo permission for this Pi user' >&2",
-    "  exit 77",
-    "fi"
-  ].join(" ");
+  const command = config.password
+    ? "sudo -S -p 'sudo password:' sh -c 'nohup sh -c \"sleep 1; systemctl reboot\" >/dev/null 2>&1 & echo reboot-requested'"
+    : [
+        "if sudo -n true 2>/dev/null; then",
+        "nohup sh -c 'sleep 1; sudo -n systemctl reboot' >/dev/null 2>&1 &",
+        "echo reboot-requested;",
+        "else",
+        "echo 'reboot requires sudo permission for this Pi user' >&2;",
+        "exit 77;",
+        "fi"
+      ].join(" ");
 
   const stdout = await runSsh(config, command, { timeoutMs: 10_000 });
   if (!stdout.includes("reboot-requested")) {
