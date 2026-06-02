@@ -404,23 +404,7 @@ async function run() {
       `loaded ${playlist.assets.length} media asset(s) from ${playlist.playlistId} version ${playlist.version}`
     );
     await writePlaybackStatus(playlist, "playing", { lastError: null });
-    try {
-      await playPlaylist(playlist);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (playlist.assets.length > 1) {
-        const fallbackAsset = playlist.assets.find((asset) => !activeQuarantineEntry(asset));
-        if (fallbackAsset) {
-          quarantineAsset(fallbackAsset, `VLC exited unexpectedly: ${message}`);
-          await writePlaybackStatus(playlist, "recovering", { lastError: message });
-          log(
-            `VLC exited unexpectedly; retrying without quarantined asset ${fallbackAsset.assetId}`
-          );
-          continue;
-        }
-      }
-      throw error;
-    }
+    await playPlaylist(playlist);
   }
 
   await writeStatus({ state: "stopped" });

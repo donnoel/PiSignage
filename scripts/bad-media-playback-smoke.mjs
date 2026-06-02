@@ -94,6 +94,83 @@ async function runVlcQuarantineSmoke(contentRoot) {
   console.log("VLC smoke passed.");
 }
 
+async function runVlcUnexpectedExitSmoke(tempRoot) {
+  console.log("Running VLC unexpected-exit smoke...");
+  const contentRoot = path.join(tempRoot, "unexpected-exit-content");
+  const assetsRoot = path.join(contentRoot, "assets");
+  const fakeVlcPath = path.join(tempRoot, "fake-vlc.mjs");
+  const statusPath = path.join(tempRoot, "player-status.json");
+
+  await mkdir(assetsRoot, { recursive: true });
+  await writeFile(path.join(assetsRoot, "first.mp4"), Buffer.alloc(16));
+  await writeFile(path.join(assetsRoot, "second.mp4"), Buffer.alloc(16));
+  await writeFile(
+    path.join(contentRoot, "playlist.local.json"),
+    `${JSON.stringify(
+      {
+        playlistId: "playlist-unexpected-exit",
+        name: "Unexpected VLC exit smoke",
+        version: 1,
+        updatedAt: new Date().toISOString(),
+        assets: [
+          {
+            assetId: "asset-first",
+            type: "video",
+            uri: "assets/first.mp4",
+            durationSeconds: 5
+          },
+          {
+            assetId: "asset-second",
+            type: "video",
+            uri: "assets/second.mp4",
+            durationSeconds: 5
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    fakeVlcPath,
+    "#!/usr/bin/env node\nconsole.error('fake VLC crashed');\nprocess.exit(23);\n",
+    { encoding: "utf8", mode: 0o755 }
+  );
+
+  const result = spawnSync("node", ["device/pi/bin/pisignage-vlc-playlist.mjs"], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      PISIGNAGE_CONTENT_ROOT: contentRoot,
+      PISIGNAGE_PLAYLIST_FILE: "playlist.local.json",
+      PISIGNAGE_STARTUP_SETTLE_MS: "0",
+      PISIGNAGE_STATUS_PATH: statusPath,
+      PISIGNAGE_VLC_BIN: fakeVlcPath
+    },
+    encoding: "utf8"
+  });
+  const output = `${result.stdout}\n${result.stderr}`;
+
+  if (result.status === 0) {
+    throw new Error("VLC unexpected-exit smoke should fail when VLC exits unexpectedly.");
+  }
+  if (output.includes("quarantining asset asset-first") || output.includes("quarantining asset asset-second")) {
+    throw new Error(`Unexpected VLC exit quarantined a readable playlist asset.\n${output}`);
+  }
+  requireOutput("vlc unexpected exit", output, "VLC exited with code 23");
+
+  const status = JSON.parse(await readFile(statusPath, "utf8"));
+  if (status.state !== "failed") {
+    throw new Error(`Expected failed player status after unexpected VLC exit, got ${status.state}`);
+  }
+  if ((status.quarantinedAssetIds ?? []).length !== 0) {
+    throw new Error("Unexpected VLC exit should not quarantine readable assets.");
+  }
+
+  console.log("VLC unexpected-exit smoke passed.");
+}
+
 async function runBrowserMissingMediaSmoke(contentRoot, distRoot) {
   console.log("Running browser serve-player missing-media smoke...");
   const port = 51731;
@@ -166,6 +243,7 @@ async function runBrowserMissingMediaSmoke(contentRoot, distRoot) {
 
 await withTempPlaybackFixture(async ({ contentRoot, distRoot }) => {
   await runVlcQuarantineSmoke(contentRoot);
+  await runVlcUnexpectedExitSmoke(path.dirname(contentRoot));
   await runBrowserMissingMediaSmoke(contentRoot, distRoot);
 });
 
