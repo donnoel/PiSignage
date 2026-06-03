@@ -8,6 +8,8 @@ import { readNormalizedInventory } from "./lib/local-inventory";
 import { localStateDirectory, publishStatusPath, readPlaylistStore, repoRoot, selectPlaylist, writeFileAtomic } from "./lib/local-playlist";
 import type { Playlist, PlaylistAsset, PlaylistStore } from "./lib/local-playlist";
 import { readPiConfig, runSsh } from "./lib/pi-local";
+import type { PiConfig } from "./lib/pi-local";
+import { piConfigForDevice } from "./lib/pi-targets";
 import { MediaStorePanel } from "./media-store-panel";
 import { LocalPlaylistBuilder, LocalPlaylistScreenAssignment } from "./local-playlist-builder";
 import { LocalPlaylistCreateForm } from "./local-playlist-create-form";
@@ -75,6 +77,7 @@ type LastKnownPlayback = {
 };
 
 type DashboardState = {
+  deviceStatuses: Record<string, DeviceLiveStatus>;
   heartbeat: Heartbeat | null;
   inventory: {
     devices: DeviceStore;
@@ -85,6 +88,17 @@ type DashboardState = {
   playlistStore: PlaylistStore;
   publishStatus: PublishStatus | null;
   pi: PiProbe;
+};
+
+type DeviceLiveStatus = {
+  ageLabel: string;
+  host: string | null;
+  playbackHealthy: boolean;
+  playbackLabel: string;
+  playerStatus: PlayerStatus | null;
+  reachable: boolean;
+  stale: boolean;
+  timestampLabel: string;
 };
 
 type PublishStatus = {
@@ -519,15 +533,31 @@ function parseServiceStatus(rawValue: string): Pick<
   };
 }
 
-async function loadPiProbe(): Promise<PiProbe> {
-  const config = readPiConfig();
+function piConfigFromInventory(inventory: { devices: DeviceStore }): PiConfig | null {
+  const savedDevice = inventory.devices.items.find((device) => {
+    return Boolean(device.host.trim()) && device.host !== "Not configured";
+  });
+  const fallbackConfig = readPiConfig();
 
+  if (!savedDevice) {
+    return fallbackConfig;
+  }
+
+  return {
+    host: savedDevice.host.trim(),
+    password: fallbackConfig?.password,
+    root: savedDevice.rootPath?.trim() && savedDevice.rootPath !== "~" ? savedDevice.rootPath.trim() : fallbackConfig?.root ?? "/home/donnoel/PiSignage",
+    user: savedDevice.sshUser?.trim() || fallbackConfig?.user || "donnoel"
+  };
+}
+
+async function loadPiProbe(config: PiConfig | null): Promise<PiProbe> {
   if (!config) {
     return {
       configured: false,
       reachable: false,
       host: null,
-      message: "Pi SSH is not configured in dashboard/.env.local.",
+      message: "Add a local Pi in Screens, or configure Pi SSH in dashboard/.env.local.",
       playerStatus: null,
       temp: null,
       throttled: null,
@@ -622,6 +652,41 @@ async function loadPiProbe(): Promise<PiProbe> {
   }
 }
 
+async function loadDeviceStatuses(inventory: DashboardState["inventory"]): Promise<Record<string, DeviceLiveStatus>> {
+  const entries = await Promise.all(
+    inventory.devices.items.map(async (device) => {
+      const hostConfigured = Boolean(device.host.trim()) && device.host !== "Not configured";
+      if (!hostConfigured) {
+        return [device.id, null] as const;
+      }
+
+      const probe = await loadPiProbe(piConfigForDevice(device));
+      const status = probe.playerStatus;
+      const playbackState = status?.state ?? (probe.reachable ? "unknown" : "unreachable");
+      const isPlaying = playbackState === "playing";
+      const ageMs = statusAgeMs(status?.updatedAt);
+      const fresh = ageMs !== null && ageMs <= staleStatusThresholdMs;
+      const playbackHealthy = isPlaying && fresh;
+
+      return [
+        device.id,
+        {
+          ageLabel: formatStatusAge(status?.updatedAt),
+          host: probe.host,
+          playbackHealthy,
+          playbackLabel: playbackHealthy ? "Playing" : isPlaying ? "Stale" : playbackState,
+          playerStatus: status,
+          reachable: probe.reachable,
+          stale: isPlaying && !fresh,
+          timestampLabel: formatTimestamp(status?.updatedAt)
+        }
+      ] as const;
+    })
+  );
+
+  return Object.fromEntries(entries.filter((entry): entry is [string, DeviceLiveStatus] => entry[1] !== null));
+}
+
 function textBetween(value: string, start: string, end: string): string {
   const startIndex = value.indexOf(start);
   const endIndex = value.indexOf(end);
@@ -641,15 +706,18 @@ async function loadDashboardState(selectedPlaylistId?: string | null): Promise<D
   const playlistStore = await readPlaylistStore();
   const playlist = selectPlaylist(playlistStore, selectedPlaylistId);
   const seedPlaylistId = playlistStore.items[0]?.playlistId ?? playlist.playlistId;
-  const [heartbeat, inventory, publishStatus, pi] = await Promise.all([
+  const [heartbeat, inventory, publishStatus] = await Promise.all([
     readJsonFile<Heartbeat>(heartbeatPath),
     readNormalizedInventory(seedPlaylistId),
-    readJsonFile<PublishStatus>(publishStatusPath()),
-    loadPiProbe()
+    readJsonFile<PublishStatus>(publishStatusPath())
+  ]);
+  const [pi, deviceStatuses] = await Promise.all([
+    loadPiProbe(piConfigFromInventory(inventory)),
+    loadDeviceStatuses(inventory)
   ]);
   const lastKnownPlayback = await resolveLastKnownPlayback(pi);
 
-  return { heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi };
+  return { deviceStatuses, heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi };
 }
 
 function syncState(localVersion: number, piVersion: number | undefined, piReachable: boolean): PlaylistSyncState {
@@ -863,6 +931,7 @@ function publishRequiredDetail(localVersion: number, reportedVersion: number | s
 }
 
 function fleetCommandRows({
+  deviceStatuses,
   inventory,
   isPlaying,
   isPlayerStatusFresh,
@@ -872,6 +941,7 @@ function fleetCommandRows({
   playbackLabel,
   playlistStore
 }: {
+  deviceStatuses: DashboardState["deviceStatuses"];
   inventory: DashboardState["inventory"];
   isPlaying: boolean;
   isPlayerStatusFresh: boolean;
@@ -913,10 +983,16 @@ function fleetCommandRows({
       const assignedPlaylistId = linkedScreen?.playlistId ?? device.playlistId;
       const assignedPlaylist = assignedPlaylistId ? playlistsById.get(assignedPlaylistId) ?? null : null;
       const hostConfigured = Boolean(device.host.trim()) && device.host !== "Not configured";
-      const isLive = Boolean(pi.host && normalizeIdentity(device.host) === normalizeIdentity(pi.host));
-      const livePlaybackStale = isLive && isPlaying && !isPlayerStatusFresh;
-      const healthLabel = !hostConfigured ? "No host" : isLive ? (pi.reachable ? "Online" : "Offline") : "Not reporting";
-      const healthTone = !hostConfigured ? "warn" : isLive ? (pi.reachable ? "good" : "warn") : "muted";
+      const deviceStatus = deviceStatuses[device.id];
+      const isLive = Boolean(deviceStatus) || Boolean(pi.host && normalizeIdentity(device.host) === normalizeIdentity(pi.host));
+      const reachable = deviceStatus?.reachable ?? (isLive ? pi.reachable : false);
+      const reportedPlaylistId = deviceStatus?.playerStatus?.playlistId ?? (isLive ? livePlaylistId : null);
+      const reportedPlaylistVersion = deviceStatus?.playerStatus?.playlistVersion ?? (isLive ? livePlaylistVersion : undefined);
+      const rowPlaybackHealthy = deviceStatus?.playbackHealthy ?? (isLive ? playbackHealthy : false);
+      const rowPlaybackLabel = deviceStatus?.playbackLabel ?? (isLive ? playbackLabel : "Unknown");
+      const livePlaybackStale = deviceStatus?.stale ?? (isLive && isPlaying && !isPlayerStatusFresh);
+      const healthLabel = !hostConfigured ? "No host" : isLive ? (reachable ? "Online" : "Offline") : "Not reporting";
+      const healthTone = !hostConfigured ? "warn" : isLive ? (reachable ? "good" : "warn") : "muted";
       let syncDetail = "No playlist is assigned to this screen.";
       let syncLabel = "Unassigned";
       let syncTone: "good" | "warn" | "muted" = "warn";
@@ -928,39 +1004,39 @@ function fleetCommandRows({
         syncDetail = "No live playlist report has been received for this saved screen.";
         syncLabel = "Unknown";
         syncTone = "muted";
-      } else if (assignedPlaylist && !pi.reachable) {
+      } else if (assignedPlaylist && !reachable) {
         syncDetail = "Beam cannot reach this screen to confirm the playlist.";
         syncLabel = "Waiting";
         syncTone = "muted";
-      } else if (assignedPlaylist && !livePlaylistId) {
+      } else if (assignedPlaylist && !reportedPlaylistId) {
         syncDetail = "The screen has not reported a playlist update yet.";
         syncLabel = "Unknown";
-      } else if (assignedPlaylist && livePlaylistId !== assignedPlaylist.playlistId) {
-        const reportedPlaylist = livePlaylistId ? playlistsById.get(livePlaylistId)?.name ?? "another playlist" : "another playlist";
+      } else if (assignedPlaylist && reportedPlaylistId !== assignedPlaylist.playlistId) {
+        const reportedPlaylist = reportedPlaylistId ? playlistsById.get(reportedPlaylistId)?.name ?? "another playlist" : "another playlist";
         syncDetail = `Beam expects ${assignedPlaylist.name}; Pi reports ${reportedPlaylist}. Publish required.`;
         syncLabel = "Publish required";
-      } else if (assignedPlaylist && livePlaylistVersion === assignedPlaylist.version) {
+      } else if (assignedPlaylist && reportedPlaylistVersion === assignedPlaylist.version) {
         syncDetail = `${assignedPlaylist.name} is on the screen.`;
         syncLabel = "In sync";
         syncTone = "good";
-      } else if (assignedPlaylist && typeof livePlaylistVersion === "number" && livePlaylistVersion < assignedPlaylist.version) {
-        syncDetail = publishRequiredDetail(assignedPlaylist.version, livePlaylistVersion);
+      } else if (assignedPlaylist && typeof reportedPlaylistVersion === "number" && reportedPlaylistVersion < assignedPlaylist.version) {
+        syncDetail = publishRequiredDetail(assignedPlaylist.version, reportedPlaylistVersion);
         syncLabel = "Publish required";
       } else if (assignedPlaylist) {
-        syncDetail = `Beam v${assignedPlaylist.version}; Pi v${livePlaylistVersion ?? "unknown"}. Review required.`;
+        syncDetail = `Beam v${assignedPlaylist.version}; Pi v${reportedPlaylistVersion ?? "unknown"}. Review required.`;
         syncLabel = "Review";
       }
 
-      const playback = isLive ? (!pi.reachable ? "No live report" : playbackHealthy ? "Playing" : playbackLabel) : "Unknown";
+      const playback = isLive ? (!reachable ? "No live report" : rowPlaybackHealthy ? "Playing" : rowPlaybackLabel) : "Unknown";
       const needsAttention =
         !hostConfigured ||
         syncTone === "warn" ||
-        (isLive && (!pi.reachable || !playbackHealthy || livePlaybackStale)) ||
+        (isLive && (!reachable || !rowPlaybackHealthy || livePlaybackStale)) ||
         (!isLive && hostConfigured);
       const detail = !hostConfigured
         ? "Add a local address before this Pi can report."
         : isLive
-          ? pi.reachable
+          ? reachable
             ? syncDetail
             : offlinePlaybackDetail(lastKnownPlayback)
           : "This Pi is saved in Beam, but it is not checking in yet.";
@@ -998,7 +1074,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const selectedView = dashboardViewFrom(resolvedSearchParams?.view);
   const selectedPlaylistParam = scalarSearchParam(resolvedSearchParams?.playlist);
   const currentViewCopy = viewCopy[selectedView];
-  const { heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi } =
+  const { deviceStatuses, heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi } =
     await loadDashboardState(selectedPlaylistParam);
   const selectedScreenParam = scalarSearchParam(resolvedSearchParams?.screen);
   const playerStatus = pi.playerStatus;
@@ -1160,6 +1236,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   }
 
   const fleetRows = fleetCommandRows({
+    deviceStatuses,
     inventory,
     isPlaying,
     isPlayerStatusFresh,
@@ -1567,6 +1644,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             className={selectedView === "device-health" ? "" : "hidden"}
           >
             <DeviceHealthFleetPanel
+              deviceStatuses={deviceStatuses}
               devices={inventory.devices.items}
               screens={inventory.screens.items}
               liveHost={pi.host}
@@ -1702,6 +1780,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             <h2 id="screens-heading" className="sr-only">Screens</h2>
             <div>
               <ScreenDeviceInventoryPanel
+                deviceStatuses={deviceStatuses}
                 liveHost={pi.host}
                 livePlaybackHealthy={playbackHealthy}
                 livePlaybackState={playbackLabel}

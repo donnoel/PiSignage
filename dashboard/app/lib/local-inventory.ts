@@ -33,7 +33,7 @@ function normalizeDevice(device: DeviceRecord, fallbackPlaylistId: string): Devi
     playlistId: device.playlistId === undefined ? fallbackPlaylistId : device.playlistId,
     host: typeof device.host === "string" && device.host.trim() ? device.host.trim() : "Not configured",
     rootPath: typeof device.rootPath === "string" && device.rootPath.trim() ? device.rootPath.trim() : "~",
-    sshUser: typeof device.sshUser === "string" && device.sshUser.trim() ? device.sshUser.trim() : "pi"
+    sshUser: typeof device.sshUser === "string" && device.sshUser.trim() ? device.sshUser.trim() : "donnoel"
   };
 }
 
@@ -173,7 +173,7 @@ export async function createScreenWithDevice(input: {
     playerType: "vlc",
     rootPath: "~",
     screenId,
-    sshUser: input.sshUser?.trim() || "pi",
+    sshUser: input.sshUser?.trim() || "donnoel",
     updatedAt: timestamp
   };
 
@@ -226,7 +226,7 @@ export async function createDevice(input: {
     playerType: "vlc",
     rootPath: "~",
     screenId: input.screenId ?? null,
-    sshUser: input.sshUser?.trim() || "pi",
+    sshUser: input.sshUser?.trim() || "donnoel",
     updatedAt: timestamp
   };
 

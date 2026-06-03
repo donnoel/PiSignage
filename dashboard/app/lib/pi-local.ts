@@ -222,9 +222,10 @@ export function requiredRemoteAssetPaths(config: PiConfig, playlist: Playlist): 
 export async function publishPlaylistToPi(
   playlistPath: string,
   playlist: Playlist,
-  messages: { notConfigured: string; failure: string; success?: string }
+  messages: { notConfigured: string; failure: string; success?: string },
+  targetConfig?: PiConfig | null
 ): Promise<PiPublishResult> {
-  const config = readPiConfig();
+  const config = targetConfig === undefined ? readPiConfig() : targetConfig;
 
   if (!config) {
     return {

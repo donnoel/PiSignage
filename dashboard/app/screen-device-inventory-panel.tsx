@@ -56,6 +56,7 @@ type PublishResponse = {
 };
 
 type InventoryPanelProps = {
+  deviceStatuses: Record<string, DeviceLiveStatus>;
   liveHost: string | null;
   livePlaybackHealthy: boolean;
   livePlaybackState: string;
@@ -67,6 +68,21 @@ type InventoryPanelProps = {
   playlists: PlaylistOption[];
   statusAgeLabel: string;
   statusTimestampLabel: string;
+};
+
+type DeviceLiveStatus = {
+  ageLabel: string;
+  host: string | null;
+  playbackHealthy: boolean;
+  playbackLabel: string;
+  playerStatus: {
+    playlistId?: string;
+    playlistVersion?: number;
+    updatedAt?: string;
+  } | null;
+  reachable: boolean;
+  stale: boolean;
+  timestampLabel: string;
 };
 
 type ScreenActionTone = "danger" | "neutral" | "primary";
@@ -204,6 +220,7 @@ function piLabel(device: DeviceRecord | null, screen?: ScreenRecord): string {
 }
 
 export function ScreenDeviceInventoryPanel({
+  deviceStatuses,
   liveHost,
   livePlaybackHealthy,
   livePlaybackState,
@@ -226,6 +243,7 @@ export function ScreenDeviceInventoryPanel({
   const [screenLocation, setScreenLocation] = useState("");
   const [screenGroup, setScreenGroup] = useState("");
   const [deviceHost, setDeviceHost] = useState("");
+  const [deviceSshUser, setDeviceSshUser] = useState("donnoel");
   const [isPending, startTransition] = useTransition();
   const isBusy = isLoading || isSaving || isPending;
 
@@ -259,7 +277,14 @@ export function ScreenDeviceInventoryPanel({
   }
 
   function deviceIsLive(device: DeviceRecord): boolean {
-    return Boolean(liveHost && normalized(device.host) === normalized(liveHost));
+    return Boolean(deviceStatuses[device.id]) || Boolean(liveHost && normalized(device.host) === normalized(liveHost));
+  }
+
+  function statusFor(device: DeviceRecord | null): DeviceLiveStatus | null {
+    if (!device) {
+      return null;
+    }
+    return deviceStatuses[device.id] ?? null;
   }
 
   function linkedDeviceForScreen(screen: ScreenRecord): DeviceRecord | null {
@@ -291,8 +316,10 @@ export function ScreenDeviceInventoryPanel({
       };
     }
 
+    const status = statusFor(device);
     if (deviceIsLive(device)) {
-      return liveReachable
+      const reachable = status?.reachable ?? liveReachable;
+      return reachable
         ? {
             detail: "Beam can reach this screen on the local network.",
             label: "Online",
@@ -317,6 +344,7 @@ export function ScreenDeviceInventoryPanel({
     label: string;
     tone: Tone;
   } {
+    const status = statusFor(device);
     if (!device || !deviceIsLive(device)) {
       return {
         detail: "No live playback report is available for this saved screen.",
@@ -325,7 +353,11 @@ export function ScreenDeviceInventoryPanel({
       };
     }
 
-    if (!liveReachable) {
+    const reachable = status?.reachable ?? liveReachable;
+    const playbackHealthy = status?.playbackHealthy ?? livePlaybackHealthy;
+    const playbackLabel = status?.playbackLabel ?? livePlaybackState;
+    const stale = status?.stale ?? liveStatusStale;
+    if (!reachable) {
       return {
         detail: "Playback may continue locally, but Beam cannot verify it until the screen is reachable.",
         label: "Not available",
@@ -333,7 +365,7 @@ export function ScreenDeviceInventoryPanel({
       };
     }
 
-    if (livePlaybackHealthy) {
+    if (playbackHealthy) {
       return {
         detail: "Latest local report says playback is running.",
         label: "Playing",
@@ -342,10 +374,10 @@ export function ScreenDeviceInventoryPanel({
     }
 
     return {
-      detail: liveStatusStale
+      detail: stale
         ? "The last playing report is old. Playback may still be running locally."
         : "Beam has not confirmed playback yet.",
-      label: plainPlaybackLabel(livePlaybackState),
+      label: plainPlaybackLabel(playbackLabel),
       tone: "warn"
     };
   }
@@ -389,7 +421,11 @@ export function ScreenDeviceInventoryPanel({
       };
     }
 
-    if (!liveReachable) {
+    const status = statusFor(device);
+    const reachable = status?.reachable ?? liveReachable;
+    const reportedPlaylistId = status?.playerStatus?.playlistId ?? livePlaylistId;
+    const reportedPlaylistVersion = status?.playerStatus?.playlistVersion ?? livePlaylistVersion;
+    if (!reachable) {
       return {
         detail: "Beam cannot reach this screen to confirm the playlist.",
         label: "Waiting",
@@ -397,7 +433,7 @@ export function ScreenDeviceInventoryPanel({
       };
     }
 
-    if (!livePlaylistId || livePlaylistVersion === null) {
+    if (!reportedPlaylistId || reportedPlaylistVersion === undefined || reportedPlaylistVersion === null) {
       return {
         detail: "The screen has not reported a playlist update yet.",
         label: "Unknown",
@@ -405,15 +441,15 @@ export function ScreenDeviceInventoryPanel({
       };
     }
 
-    if (livePlaylistId !== assignedPlaylist.playlistId) {
+    if (reportedPlaylistId !== assignedPlaylist.playlistId) {
       return {
-        detail: `Beam expects ${assignedPlaylist.name}; Pi reports ${playlistName(livePlaylistId)}. Publish required.`,
+        detail: `Beam expects ${assignedPlaylist.name}; Pi reports ${playlistName(reportedPlaylistId)}. Publish required.`,
         label: "Publish required",
         tone: "warn"
       };
     }
 
-    if (livePlaylistVersion === assignedPlaylist.version) {
+    if (reportedPlaylistVersion === assignedPlaylist.version) {
       return {
         detail: `${assignedPlaylist.name} update ${assignedPlaylist.version} is on this screen.`,
         label: "Up to date",
@@ -421,16 +457,16 @@ export function ScreenDeviceInventoryPanel({
       };
     }
 
-    if (livePlaylistVersion < assignedPlaylist.version) {
+    if (reportedPlaylistVersion < assignedPlaylist.version) {
       return {
-        detail: publishRequiredDetail(assignedPlaylist.version, livePlaylistVersion),
+        detail: publishRequiredDetail(assignedPlaylist.version, reportedPlaylistVersion),
         label: "Publish required",
         tone: "warn"
       };
     }
 
     return {
-      detail: `Beam v${assignedPlaylist.version}; Pi v${livePlaylistVersion}. Review required.`,
+      detail: `Beam v${assignedPlaylist.version}; Pi v${reportedPlaylistVersion}. Review required.`,
       label: "Review",
       tone: "warn"
     };
@@ -449,8 +485,10 @@ export function ScreenDeviceInventoryPanel({
       };
     }
 
+    const status = statusFor(device);
     if (deviceIsLive(device)) {
-      return liveReachable
+      const reachable = status?.reachable ?? liveReachable;
+      return reachable
         ? {
             detail: "Reachable on the local network.",
             label: "Online",
@@ -478,14 +516,17 @@ export function ScreenDeviceInventoryPanel({
       const sync = syncStatus(screen, device);
       const assignedPlaylist = screen.playlistId ? playlistsById.get(screen.playlistId) ?? null : null;
       const isLive = Boolean(device && deviceIsLive(device));
+      const liveStatus = statusFor(device);
+      const reportedPlaylistId = liveStatus?.playerStatus?.playlistId ?? (isLive ? livePlaylistId : null);
+      const reportedPlaylistVersion = liveStatus?.playerStatus?.playlistVersion ?? (isLive ? livePlaylistVersion : null);
       const devicePlaylistLine =
         device?.playlistId && device.playlistId !== screen.playlistId
           ? `Pi saved as ${playlistName(device.playlistId)}.`
           : null;
       const currentPlaylistLine =
-        isLive && livePlaylistId
-          ? `Screen reports ${playlistName(livePlaylistId)}${
-              livePlaylistVersion === null ? "" : ` update ${livePlaylistVersion}`
+        isLive && reportedPlaylistId
+          ? `Screen reports ${playlistName(reportedPlaylistId)}${
+              reportedPlaylistVersion === null || reportedPlaylistVersion === undefined ? "" : ` update ${reportedPlaylistVersion}`
             }.`
           : "No current playlist report.";
 
@@ -496,8 +537,8 @@ export function ScreenDeviceInventoryPanel({
         device,
         devicePlaylistLine,
         isLive,
-        lastSeenAge: isLive ? statusAgeLabel : "Not seen yet",
-        lastSeenFull: isLive ? statusTimestampLabel : "No live report yet",
+        lastSeenAge: isLive ? liveStatus?.ageLabel ?? statusAgeLabel : "Not seen yet",
+        lastSeenFull: isLive ? liveStatus?.timestampLabel ?? statusTimestampLabel : "No live report yet",
         needsAttention:
           status.tone === "warn" ||
           playback.tone === "warn" ||
@@ -562,7 +603,7 @@ export function ScreenDeviceInventoryPanel({
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ playlistId: row.assignedPlaylistId })
+        body: JSON.stringify({ playlistId: row.assignedPlaylistId, screenId: row.screen.id })
       });
       const result = (await response.json()) as PublishResponse;
       if (!response.ok || result.error) {
@@ -751,12 +792,14 @@ export function ScreenDeviceInventoryPanel({
         location: screenLocation,
         name: screenName,
         playlistId,
+        sshUser: deviceSshUser,
         targetType: "screen"
       });
       setScreenName("");
       setScreenLocation("");
       setScreenGroup("");
       setDeviceHost("");
+      setDeviceSshUser("donnoel");
       setMessage("Screen added with its linked Pi.");
       startTransition(() => router.refresh());
     } catch (error) {
@@ -978,6 +1021,14 @@ export function ScreenDeviceInventoryPanel({
               <input
                 value={deviceHost}
                 onChange={(event) => setDeviceHost(event.currentTarget.value)}
+                className="mt-1 min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+              />
+            </label>
+            <label className="block text-sm font-semibold text-zinc-700">
+              SSH user
+              <input
+                value={deviceSshUser}
+                onChange={(event) => setDeviceSshUser(event.currentTarget.value)}
                 className="mt-1 min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
               />
             </label>

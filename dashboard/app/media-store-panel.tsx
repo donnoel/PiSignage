@@ -1,5 +1,6 @@
 "use client";
 
+import type { InputHTMLAttributes } from "react";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { StatusPill } from "./dashboard-ui";
@@ -88,6 +89,7 @@ type FolderMoveResponse = {
 type StatusTone = "good" | "warn" | "muted";
 type SafetyFilter = "all" | "ready" | "review";
 type TypeFilter = "all" | "video" | "still" | "mov";
+type UploadSource = "file" | "directory";
 
 type PlaybackSafety = {
   canUseInPlaylist: boolean;
@@ -106,6 +108,13 @@ const cannedTags = [
   "still",
   "video"
 ];
+const directoryInputAttributes: InputHTMLAttributes<HTMLInputElement> & {
+  directory: string;
+  webkitdirectory: string;
+} = {
+  directory: "",
+  webkitdirectory: ""
+};
 
 function formatTimestamp(timestamp: string): string {
   const date = new Date(timestamp);
@@ -134,6 +143,20 @@ function formatDuration(value: number | null): string {
 
 function isMp4FileName(fileName: string): boolean {
   return /\.mp4$/i.test(fileName);
+}
+
+function isSupportedUploadFile(fileName: string): boolean {
+  return /\.(?:mp4|mov|jpe?g|png)$/i.test(fileName);
+}
+
+function uploadRelativePath(file: File): string {
+  const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
+  return relativePath?.trim() || file.name;
+}
+
+function isSkippedDirectoryEntry(file: File): boolean {
+  const pathParts = uploadRelativePath(file).split(/[\\/]/).filter(Boolean);
+  return pathParts.some((part) => part.startsWith(".") || part === "__MACOSX") || !isSupportedUploadFile(file.name);
 }
 
 function isStillClipFileName(fileName: string): boolean {
@@ -305,6 +328,7 @@ function sidebarButtonClass(selected: boolean): string {
 export function MediaStorePanel() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const directoryInputRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<MediaItem[]>([]);
   const [folders, setFolders] = useState<MediaFolder[]>([]);
   const [totalItems, setTotalItems] = useState(0);
@@ -320,6 +344,7 @@ export function MediaStorePanel() {
   const [uploadTitle, setUploadTitle] = useState("");
   const [uploadTags, setUploadTags] = useState("");
   const [uploadFolderId, setUploadFolderId] = useState("");
+  const [uploadSource, setUploadSource] = useState<UploadSource>("file");
   const [durationSeconds, setDurationSeconds] = useState("10");
   const [newFolderName, setNewFolderName] = useState("");
   const [targetFolderId, setTargetFolderId] = useState("");
@@ -577,45 +602,70 @@ export function MediaStorePanel() {
       return;
     }
 
-    const file = fileInputRef.current?.files?.[0];
-    if (!file) {
-      setMessage("Choose a file.");
+    const sourceInput = uploadSource === "directory" ? directoryInputRef.current : fileInputRef.current;
+    const selectedFiles = Array.from(sourceInput?.files ?? []);
+    const files =
+      uploadSource === "directory"
+        ? selectedFiles.filter((file) => !isSkippedDirectoryEntry(file))
+        : selectedFiles.slice(0, 1);
+    const skippedCount = selectedFiles.length - files.length;
+    if (files.length === 0) {
+      setMessage(uploadSource === "directory" ? "Choose a directory with MP4, MOV, JPG, or PNG files." : "Choose a file.");
       setMessageTone("error");
       return;
     }
 
-    const formData = new FormData();
-    formData.append("media", file);
-    formData.append("title", uploadTitle);
-    formData.append("tags", uploadTags);
-    formData.append("durationSeconds", durationSeconds);
-    formData.append("folderId", uploadFolderId);
     setIsUploading(true);
-    setMessage(`Uploading ${file.name}...`);
+    setMessage(files.length === 1 ? `Uploading ${files[0].name}...` : `Uploading 1 of ${files.length}: ${files[0].name}...`);
     setMessageTone("idle");
 
     try {
-      const response = await fetch("/api/media", {
-        method: "POST",
-        body: formData,
-        cache: "no-store"
-      });
-      const result = (await response.json()) as UploadResponse;
-      if (!response.ok || result.error || !result.item) {
-        throw new Error(result.error ?? "Upload failed.");
+      const uploadedItems: MediaItem[] = [];
+
+      for (const [index, file] of files.entries()) {
+        const formData = new FormData();
+        formData.append("media", file);
+        formData.append("title", files.length === 1 ? uploadTitle : "");
+        formData.append("tags", uploadTags);
+        formData.append("durationSeconds", durationSeconds);
+        formData.append("folderId", uploadFolderId);
+
+        if (files.length > 1) {
+          setMessage(`Uploading ${index + 1} of ${files.length}: ${uploadRelativePath(file)}...`);
+        }
+
+        const response = await fetch("/api/media", {
+          method: "POST",
+          body: formData,
+          cache: "no-store"
+        });
+        const result = (await response.json()) as UploadResponse;
+        if (!response.ok || result.error || !result.item) {
+          throw new Error(result.error ?? `Upload failed for ${file.name}.`);
+        }
+
+        uploadedItems.push(result.item);
       }
 
-      const safety = playbackSafety(result.item);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
+      }
+      if (directoryInputRef.current) {
+        directoryInputRef.current.value = "";
       }
       setUploadTitle("");
       setUploadTags("");
       setQuery("");
       setQueryInput("");
       await loadMedia(true, "");
-      setMessage(`${result.item.playbackFileName} saved.`);
-      setMessageTone(safety.canUseInPlaylist ? "success" : "warning");
+      const needsReviewCount = uploadedItems.filter((item) => !playbackSafety(item).canUseInPlaylist).length;
+      const skippedSuffix = skippedCount > 0 ? ` ${skippedCount} unsupported or hidden file${skippedCount === 1 ? "" : "s"} skipped.` : "";
+      if (uploadedItems.length === 1) {
+        setMessage(`${uploadedItems[0].playbackFileName} saved.${skippedSuffix}`);
+      } else {
+        setMessage(`${uploadedItems.length} files saved.${skippedSuffix}`);
+      }
+      setMessageTone(needsReviewCount > 0 ? "warning" : "success");
       setShowUpload(false);
       startTransition(() => router.refresh());
     } catch (error) {
@@ -992,16 +1042,70 @@ export function MediaStorePanel() {
         </div>
 
         {showUpload ? (
-          <form onSubmit={handleUpload} className="grid gap-3 border-b border-zinc-200 bg-zinc-50 p-4 xl:grid-cols-[minmax(220px,1fr)_minmax(150px,0.5fr)_110px_minmax(150px,0.55fr)_minmax(150px,0.55fr)_auto] xl:items-end">
+          <form onSubmit={handleUpload} className="grid gap-3 border-b border-zinc-200 bg-zinc-50 p-4 xl:grid-cols-[140px_minmax(220px,1fr)_minmax(150px,0.5fr)_110px_minmax(150px,0.55fr)_minmax(150px,0.55fr)_auto] xl:items-end">
+            <fieldset>
+              <legend className="text-sm font-semibold text-zinc-950">Upload</legend>
+              <div className="mt-1 grid grid-cols-2 overflow-hidden rounded-md border border-zinc-300 bg-white text-sm font-semibold">
+                <label className={uploadSource === "file" ? "bg-zinc-900 text-white" : "text-zinc-700"}>
+                  <input
+                    type="radio"
+                    name="uploadSource"
+                    value="file"
+                    checked={uploadSource === "file"}
+                    onChange={() => {
+                      setUploadSource("file");
+                      if (directoryInputRef.current) {
+                        directoryInputRef.current.value = "";
+                      }
+                    }}
+                    disabled={isBusy}
+                    className="sr-only"
+                  />
+                  <span className="flex min-h-10 items-center justify-center px-3">File</span>
+                </label>
+                <label className={uploadSource === "directory" ? "bg-zinc-900 text-white" : "text-zinc-700"}>
+                  <input
+                    type="radio"
+                    name="uploadSource"
+                    value="directory"
+                    checked={uploadSource === "directory"}
+                    onChange={() => {
+                      setUploadSource("directory");
+                      if (fileInputRef.current) {
+                        fileInputRef.current.value = "";
+                      }
+                    }}
+                    disabled={isBusy}
+                    className="sr-only"
+                  />
+                  <span className="flex min-h-10 items-center justify-center px-3">Directory</span>
+                </label>
+              </div>
+            </fieldset>
             <div>
-              <label htmlFor="media-file" className="text-sm font-semibold text-zinc-950">File</label>
+              <label htmlFor={uploadSource === "directory" ? "media-directory" : "media-file"} className="text-sm font-semibold text-zinc-950">
+                {uploadSource === "directory" ? "Directory" : "File"}
+              </label>
               <input
                 ref={fileInputRef}
                 id="media-file"
                 name="media"
                 type="file"
                 accept="video/mp4,video/quicktime,image/jpeg,image/png,.mp4,.mov,.jpg,.jpeg,.png"
-                disabled={isBusy}
+                disabled={isBusy || uploadSource !== "file"}
+                hidden={uploadSource !== "file"}
+                className="mt-1 block min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-950 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white"
+              />
+              <input
+                {...directoryInputAttributes}
+                ref={directoryInputRef}
+                id="media-directory"
+                name="mediaDirectory"
+                type="file"
+                multiple
+                accept="video/mp4,video/quicktime,image/jpeg,image/png,.mp4,.mov,.jpg,.jpeg,.png"
+                disabled={isBusy || uploadSource !== "directory"}
+                hidden={uploadSource !== "directory"}
                 className="mt-1 block min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-950 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white"
               />
             </div>

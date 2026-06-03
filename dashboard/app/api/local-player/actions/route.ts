@@ -9,6 +9,8 @@ import {
   readRecoveryStore
 } from "../../../lib/local-data-store";
 import { quoteRemoteShell, readPiConfig, runSsh } from "../../../lib/pi-local";
+import type { PiConfig } from "../../../lib/pi-local";
+import { piConfigForDevice, targetDevicesForRequest } from "../../../lib/pi-targets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,7 +29,7 @@ function detailFromOutput(stdout: string): string {
 }
 
 async function runRecoverStep(
-  config: NonNullable<ReturnType<typeof readPiConfig>>,
+  config: PiConfig,
   title: string,
   command: string,
   timeoutMs = 30_000
@@ -69,7 +71,7 @@ async function logRecoveryStep(step: RecoveryStep): Promise<void> {
   });
 }
 
-async function runRecoverWorkflow(config: NonNullable<ReturnType<typeof readPiConfig>>): Promise<RecoveryRun> {
+async function runRecoverWorkflow(config: PiConfig): Promise<RecoveryRun> {
   const startedAt = nowIso();
   const displayOutput = process.env.PISIGNAGE_DISPLAY_OUTPUT?.trim() || "HDMI-A-1";
   const displayMode = process.env.PISIGNAGE_DISPLAY_RESOLUTION?.trim() || "1920x1080@60.000000";
@@ -145,7 +147,7 @@ async function runRecoverWorkflow(config: NonNullable<ReturnType<typeof readPiCo
   return run;
 }
 
-async function requestPiReboot(config: NonNullable<ReturnType<typeof readPiConfig>>): Promise<void> {
+async function requestPiReboot(config: PiConfig): Promise<void> {
   const command = config.password
     ? "sudo -S -p 'sudo password:' sh -c 'nohup sh -c \"sleep 1; systemctl reboot\" >/dev/null 2>&1 & echo reboot-requested'"
     : [
@@ -173,16 +175,25 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { action?: string };
+    const body = (await request.json()) as {
+      action?: string;
+      deviceId?: string;
+      screenId?: string;
+    };
 
     if (body.action !== "restart-vlc" && body.action !== "recover" && body.action !== "reboot-pi") {
       return NextResponse.json({ error: "Unsupported player action." }, { status: 400 });
     }
 
-    const config = readPiConfig();
+    const [targetDevice] = await targetDevicesForRequest({
+      deviceId: body.deviceId,
+      screenId: body.screenId
+    });
+    const config = targetDevice ? piConfigForDevice(targetDevice) : readPiConfig();
     if (!config) {
       return NextResponse.json({ error: "Pi SSH is not configured." }, { status: 400 });
     }
+    const targetLabel = targetDevice?.name ?? `Pi at ${config.host}`;
 
     if (body.action === "restart-vlc") {
       await runSsh(config, "systemctl --user restart pisignage-vlc.service", { timeoutMs: 30_000 });
@@ -192,13 +203,13 @@ export async function POST(request: Request) {
         actor: "local-operator",
         entityId: config.host,
         entityType: "system",
-        message: `Restarted VLC field player on ${config.host}.`,
+        message: `Restarted VLC field player on ${targetLabel} (${config.host}).`,
         result: "success",
         timestamp: nowIso()
       });
 
       return NextResponse.json({
-        message: `Restarted VLC field player on ${config.host}.`
+        message: `Restarted VLC field player on ${targetLabel}.`
       });
     }
 
@@ -212,7 +223,7 @@ export async function POST(request: Request) {
           actor: "local-operator",
           entityId: config.host,
           entityType: "system",
-          message: `Pi reboot was not requested on ${config.host}: ${
+          message: `Pi reboot was not requested on ${targetLabel} (${config.host}): ${
             error instanceof Error ? error.message : String(error)
           }`,
           result: "error",
@@ -233,13 +244,13 @@ export async function POST(request: Request) {
         actor: "local-operator",
         entityId: config.host,
         entityType: "system",
-        message: `Requested Pi reboot on ${config.host}.`,
+        message: `Requested Pi reboot on ${targetLabel} (${config.host}).`,
         result: "success",
         timestamp: nowIso()
       });
 
       return NextResponse.json({
-        message: `Reboot requested for Pi at ${config.host}. Waiting for the next fresh check-in will confirm it is back.`
+        message: `Reboot requested for ${targetLabel}. Waiting for the next fresh check-in will confirm it is back.`
       });
     }
 

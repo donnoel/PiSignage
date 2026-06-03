@@ -26,6 +26,7 @@ type DeviceRecord = {
 type Tone = "good" | "muted" | "warn";
 
 type FleetDeviceHealthPanelProps = {
+  deviceStatuses: Record<string, DeviceLiveStatus>;
   devices: DeviceRecord[];
   screens: ScreenRecord[];
   liveHost: string | null;
@@ -44,6 +45,21 @@ type FleetDeviceHealthPanelProps = {
   statusAgeLabel: string;
   statusUpdatedAt: string | null;
   statusTimestampLabel: string;
+};
+
+type DeviceLiveStatus = {
+  ageLabel: string;
+  host: string | null;
+  playbackHealthy: boolean;
+  playbackLabel: string;
+  playerStatus: {
+    playlistId?: string;
+    playlistVersion?: number;
+    updatedAt?: string;
+  } | null;
+  reachable: boolean;
+  stale: boolean;
+  timestampLabel: string;
 };
 
 type FilterKey = "all" | "attention" | "offline" | "online" | "playing" | "stale" | "sync" | "waiting";
@@ -135,6 +151,7 @@ function sshUrlFor(row: RowState): string | null {
 }
 
 export function DeviceHealthFleetPanel({
+  deviceStatuses,
   devices,
   screens,
   liveHost,
@@ -198,7 +215,14 @@ export function DeviceHealthFleetPanel({
         const linkedScreen = screensByDeviceId.get(device.id) ?? null;
         const assignedPlaylistId = linkedScreen?.playlistId ?? device.playlistId;
         const assignedPlaylist = assignedPlaylistId ? playlistsById.get(assignedPlaylistId) : null;
-        const isLive = deviceMatchesLiveHost(device, liveHost);
+        const status = deviceStatuses[device.id] ?? null;
+        const isLive = Boolean(status) || deviceMatchesLiveHost(device, liveHost);
+        const reachable = status?.reachable ?? liveReachable;
+        const rowPlaybackHealthy = status?.playbackHealthy ?? livePlaybackHealthy;
+        const rowPlaybackLabel = status?.playbackLabel ?? livePlaybackState;
+        const rowStale = status?.stale ?? liveStatusStale;
+        const reportedPlaylistId = status?.playerStatus?.playlistId ?? livePlaylistId;
+        const reportedPlaylistVersion = status?.playerStatus?.playlistVersion ?? livePlaylistVersion;
         const hostConfigured = Boolean(device.host.trim()) && device.host !== "Not configured";
         let healthLabel = "Waiting";
         let healthDetail = "Saved in Beam, but this screen has not checked in yet.";
@@ -209,27 +233,27 @@ export function DeviceHealthFleetPanel({
           healthDetail = "Add the Pi address before Beam can check this screen.";
           healthTone = "warn";
         } else if (isLive) {
-          healthLabel = liveReachable ? "Online" : "Offline";
-          healthDetail = liveReachable
+          healthLabel = reachable ? "Online" : "Offline";
+          healthDetail = reachable
             ? "Beam can reach this screen on the local network."
             : "Beam cannot reach this screen right now.";
-          healthTone = liveReachable ? "good" : "warn";
+          healthTone = reachable ? "good" : "warn";
         }
 
         let playbackLabel = "Not reported";
         let playbackDetail = "No live playback report is available for this saved screen.";
         let playbackTone: Tone = "muted";
-        if (isLive && !liveReachable) {
+        if (isLive && !reachable) {
           playbackLabel = "Not available";
           playbackDetail = "Playback may continue locally, but Beam cannot verify it until the screen is reachable.";
           playbackTone = "warn";
-        } else if (isLive && livePlaybackHealthy) {
+        } else if (isLive && rowPlaybackHealthy) {
           playbackLabel = "Playing";
           playbackDetail = "Beam has a fresh report that this screen is playing.";
           playbackTone = "good";
         } else if (isLive) {
-          playbackLabel = plainPlaybackLabel(livePlaybackState);
-          playbackDetail = liveStatusStale
+          playbackLabel = plainPlaybackLabel(rowPlaybackLabel);
+          playbackDetail = rowStale
             ? "The last playing report is old. Playback may still be running locally."
             : "Beam has not confirmed playback yet.";
           playbackTone = "warn";
@@ -247,33 +271,33 @@ export function DeviceHealthFleetPanel({
           syncLabel = "Review";
           syncDetail = "This screen points to a playlist Beam cannot find locally.";
           syncTone = "warn";
-        } else if (isLive && liveReachable && livePlaylistVersion !== null && livePlaylistId) {
-          if (livePlaylistId !== assignedPlaylist.playlistId) {
+        } else if (isLive && reachable && reportedPlaylistVersion !== null && reportedPlaylistVersion !== undefined && reportedPlaylistId) {
+          if (reportedPlaylistId !== assignedPlaylist.playlistId) {
             syncLabel = "Publish required";
             syncDetail = `Beam expects ${assignedPlaylist.name}; Pi reports another playlist. Publish required.`;
             syncTone = "warn";
-          } else if (livePlaylistVersion === assignedPlaylist.version) {
+          } else if (reportedPlaylistVersion === assignedPlaylist.version) {
             syncLabel = "Up to date";
             syncDetail = `${assignedPlaylist.name} is on the screen.`;
             syncTone = "good";
           } else {
-            syncLabel = livePlaylistVersion < assignedPlaylist.version ? "Publish required" : "Review";
+            syncLabel = reportedPlaylistVersion < assignedPlaylist.version ? "Publish required" : "Review";
             syncDetail =
-              livePlaylistVersion < assignedPlaylist.version
-                ? publishRequiredDetail(assignedPlaylist.version, livePlaylistVersion)
-                : `Beam v${assignedPlaylist.version}; Pi v${livePlaylistVersion}. Review required.`;
+              reportedPlaylistVersion < assignedPlaylist.version
+                ? publishRequiredDetail(assignedPlaylist.version, reportedPlaylistVersion)
+                : `Beam v${assignedPlaylist.version}; Pi v${reportedPlaylistVersion}. Review required.`;
             syncTone = "warn";
           }
         }
 
-        const isOffline = isLive && !liveReachable;
-        const isStale = isLive && liveStatusStale;
+        const isOffline = isLive && !reachable;
+        const isStale = isLive && rowStale;
         const needsAttention =
           !hostConfigured ||
           isOffline ||
           isStale ||
           syncTone === "warn" ||
-          (isLive && !livePlaybackHealthy);
+          (isLive && !rowPlaybackHealthy);
         const attentionReason = !hostConfigured
           ? "setup needed"
           : isOffline
@@ -282,7 +306,7 @@ export function DeviceHealthFleetPanel({
               ? "stale report"
               : syncTone === "warn"
                 ? "sync needed"
-                : isLive && !livePlaybackHealthy
+                : isLive && !rowPlaybackHealthy
                   ? "playback not confirmed"
                   : "no action needed";
 
@@ -295,8 +319,8 @@ export function DeviceHealthFleetPanel({
           healthLabel,
           healthTone,
           isLive,
-          lastSeenAge: isLive ? statusAgeLabel : "Not seen yet",
-          lastSeenFull: isLive ? statusTimestampLabel : "No live report yet",
+          lastSeenAge: isLive ? status?.ageLabel ?? statusAgeLabel : "Not seen yet",
+          lastSeenFull: isLive ? status?.timestampLabel ?? statusTimestampLabel : "No live report yet",
           linkedScreen,
           needsAttention,
           playbackDetail,
@@ -307,13 +331,14 @@ export function DeviceHealthFleetPanel({
           syncTone,
           syncVersionDetail: assignedPlaylist
             ? `Beam v${assignedPlaylist.version}; screen ${
-                isLive && livePlaylistVersion !== null ? `v${livePlaylistVersion}` : "unknown"
+                isLive && reportedPlaylistVersion !== null && reportedPlaylistVersion !== undefined ? `v${reportedPlaylistVersion}` : "unknown"
               }.`
             : "No playlist version is available."
         };
       });
   }, [
     devices,
+    deviceStatuses,
     liveHost,
     livePlaylistId,
     livePlaybackHealthy,
@@ -458,11 +483,15 @@ export function DeviceHealthFleetPanel({
     try {
       const result =
         action === "publish"
-          ? await postJson("/api/local-playlist/publish", {
-              playlistId: row.linkedScreen?.playlistId ?? row.device.playlistId ?? undefined
+            ? await postJson("/api/local-playlist/publish", {
+              deviceId: row.device.id,
+              playlistId: row.linkedScreen?.playlistId ?? row.device.playlistId ?? undefined,
+              screenId: row.linkedScreen?.id ?? undefined
             })
           : await postJson("/api/local-player/actions", {
-              action: action === "restart" ? "restart-vlc" : action === "reboot" ? "reboot-pi" : "recover"
+              action: action === "restart" ? "restart-vlc" : action === "reboot" ? "reboot-pi" : "recover",
+              deviceId: row.device.id,
+              screenId: row.linkedScreen?.id ?? undefined
             });
       const publishMessage = result.piPublish?.message ? ` ${result.piPublish.message}` : "";
       if (action === "reboot") {
