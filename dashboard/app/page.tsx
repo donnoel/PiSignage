@@ -1907,6 +1907,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                       <dd className="mt-1 text-zinc-700">{assignedScreensLabel}</dd>
                     </div>
                   </dl>
+                  <LocalPlaylistScreenAssignment playlistId={playlist.playlistId} />
                   <LocalPublishForm
                     assetCount={playlist.assets.length}
                     assignedScreenCount={assignedScreens.length}
@@ -1917,62 +1918,74 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               </aside>
             </div>
 
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-              <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold uppercase text-teal-700">Current playlist</p>
-                    <div className="mt-1 flex min-w-0 items-center gap-2">
-                      <h3 className="min-w-0 truncate text-3xl font-semibold" title={playlist.name}>{playlist.name}</h3>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <LocalPlaylistRenameButton name={playlist.name} playlistId={playlist.playlistId} />
-                        <LocalPlaylistDeleteButton
-                          assignedScreenCount={assignedScreens.length}
-                          isOnlyPlaylist={playlistOptions.length <= 1}
-                          name={playlist.name}
-                          playlistId={playlist.playlistId}
-                        />
-                      </div>
-                    </div>
-                    <p className="mt-2 text-sm text-zinc-600">
-                      {playlist.assets.length} items · {totalDuration} · {assignedScreens.length === 0 ? "No screens assigned" : assignedScreensLabel}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2 sm:justify-end">
-                    <StatusPill label={selectedPlaylistLiveState.label} tone={selectedPlaylistLiveState.tone} />
-                    <StatusPill label={`${playlist.assets.length} items`} tone="muted" />
-                    <StatusPill label={totalDuration} tone="muted" />
-                    <StatusPill label={assignedScreens.length === 0 ? "No screens" : "Has screens"} tone={assignedScreens.length === 0 ? "warn" : "good"} />
-                  </div>
+            <details className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+              <summary className="flex cursor-pointer list-none flex-col gap-2 p-5 marker:hidden sm:flex-row sm:items-center sm:justify-between [&::-webkit-details-marker]:hidden">
+                <div>
+                  <h3 className="text-lg font-semibold">Playlist management</h3>
+                  <p className="mt-1 text-sm text-zinc-600">
+                    {playlist.name} · {pluralize(playlistOptions.length, "playlist")} saved.
+                  </p>
                 </div>
-                <dl className="mt-5 grid gap-3 text-sm md:grid-cols-3">
-                  <div className="rounded-md bg-zinc-50 p-3">
-                    <dt className="font-semibold text-zinc-500">Screen assignment</dt>
-                    <dd className="mt-1 break-words font-semibold text-zinc-950">{assignedScreens.length === 0 ? "Not assigned" : assignedScreensLabel}</dd>
-                  </div>
-                  <div className="rounded-md bg-zinc-50 p-3">
-                    <dt className="font-semibold text-zinc-500">Playlist sync</dt>
-                    <dd className="mt-1 font-semibold text-zinc-950">{selectedPlaylistLiveState.label}</dd>
-                    <dd className="mt-1 text-zinc-600">{shortScreenDetail(selectedPlaylistLiveState)}</dd>
-                  </div>
-                  <div className="rounded-md bg-zinc-50 p-3">
-                    <dt className="font-semibold text-zinc-500">Last publish</dt>
-                    <dd className="mt-1 font-semibold text-zinc-950">{publishStateLabel(publishStatusForSelected)}</dd>
-                    <dd className="mt-1 text-zinc-600">{shortPublishDetail(publishStatusForSelected)}</dd>
-                  </div>
-                </dl>
-                <LocalPlaylistScreenAssignment playlistId={playlist.playlistId} />
-              </div>
+                <span className="inline-flex min-h-10 items-center justify-center rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900">
+                  Manage playlists
+                </span>
+              </summary>
 
-              <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
-                <div className="border-b border-zinc-200 p-5">
-                  <h3 className="text-lg font-semibold">Playlist library</h3>
-                  <p className="mt-1 text-sm text-zinc-600">{pluralize(playlistOptions.length, "playlist")} saved.</p>
-                  <div className="mt-4">
-                    <LocalPlaylistCreateForm />
+              <div className="grid border-t border-zinc-200 xl:grid-cols-[minmax(0,1fr)_420px]">
+                <section className="p-5">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold uppercase text-teal-700">Current playlist</p>
+                      <div className="mt-1 flex min-w-0 items-center gap-2">
+                        <h4 className="min-w-0 truncate text-3xl font-semibold" title={playlist.name}>{playlist.name}</h4>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <LocalPlaylistRenameButton name={playlist.name} playlistId={playlist.playlistId} />
+                          <LocalPlaylistDeleteButton
+                            assignedScreenCount={assignedScreens.length}
+                            isOnlyPlaylist={playlistOptions.length <= 1}
+                            name={playlist.name}
+                            playlistId={playlist.playlistId}
+                          />
+                        </div>
+                      </div>
+                      <p className="mt-2 text-sm text-zinc-600">
+                        {playlist.assets.length} items · {totalDuration} · {assignedScreens.length === 0 ? "No screens assigned" : assignedScreensLabel}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 sm:justify-end">
+                      <StatusPill label={selectedPlaylistLiveState.label} tone={selectedPlaylistLiveState.tone} />
+                      <StatusPill label={`${playlist.assets.length} items`} tone="muted" />
+                      <StatusPill label={totalDuration} tone="muted" />
+                      <StatusPill label={assignedScreens.length === 0 ? "No screens" : "Has screens"} tone={assignedScreens.length === 0 ? "warn" : "good"} />
+                    </div>
                   </div>
-                </div>
-                <div className="max-h-[420px] overflow-y-auto p-3">
+                  <dl className="mt-5 grid gap-3 text-sm md:grid-cols-3">
+                    <div className="rounded-md bg-zinc-50 p-3">
+                      <dt className="font-semibold text-zinc-500">Screen assignment</dt>
+                      <dd className="mt-1 break-words font-semibold text-zinc-950">{assignedScreens.length === 0 ? "Not assigned" : assignedScreensLabel}</dd>
+                    </div>
+                    <div className="rounded-md bg-zinc-50 p-3">
+                      <dt className="font-semibold text-zinc-500">Playlist sync</dt>
+                      <dd className="mt-1 font-semibold text-zinc-950">{selectedPlaylistLiveState.label}</dd>
+                      <dd className="mt-1 text-zinc-600">{shortScreenDetail(selectedPlaylistLiveState)}</dd>
+                    </div>
+                    <div className="rounded-md bg-zinc-50 p-3">
+                      <dt className="font-semibold text-zinc-500">Last publish</dt>
+                      <dd className="mt-1 font-semibold text-zinc-950">{publishStateLabel(publishStatusForSelected)}</dd>
+                      <dd className="mt-1 text-zinc-600">{shortPublishDetail(publishStatusForSelected)}</dd>
+                    </div>
+                  </dl>
+                </section>
+
+                <section className="border-t border-zinc-200 xl:border-l xl:border-t-0">
+                  <div className="border-b border-zinc-200 p-5">
+                    <h4 className="text-lg font-semibold">Playlist library</h4>
+                    <p className="mt-1 text-sm text-zinc-600">{pluralize(playlistOptions.length, "playlist")} saved.</p>
+                    <div className="mt-4">
+                      <LocalPlaylistCreateForm />
+                    </div>
+                  </div>
+                  <div className="max-h-[420px] overflow-y-auto p-3">
                   <div className="grid gap-2">
                     {playlistOptions.map((option) => {
                       const rowScreens = playlistScreens(option.playlistId);
@@ -2009,9 +2022,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                       );
                     })}
                   </div>
-                </div>
+                  </div>
+                </section>
               </div>
-            </div>
+            </details>
 
           </section>
 

@@ -429,7 +429,7 @@ export function LocalPlaylistScreenAssignment({ playlistId }: PlaylistScreenAssi
         </span>
       </summary>
 
-      <div className="grid gap-3 border-t border-zinc-200 p-4 sm:grid-cols-2">
+      <div className="grid gap-3 border-t border-zinc-200 p-4">
         {(assignments?.screens ?? []).map((screen) => {
           const assigned = screen.playlistId === playlistId;
           return (
