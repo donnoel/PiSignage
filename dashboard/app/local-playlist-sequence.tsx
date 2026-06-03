@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { StatusPill } from "./dashboard-ui";
 import { LocalPlaylistItemEditor } from "./local-playlist-item-editor";
 import type { PlaylistAsset } from "./lib/local-playlist";
+import { Trash2 } from "lucide-react";
 
 type PlaylistSequenceProps = {
   assets: PlaylistAsset[];
@@ -293,8 +294,8 @@ export function LocalPlaylistSequence({ assets, piAssetIds, playlistId }: Playli
               <div className="mt-2 grid gap-2 text-xs text-zinc-600 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                 <span className="min-w-0 truncate" title={fileName}>{fileName}</span>
                 <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                  <StatusPill label={assetTypeLabel(asset)} tone={assetTypeTone(asset)} />
-                  {piAssetSet.has(asset.assetId) ? <StatusPill label="On device" tone="good" /> : null}
+                  <StatusPill label={assetTypeLabel(asset)} size="compact" tone={assetTypeTone(asset)} />
+                  {piAssetSet.has(asset.assetId) ? <StatusPill label="On device" size="compact" tone="good" /> : null}
                 </div>
               </div>
               {messageByAssetId[asset.assetId] ? (
@@ -308,10 +309,11 @@ export function LocalPlaylistSequence({ assets, piAssetIds, playlistId }: Playli
                 type="button"
                 disabled={isBusy || items.length <= 1}
                 onClick={() => void removeItem(asset)}
-                className="min-h-10 rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-red-200 bg-white text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label={`Remove ${assetName} from playlist`}
+                title={`Remove ${assetName}`}
               >
-                Remove
+                <Trash2 className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
           </li>

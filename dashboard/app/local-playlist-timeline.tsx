@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useRouter } from "next/navigation";
+import { Eye, EyeOff } from "lucide-react";
 import type { PlaylistAsset } from "./lib/local-playlist";
 
 type PlaylistTimelineProps = {
@@ -59,6 +60,7 @@ export function LocalPlaylistTimeline({ assets, piAssetIds, playlistId }: Playli
   const [draggedAssetId, setDraggedAssetId] = useState<string | null>(null);
   const [dropAssetId, setDropAssetId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isPending, startTransition] = useTransition();
   const piAssetSet = useMemo(() => new Set(piAssetIds), [piAssetIds]);
@@ -183,122 +185,133 @@ export function LocalPlaylistTimeline({ assets, piAssetIds, playlistId }: Playli
   }
 
   return (
-    <div className="m-4 overflow-hidden rounded-lg border border-white/20 bg-[radial-gradient(circle_at_18%_12%,rgba(45,212,191,0.38),transparent_30%),radial-gradient(circle_at_82%_8%,rgba(251,191,36,0.24),transparent_24%),linear-gradient(135deg,#0f2f2e_0%,#123d32_42%,#3b2433_100%)] px-5 py-5 text-white shadow-[0_18px_42px_rgba(15,47,46,0.18)]">
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+    <details
+      className="m-4 overflow-hidden rounded-lg border border-zinc-200 bg-white"
+      onToggle={(event) => setPreviewOpen(event.currentTarget.open)}
+      open={previewOpen}
+    >
+      <summary className="flex cursor-pointer list-none flex-col gap-2 px-5 py-4 marker:hidden sm:flex-row sm:items-center sm:justify-between [&::-webkit-details-marker]:hidden">
         <div>
-          <h3 className="text-lg font-semibold">Preview</h3>
+          <h3 className="text-lg font-semibold text-zinc-950">Preview loop</h3>
+          <p className="mt-1 text-sm text-zinc-600">{items.length} items in visual order.</p>
         </div>
         <div className="flex flex-col gap-2 sm:items-end">
           {message ? (
-            <p className="text-sm text-zinc-300" role="status" aria-live="polite">
+            <p className="text-sm text-zinc-600" role="status" aria-live="polite">
               {message}
             </p>
           ) : null}
+          <span className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900">
+            {previewOpen ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+            {previewOpen ? "Close preview" : "Open preview"}
+          </span>
+        </div>
+      </summary>
+      <div className="border-t border-zinc-200 bg-[radial-gradient(circle_at_18%_12%,rgba(45,212,191,0.38),transparent_30%),radial-gradient(circle_at_82%_8%,rgba(251,191,36,0.24),transparent_24%),linear-gradient(135deg,#0f2f2e_0%,#123d32_42%,#3b2433_100%)] px-5 py-5 text-white">
+        <div
+          ref={scrollerRef}
+          className="max-w-full overflow-x-auto overscroll-x-contain pb-4"
+          onWheel={(event) => {
+            const scroller = scrollerRef.current;
+            if (!scroller || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+              return;
+            }
+
+            event.preventDefault();
+            scroller.scrollLeft += event.deltaY;
+          }}
+        >
+          <ol className="flex min-h-[178px] gap-3">
+            {items.map((asset, index) => {
+              const assetName = asset.altText ?? asset.assetId;
+              const thumbnailUrl = `/api/local-playlist/thumbnails/${encodeURIComponent(asset.assetId)}?playlistId=${encodeURIComponent(playlistId)}`;
+              const isDragging = draggedAssetId === asset.assetId;
+              const isDropTarget = dropAssetId === asset.assetId && draggedAssetId !== asset.assetId;
+
+              return (
+                <li
+                  key={asset.assetId}
+                  data-playlist-timeline-asset-id={asset.assetId}
+                  className={`group relative flex w-[172px] shrink-0 flex-col overflow-hidden rounded-lg border bg-white/10 shadow-[0_14px_34px_rgba(0,0,0,0.28)] backdrop-blur transition ${
+                    isDropTarget ? "border-cyan-200 ring-2 ring-cyan-200" : "border-white/20"
+                  } ${isDragging ? "opacity-45" : "opacity-100"}`}
+                  draggable={!isBusy}
+                  onDragStart={(event) => {
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", asset.assetId);
+                    setDraggedAssetId(asset.assetId);
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    setDropAssetId(asset.assetId);
+                  }}
+                  onDragLeave={() => {
+                    setDropAssetId((current) => (current === asset.assetId ? null : current));
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    const sourceAssetId = event.dataTransfer.getData("text/plain") || draggedAssetId;
+                    const fromIndex = items.findIndex((item) => item.assetId === sourceAssetId);
+                    const toIndex = index;
+                    setDraggedAssetId(null);
+                    setDropAssetId(null);
+                    reorderByIndex(fromIndex, toIndex);
+                  }}
+                  onDragEnd={() => {
+                    setDraggedAssetId(null);
+                    setDropAssetId(null);
+                  }}
+                >
+                  <div className="relative aspect-video bg-black/25">
+                    <span className="absolute inset-0 flex items-center justify-center px-3 text-center text-xs font-semibold text-zinc-500">
+                      Frame unavailable
+                    </span>
+                    <img
+                      src={thumbnailUrl}
+                      alt={`First frame for ${assetName}`}
+                      className="relative h-full w-full object-cover"
+                      loading="lazy"
+                      onError={(event) => {
+                        event.currentTarget.style.display = "none";
+                      }}
+                    />
+                    <span className="absolute left-2 top-2 rounded bg-black/70 px-2 py-1 text-xs font-semibold">
+                      {index + 1}
+                    </span>
+                    {piAssetSet.has(asset.assetId) ? (
+                      <span className="absolute right-2 top-2 rounded bg-emerald-300 px-2 py-1 text-xs font-semibold text-emerald-950">
+                        On device
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="flex min-h-[82px] flex-col justify-between bg-black/20 p-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold" title={assetName}>{assetName}</p>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-zinc-300">{formatSeconds(asset.durationSeconds ?? 0)}</span>
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onPointerDown={(event) => startPointerDrag(event, asset.assetId)}
+                        onPointerMove={movePointerDrag}
+                        onPointerUp={finishPointerDrag}
+                        onPointerCancel={cancelPointerDrag}
+                        className="touch-none rounded px-1 py-0.5 text-xs font-semibold text-zinc-400 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label={`Drag ${assetName} to reorder`}
+                        title="Drag to reorder"
+                      >
+                        Drag
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
         </div>
       </div>
-      <div
-        ref={scrollerRef}
-        className="max-w-full overflow-x-auto overscroll-x-contain pb-4"
-        onWheel={(event) => {
-          const scroller = scrollerRef.current;
-          if (!scroller || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
-            return;
-          }
-
-          event.preventDefault();
-          scroller.scrollLeft += event.deltaY;
-        }}
-      >
-        <ol className="flex min-h-[178px] gap-3">
-          {items.map((asset, index) => {
-            const assetName = asset.altText ?? asset.assetId;
-            const thumbnailUrl = `/api/local-playlist/thumbnails/${encodeURIComponent(asset.assetId)}?playlistId=${encodeURIComponent(playlistId)}`;
-            const isDragging = draggedAssetId === asset.assetId;
-            const isDropTarget = dropAssetId === asset.assetId && draggedAssetId !== asset.assetId;
-
-            return (
-              <li
-                key={asset.assetId}
-                data-playlist-timeline-asset-id={asset.assetId}
-                className={`group relative flex w-[172px] shrink-0 flex-col overflow-hidden rounded-lg border bg-white/10 shadow-[0_14px_34px_rgba(0,0,0,0.28)] backdrop-blur transition ${
-                  isDropTarget ? "border-cyan-200 ring-2 ring-cyan-200" : "border-white/20"
-                } ${isDragging ? "opacity-45" : "opacity-100"}`}
-                draggable={!isBusy}
-                onDragStart={(event) => {
-                  event.dataTransfer.effectAllowed = "move";
-                  event.dataTransfer.setData("text/plain", asset.assetId);
-                  setDraggedAssetId(asset.assetId);
-                }}
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = "move";
-                  setDropAssetId(asset.assetId);
-                }}
-                onDragLeave={() => {
-                  setDropAssetId((current) => (current === asset.assetId ? null : current));
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  const sourceAssetId = event.dataTransfer.getData("text/plain") || draggedAssetId;
-                  const fromIndex = items.findIndex((item) => item.assetId === sourceAssetId);
-                  const toIndex = index;
-                  setDraggedAssetId(null);
-                  setDropAssetId(null);
-                  reorderByIndex(fromIndex, toIndex);
-                }}
-                onDragEnd={() => {
-                  setDraggedAssetId(null);
-                  setDropAssetId(null);
-                }}
-              >
-                <div className="relative aspect-video bg-black/25">
-                  <span className="absolute inset-0 flex items-center justify-center px-3 text-center text-xs font-semibold text-zinc-500">
-                    Frame unavailable
-                  </span>
-                  <img
-                    src={thumbnailUrl}
-                    alt={`First frame for ${assetName}`}
-                    className="relative h-full w-full object-cover"
-                    loading="lazy"
-                    onError={(event) => {
-                      event.currentTarget.style.display = "none";
-                    }}
-                  />
-                  <span className="absolute left-2 top-2 rounded bg-black/70 px-2 py-1 text-xs font-semibold">
-                    {index + 1}
-                  </span>
-                  {piAssetSet.has(asset.assetId) ? (
-                    <span className="absolute right-2 top-2 rounded bg-emerald-300 px-2 py-1 text-xs font-semibold text-emerald-950">
-                      On device
-                    </span>
-                  ) : null}
-                </div>
-                <div className="flex min-h-[82px] flex-col justify-between bg-black/20 p-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold" title={assetName}>{assetName}</p>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-zinc-300">{formatSeconds(asset.durationSeconds ?? 0)}</span>
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onPointerDown={(event) => startPointerDrag(event, asset.assetId)}
-                      onPointerMove={movePointerDrag}
-                      onPointerUp={finishPointerDrag}
-                      onPointerCancel={cancelPointerDrag}
-                      className="touch-none rounded px-1 py-0.5 text-xs font-semibold text-zinc-400 hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                      aria-label={`Drag ${assetName} to reorder`}
-                      title="Drag to reorder"
-                    >
-                      Drag
-                    </button>
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ol>
-      </div>
-    </div>
+    </details>
   );
 }

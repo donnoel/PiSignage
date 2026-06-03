@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Check } from "lucide-react";
 
 type PlaylistItemEditorProps = {
   assetId: string;
@@ -42,6 +43,7 @@ export function LocalPlaylistItemEditor({
   const [isSaving, setIsSaving] = useState(false);
   const [isPending, startTransition] = useTransition();
   const isBusy = isSaving || isPending;
+  const hasChanges = title !== defaultTitle || durationSeconds !== String(defaultDurationSeconds);
 
   async function saveItemDetails(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -116,13 +118,21 @@ export function LocalPlaylistItemEditor({
             aria-label="Seconds"
           />
         </div>
-        <button
-          type="submit"
-          disabled={isBusy}
-          className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
-        >
-          {isBusy ? "Saving..." : "Save"}
-        </button>
+        <div className="flex justify-end">
+          <button
+            type="submit"
+            disabled={isBusy || !hasChanges}
+            className={`inline-flex h-10 w-10 items-center justify-center rounded-md bg-teal-700 text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-500 ${
+              hasChanges ? "opacity-100" : "pointer-events-none opacity-0"
+            }`}
+            aria-label={isBusy ? "Saving item details" : "Save item details"}
+            aria-hidden={!hasChanges}
+            tabIndex={hasChanges ? 0 : -1}
+            title={isBusy ? "Saving..." : hasChanges ? "Save" : "Saved"}
+          >
+            <Check className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
       </div>
       {message ? <p className="text-xs text-zinc-600" role="status" aria-live="polite">{message}</p> : null}
     </form>
