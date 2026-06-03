@@ -86,6 +86,8 @@ type DeviceLiveStatus = {
 };
 
 type ScreenActionTone = "danger" | "neutral" | "primary";
+type ScreenSortKey = "device" | "lastSeen" | "playback" | "playlist" | "screen" | "status" | "sync";
+type SortDirection = "asc" | "desc";
 
 type ScreenRow = {
   assignedPlaylist: PlaylistOption | null;
@@ -96,6 +98,7 @@ type ScreenRow = {
   isLive: boolean;
   lastSeenAge: string;
   lastSeenFull: string;
+  lastSeenSort: number;
   needsAttention: boolean;
   playbackDetail: string;
   playbackLabel: string;
@@ -109,8 +112,66 @@ type ScreenRow = {
   syncTone: Tone;
 };
 
+type ScreenSort = {
+  direction: SortDirection;
+  key: ScreenSortKey;
+};
+
 function compareText(left: string, right: string): number {
   return left.localeCompare(right, undefined, { sensitivity: "base" });
+}
+
+function sortableTimestamp(value: string | undefined): number {
+  if (!value) {
+    return 0;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function screenRowSortValue(row: ScreenRow, key: ScreenSortKey): string | number {
+  switch (key) {
+    case "device":
+      return row.device?.host ?? "";
+    case "lastSeen":
+      return row.lastSeenSort;
+    case "playback":
+      return row.playbackLabel;
+    case "playlist":
+      return row.assignedPlaylist?.name ?? "";
+    case "status":
+      return row.statusLabel;
+    case "sync":
+      return row.syncLabel;
+    case "screen":
+    default:
+      return `${row.screen.name}\n${row.screen.location}\n${row.screen.group}`;
+  }
+}
+
+function compareSortValues(left: string | number, right: string | number): number {
+  if (typeof left === "number" && typeof right === "number") {
+    return left - right;
+  }
+
+  return compareText(String(left), String(right));
+}
+
+function sortScreenRows(rows: ScreenRow[], sort: ScreenSort): ScreenRow[] {
+  const direction = sort.direction === "asc" ? 1 : -1;
+
+  return rows
+    .slice()
+    .sort((left, right) => {
+      const primary = compareSortValues(screenRowSortValue(left, sort.key), screenRowSortValue(right, sort.key));
+      const fallback =
+        compareText(left.screen.group, right.screen.group) ||
+        compareText(left.screen.location, right.screen.location) ||
+        compareText(left.screen.name, right.screen.name);
+
+      return (primary || fallback) * direction;
+    });
 }
 
 function formatCount(count: number, label: string): string {
@@ -239,6 +300,7 @@ export function ScreenDeviceInventoryPanel({
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [publishingScreenId, setPublishingScreenId] = useState<string | null>(null);
+  const [screenSort, setScreenSort] = useState<ScreenSort>({ direction: "asc", key: "screen" });
   const [screenName, setScreenName] = useState("");
   const [screenLocation, setScreenLocation] = useState("");
   const [screenGroup, setScreenGroup] = useState("");
@@ -539,6 +601,7 @@ export function ScreenDeviceInventoryPanel({
         isLive,
         lastSeenAge: isLive ? liveStatus?.ageLabel ?? statusAgeLabel : "Not seen yet",
         lastSeenFull: isLive ? liveStatus?.timestampLabel ?? statusTimestampLabel : "No live report yet",
+        lastSeenSort: sortableTimestamp(liveStatus?.playerStatus?.updatedAt),
         needsAttention:
           status.tone === "warn" ||
           playback.tone === "warn" ||
@@ -570,6 +633,7 @@ export function ScreenDeviceInventoryPanel({
     statusAgeLabel,
     statusTimestampLabel
   ]);
+  const sortedScreenRows = useMemo(() => sortScreenRows(screenRows, screenSort), [screenRows, screenSort]);
 
   const linkedDeviceIds = useMemo(() => {
     const next = new Set<string>();
@@ -588,6 +652,43 @@ export function ScreenDeviceInventoryPanel({
   const assignedCount = screenRows.filter((row) => row.assignedPlaylistId).length;
   const upToDateCount = screenRows.filter((row) => row.syncLabel === "Up to date").length;
   const attentionCount = screenRows.filter((row) => row.needsAttention).length;
+
+  function changeScreenSort(key: ScreenSortKey) {
+    setScreenSort((current) =>
+      current.key === key
+        ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
+        : { key, direction: key === "lastSeen" ? "desc" : "asc" }
+    );
+  }
+
+  function screenSortLabel(key: ScreenSortKey): string {
+    if (screenSort.key !== key) {
+      return "sortable";
+    }
+
+    return screenSort.direction === "asc" ? "sorted ascending" : "sorted descending";
+  }
+
+  function renderScreenSortHeader(key: ScreenSortKey, label: string, className = "px-4 py-3") {
+    const active = screenSort.key === key;
+    const directionLabel = screenSort.direction === "asc" ? "A-Z" : "Z-A";
+
+    return (
+      <th className={className} aria-sort={active ? (screenSort.direction === "asc" ? "ascending" : "descending") : "none"}>
+        <button
+          type="button"
+          onClick={() => changeScreenSort(key)}
+          className="inline-flex min-h-8 items-center gap-1 rounded-md px-1 text-left font-semibold uppercase text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950 focus:outline-none focus:ring-2 focus:ring-teal-500"
+          aria-label={`Sort by ${label}, ${screenSortLabel(key)}`}
+        >
+          <span>{label}</span>
+          <span className={active ? "text-[10px] text-teal-800" : "text-[10px] text-zinc-400"}>
+            {active ? directionLabel : "Sort"}
+          </span>
+        </button>
+      </th>
+    );
+  }
 
   async function publishPlaylistForScreen(row: ScreenRow) {
     if (isBusy || !row.assignedPlaylistId) {
@@ -856,18 +957,18 @@ export function ScreenDeviceInventoryPanel({
           <table className="w-full min-w-[980px] text-left text-sm">
             <thead className="bg-zinc-50 text-xs uppercase text-zinc-500">
               <tr>
-                <th className="px-4 py-3">Screen</th>
-                <th className="px-4 py-3">Playlist</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Now playing</th>
-                <th className="px-4 py-3">Sync</th>
-                <th className="px-4 py-3">Device</th>
-                <th className="px-4 py-3">Last seen</th>
+                {renderScreenSortHeader("screen", "Screen")}
+                {renderScreenSortHeader("playlist", "Playlist")}
+                {renderScreenSortHeader("status", "Status")}
+                {renderScreenSortHeader("playback", "Now playing")}
+                {renderScreenSortHeader("sync", "Sync")}
+                {renderScreenSortHeader("device", "Device")}
+                {renderScreenSortHeader("lastSeen", "Last seen")}
                 <th className="px-4 py-3 min-w-[168px]">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200">
-              {screenRows.map((row) => (
+              {sortedScreenRows.map((row) => (
                 <tr key={row.screen.id} className={row.needsAttention ? "bg-amber-50/35" : undefined}>
                   <td className="px-4 py-3">
                     <p className="font-semibold text-zinc-950">{row.screen.name}</p>
