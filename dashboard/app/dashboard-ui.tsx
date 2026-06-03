@@ -13,7 +13,7 @@ export function StatusPill({
     warn: "bg-amber-100 text-amber-900 ring-amber-200",
     muted: "bg-zinc-100 text-zinc-700 ring-zinc-200"
   }[tone];
-  const sizeClassName = size === "compact" ? "px-2 py-0.5 text-[0.6875rem]" : "px-2.5 py-1 text-xs";
+  const sizeClassName = size === "compact" ? "px-1.5 py-px text-[0.625rem]" : "px-2.5 py-1 text-xs";
 
   return <span className={`inline-flex whitespace-nowrap rounded-full font-semibold ring-1 ${sizeClassName} ${className}`}>{label}</span>;
 }
