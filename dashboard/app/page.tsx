@@ -3,7 +3,7 @@ import { DashboardAutoRefresh } from "./dashboard-auto-refresh";
 import { Metric, StatusPill } from "./dashboard-ui";
 import { DeviceHealthFleetPanel } from "./device-health-fleet-panel";
 import { ensureLocalDataFoundation } from "./lib/local-data-store";
-import type { DeviceStore, ScreenRecord, ScreenStore } from "./lib/local-data-store";
+import type { DeviceRecord, DeviceStore, ScreenRecord, ScreenStore } from "./lib/local-data-store";
 import { readNormalizedInventory } from "./lib/local-inventory";
 import { localStateDirectory, publishStatusPath, readPlaylistStore, repoRoot, selectPlaylist, writeFileAtomic } from "./lib/local-playlist";
 import type { Playlist, PlaylistAsset, PlaylistStore } from "./lib/local-playlist";
@@ -1095,6 +1095,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const totalDuration = formatDuration(playlist.assets);
   const playlistOptions = playlistStore.items;
   const firstPlaylistId = playlistOptions[0]?.playlistId ?? playlist.playlistId;
+  const devicesById = new Map(inventory.devices.items.map((device) => [device.id, device]));
+  const devicesByScreenId = new Map(
+    inventory.devices.items
+      .filter((device) => device.screenId)
+      .map((device) => [device.screenId as string, device])
+  );
   const publishStatusForSelected = publishStatus?.playlistId
     ? publishStatus.playlistId === playlist.playlistId
       ? publishStatus
@@ -1103,34 +1109,86 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       ? publishStatus
       : null;
   const piPlaylistVersion = playerStatus?.playlistVersion;
-  const playlistReportedByPi = playerStatus?.playlistId
-    ? playerStatus.playlistId === playlist.playlistId
-    : playlist.playlistId === firstPlaylistId;
-  const playlistSyncState = playlistReportedByPi
-    ? syncState(playlist.version, piPlaylistVersion, pi.reachable)
-    : {
-        detail: "This playlist has not been reported by the Pi. Publish it when it is ready for the screen.",
+  function playlistScreens(playlistId: string) {
+    return inventory.screens.items
+      .filter((screen) => screen.playlistId === playlistId)
+      .slice()
+      .sort((left, right) =>
+        left.location.localeCompare(right.location, undefined, { sensitivity: "base" }) ||
+        left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
+      );
+  }
+
+  function linkedDeviceForScreen(screen: ScreenRecord): DeviceRecord | null {
+    return (screen.deviceId ? devicesById.get(screen.deviceId) : null) ?? devicesByScreenId.get(screen.id) ?? null;
+  }
+
+  function syncStateForPlaylist(option: Playlist): PlaylistSyncState {
+    const screensForPlaylist = playlistScreens(option.playlistId);
+    if (screensForPlaylist.length === 0) {
+      return {
+        detail: "Publish this playlist when it is ready for a screen.",
         label: "Not live",
-        tone: "muted" as const
+        tone: "muted"
       };
+    }
+
+    const screenStates = screensForPlaylist.map((screen) => {
+      const device = linkedDeviceForScreen(screen);
+      const status = device ? deviceStatuses[device.id] : null;
+      const reportsThisPlaylist = status?.playerStatus?.playlistId === option.playlistId;
+      const state = reportsThisPlaylist
+        ? syncState(option.version, status?.playerStatus?.playlistVersion, status?.reachable ?? false)
+        : {
+            detail: device
+              ? `${screen.name} has not reported this playlist yet.`
+              : `${screen.name} does not have a linked Pi.`,
+            label: "Not live",
+            tone: "muted" as const
+          };
+
+      return { screen, state, status };
+    });
+    const unconfirmed = screenStates.find((entry) => entry.state.tone !== "good");
+    if (unconfirmed) {
+      return {
+        detail: `${unconfirmed.screen.name}: ${unconfirmed.state.detail}`,
+        label: unconfirmed.state.label,
+        tone: unconfirmed.state.tone
+      };
+    }
+
+    return {
+      detail:
+        screenStates.length === 1
+          ? `${screenStates[0].screen.name} reports this playlist version.`
+          : `All ${screenStates.length} assigned screens report this playlist version.`,
+      label: "Screen current",
+      tone: "good"
+    };
+  }
+
+  const playlistSyncState = syncStateForPlaylist(playlist);
   const piPlayerUrl =
     process.env.PISIGNAGE_PLAYER_URL?.trim() ||
     (pi.host ? `http://${pi.host}:5173/?playlist=/playlist.local.json` : null);
   const videoAssetCount = playlist.assets.filter((asset) => asset.type === "video").length;
   const imageAssetCount = playlist.assets.length - videoAssetCount;
-  const piAssetIds = new Set(playlistReportedByPi ? (playerStatus?.assetIds ?? []) : []);
-  const troubleshootingDevicesById = new Map(inventory.devices.items.map((device) => [device.id, device]));
-  const troubleshootingDevicesByScreenId = new Map(
-    inventory.devices.items
-      .filter((device) => device.screenId)
-      .map((device) => [device.screenId as string, device])
+  const playlistReportingStatus = playlistScreens(playlist.playlistId)
+    .map((screen) => {
+      const device = linkedDeviceForScreen(screen);
+      return device ? deviceStatuses[device.id] : null;
+    })
+    .find((status) => status?.playerStatus?.playlistId === playlist.playlistId);
+  const playlistReportedByPi = Boolean(playlistReportingStatus);
+  const piAssetIds = new Set(
+    playlistReportingStatus?.playerStatus?.assetIds ??
+      (playerStatus?.playlistId === playlist.playlistId ? playerStatus.assetIds ?? [] : [])
   );
   const troubleshootingScreens = inventory.screens.items
     .map((screen) => {
       const linkedDevice =
-        (screen.deviceId ? troubleshootingDevicesById.get(screen.deviceId) : null) ??
-        troubleshootingDevicesByScreenId.get(screen.id) ??
-        null;
+        linkedDeviceForScreen(screen);
       const assignedPlaylist = screen.playlistId
         ? playlistStore.items.find((item) => item.playlistId === screen.playlistId)
         : null;
@@ -1151,16 +1209,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         left.location.localeCompare(right.location, undefined, { sensitivity: "base" }) ||
         left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
     );
-  function playlistScreens(playlistId: string) {
-    return inventory.screens.items
-      .filter((screen) => screen.playlistId === playlistId)
-      .slice()
-      .sort((left, right) =>
-        left.location.localeCompare(right.location, undefined, { sensitivity: "base" }) ||
-        left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
-      );
-  }
-
   function publishStatusForPlaylist(option: Playlist): PublishStatus | null {
     if (!publishStatus) {
       return null;
@@ -1171,20 +1219,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     }
 
     return option.playlistId === firstPlaylistId ? publishStatus : null;
-  }
-
-  function syncStateForPlaylist(option: Playlist) {
-    const reportsThisPlaylist = playerStatus?.playlistId
-      ? playerStatus.playlistId === option.playlistId
-      : option.playlistId === firstPlaylistId;
-
-    return reportsThisPlaylist
-      ? syncState(option.version, piPlaylistVersion, pi.reachable)
-      : {
-          detail: "Publish this playlist when it is ready for a screen.",
-          label: "Not live",
-          tone: "muted" as const
-        };
   }
 
   const assignedScreens = playlistScreens(playlist.playlistId);

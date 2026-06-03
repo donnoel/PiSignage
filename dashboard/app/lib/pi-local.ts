@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { stat } from "node:fs/promises";
 import { access } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -219,6 +220,52 @@ export function requiredRemoteAssetPaths(config: PiConfig, playlist: Playlist): 
   });
 }
 
+function normalizedPlaylistAssetUri(asset: Playlist["assets"][number]): string {
+  const normalizedUri = path.posix.normalize(asset.uri);
+  if (
+    path.posix.isAbsolute(normalizedUri) ||
+    normalizedUri === ".." ||
+    normalizedUri.startsWith("../")
+  ) {
+    throw new Error(`Playlist asset path is not local: ${asset.assetId}`);
+  }
+
+  return normalizedUri;
+}
+
+async function remoteFileSize(config: PiConfig, remotePath: string): Promise<number | null> {
+  try {
+    const output = await runSsh(config, `stat -c %s ${quoteRemoteShell(remotePath)}`, { timeoutMs: 20_000 });
+    const parsed = Number.parseInt(output.trim(), 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function syncPlaylistAssetsToPi(config: PiConfig, playlist: Playlist): Promise<void> {
+  for (const asset of playlist.assets) {
+    const normalizedUri = normalizedPlaylistAssetUri(asset);
+    const localAssetPath = await repoFilePath(path.join("sample-content", normalizedUri));
+    const localAsset = await stat(localAssetPath);
+    const remoteAssetPath = path.posix.join(config.root, "sample-content", normalizedUri);
+    const remoteSize = await remoteFileSize(config, remoteAssetPath);
+
+    if (remoteSize === localAsset.size) {
+      continue;
+    }
+
+    const temporaryAssetPath = `${remoteAssetPath}.${Date.now()}.tmp`;
+    await runSsh(config, `mkdir -p ${quoteRemoteShell(path.posix.dirname(remoteAssetPath))}`);
+    await runScp(config, localAssetPath, temporaryAssetPath, { timeoutMs: 600_000 });
+    await runSsh(
+      config,
+      `mv ${quoteRemoteShell(temporaryAssetPath)} ${quoteRemoteShell(remoteAssetPath)}`,
+      { timeoutMs: 60_000 }
+    );
+  }
+}
+
 export async function publishPlaylistToPi(
   playlistPath: string,
   playlist: Playlist,
@@ -239,6 +286,7 @@ export async function publishPlaylistToPi(
   const temporaryPlaylistPath = `${remotePlaylistPath}.${Date.now()}.tmp`;
 
   try {
+    await syncPlaylistAssetsToPi(config, playlist);
     await runSsh(
       config,
       requiredRemoteAssetPaths(config, playlist)

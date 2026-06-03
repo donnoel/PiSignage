@@ -17,6 +17,8 @@ const vlcBinary = process.env.PISIGNAGE_VLC_BIN ?? "/usr/bin/cvlc";
 const displayOutput = process.env.PISIGNAGE_DISPLAY_OUTPUT ?? "HDMI-A-1";
 const displayMode = process.env.PISIGNAGE_DISPLAY_RESOLUTION ?? "1920x1080@60.000000";
 const vlcVideoOutput = process.env.PISIGNAGE_VLC_VIDEO_OUTPUT ?? "wl_shm";
+const vlcAvcodecHardware = process.env.PISIGNAGE_VLC_AVCODEC_HW ?? "none";
+const vlcAudioMode = process.env.PISIGNAGE_VLC_AUDIO ?? "off";
 const vlcWaylandDisplay =
   process.env.PISIGNAGE_VLC_WAYLAND_DISPLAY ?? process.env.WAYLAND_DISPLAY ?? "wayland-0";
 const statusPath = path.resolve(
@@ -32,6 +34,11 @@ const playlistPollIntervalMs = Number.parseInt(
   process.env.PISIGNAGE_PLAYLIST_POLL_INTERVAL_MS ?? "5000",
   10
 );
+const playlistHandoffOverlapMs = Number.parseInt(
+  process.env.PISIGNAGE_PLAYLIST_HANDOFF_OVERLAP_MS ?? "1000",
+  10
+);
+const vlcStopSignal = process.env.PISIGNAGE_VLC_STOP_SIGNAL ?? "SIGKILL";
 const statusHeartbeatIntervalMs = Number.parseInt(
   process.env.PISIGNAGE_STATUS_HEARTBEAT_INTERVAL_MS ?? "15000",
   10
@@ -43,7 +50,7 @@ const assetQuarantineWindowMs = Number.parseInt(
 );
 
 let stopping = false;
-let activePlayer;
+const activePlayers = new Set();
 let lastLoadedPlaylistModifiedMs = null;
 const assetQuarantine = new Map();
 let activeStatus = {
@@ -55,6 +62,8 @@ let activeStatus = {
   statusPath,
   displayOutput,
   displayMode,
+  vlcAudioMode,
+  vlcAvcodecHardware,
   vlcVideoOutput,
   vlcWaylandDisplay,
   playlistId: null,
@@ -78,6 +87,23 @@ function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+async function waitWithPlaylistPolling(playlist, ms) {
+  const deadline = Date.now() + Math.max(ms, 0);
+  while (!stopping) {
+    if (await playlistHasChanged(playlist)) {
+      return { reloadRequested: true };
+    }
+
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) {
+      return { reloadRequested: false };
+    }
+
+    await sleep(Math.min(remainingMs, Math.max(Math.min(playlistPollIntervalMs, 1_000), 250)));
+  }
+  return { reloadRequested: false };
 }
 
 async function writeStatus(update) {
@@ -197,7 +223,11 @@ async function playableAssetsFromPlaylist() {
     const playableAsset = {
       assetId: asset.assetId ?? path.basename(assetPath),
       path: assetPath,
-      type: asset.type
+      type: asset.type,
+      durationSeconds:
+        Number.isFinite(asset.durationSeconds) && asset.durationSeconds > 0
+          ? asset.durationSeconds
+          : 30
     };
     if (activeQuarantineEntry(playableAsset)) {
       log(`skipping quarantined asset ${playableAsset.assetId}`);
@@ -280,96 +310,187 @@ async function waitForDisplay() {
   }
 }
 
-function playPlaylist(playlist) {
-  return new Promise((resolve, reject) => {
-    const mediaArgs = playlist.assets.map((asset) => asset.path);
-    const waylandArgs = vlcVideoOutput.startsWith("wl_")
-      ? ["--wl-display", vlcWaylandDisplay]
-      : [];
-    let playlistPollTimer;
-    let statusHeartbeatTimer;
-    let reloadRequested = false;
-    const args = [
-      "-V",
-      vlcVideoOutput,
-      ...waylandArgs,
-      "--fullscreen",
-      "--video-on-top",
-      "--no-video-deco",
-      "--loop",
-      "--no-video-title-show",
-      "--quiet",
-      "--drm-vout-display",
-      displayOutput,
-      ...mediaArgs
-    ];
+async function playlistHasChanged(playlist) {
+  const playlistStats = await stat(playlistPath);
+  return playlistStats.mtimeMs !== playlist.modifiedMs;
+}
 
-    log(`playing playlist with ${playlist.assets.length} media asset(s)`);
-    activePlayer = spawn(vlcBinary, args, {
-      stdio: "inherit"
-    });
+function vlcArgsForAsset(asset) {
+  const waylandArgs = vlcVideoOutput.startsWith("wl_")
+    ? ["--wl-display", vlcWaylandDisplay]
+    : [];
+  const audioArgs = vlcAudioMode === "off" ? ["--no-audio"] : [];
 
-    playlistPollTimer = setInterval(async () => {
-      try {
-        const playlistStats = await stat(playlistPath);
-        if (playlistStats.mtimeMs !== playlist.modifiedMs) {
-          reloadRequested = true;
-          log("playlist changed; restarting VLC with the latest local playlist");
-          activePlayer?.kill("SIGTERM");
-        }
-      } catch (error) {
-        reloadRequested = true;
-        log(
-          `playlist check failed; restarting VLC supervisor: ${
-            error instanceof Error ? error.message : String(error)
-          }`
-        );
-        activePlayer?.kill("SIGTERM");
-      }
-    }, playlistPollIntervalMs);
+  return [
+    "--avcodec-hw",
+    vlcAvcodecHardware,
+    ...audioArgs,
+    "-V",
+    vlcVideoOutput,
+    ...waylandArgs,
+    "--fullscreen",
+    "--video-on-top",
+    "--no-video-deco",
+    "--loop",
+    "--no-video-title-show",
+    "--quiet",
+    "--drm-vout-display",
+    displayOutput,
+    asset.path
+  ];
+}
 
-    if (statusHeartbeatIntervalMs > 0) {
-      statusHeartbeatTimer = setInterval(() => {
-        writeStatus({
-          state: "playing",
-          playlistId: playlist.playlistId,
-          playlistVersion: playlist.version,
-          assetCount: playlist.assets.length,
-          assetIds: playlist.assets.map((asset) => asset.assetId),
-          lastError: null
-        }).catch((error) => {
-          log(`status heartbeat failed: ${error instanceof Error ? error.message : String(error)}`);
-        });
-      }, statusHeartbeatIntervalMs);
-    }
-
-    function clearTimers() {
-      clearInterval(playlistPollTimer);
-      clearInterval(statusHeartbeatTimer);
-    }
-
-    activePlayer.on("error", (error) => {
-      clearTimers();
-      activePlayer = undefined;
-      reject(error);
-    });
-
-    activePlayer.on("exit", (code, signal) => {
-      clearTimers();
-      activePlayer = undefined;
-      if (stopping || reloadRequested || signal === "SIGTERM" || signal === "SIGINT") {
-        resolve();
-        return;
-      }
-
-      if (code === 0) {
-        resolve();
-        return;
-      }
-
-      reject(new Error(`VLC exited with code ${code ?? "unknown"} signal ${signal ?? "none"}`));
-    });
+function startAssetPlayer(asset) {
+  const child = spawn(vlcBinary, vlcArgsForAsset(asset), {
+    stdio: "inherit"
   });
+
+  const handle = {
+    asset,
+    child,
+    stoppedBySupervisor: false,
+    exited: new Promise((resolve, reject) => {
+      child.on("error", reject);
+      child.on("exit", (code, signal) => {
+        activePlayers.delete(handle);
+        resolve({ code, signal });
+      });
+    })
+  };
+
+  activePlayers.add(handle);
+  return handle;
+}
+
+function stopAssetPlayer(handle) {
+  if (!handle || handle.child.killed) {
+    return;
+  }
+  handle.stoppedBySupervisor = true;
+  handle.child.kill(vlcStopSignal);
+}
+
+function stopAllPlayers() {
+  for (const handle of activePlayers) {
+    stopAssetPlayer(handle);
+  }
+}
+
+function isExpectedPlayerExit(handle, exit) {
+  return (
+    stopping ||
+    handle.stoppedBySupervisor ||
+    exit.code === 0 ||
+    exit.signal === vlcStopSignal ||
+    exit.signal === "SIGTERM" ||
+    exit.signal === "SIGINT"
+  );
+}
+
+async function writePlayingAssetStatus(playlist, asset, extra = {}) {
+  await writePlaybackStatus(playlist, "playing", {
+    currentAssetId: asset.assetId,
+    currentAssetPath: asset.path,
+    currentAssetDurationSeconds: asset.durationSeconds,
+    lastError: null,
+    ...extra
+  });
+}
+
+async function playPlaylist(playlist) {
+  log(`playing playlist with ${playlist.assets.length} media asset(s)`);
+  let statusHeartbeatTimer;
+  let currentIndex = 0;
+  let currentAsset = playlist.assets[currentIndex];
+  log(`playing asset ${currentAsset.assetId} for ${currentAsset.durationSeconds}s`);
+  await writePlayingAssetStatus(playlist, currentAsset);
+  let currentPlayer = startAssetPlayer(currentAsset);
+
+  if (statusHeartbeatIntervalMs > 0) {
+    statusHeartbeatTimer = setInterval(() => {
+      writePlayingAssetStatus(playlist, currentAsset).catch((error) => {
+        log(`status heartbeat failed: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }, statusHeartbeatIntervalMs);
+  }
+
+  try {
+    while (!stopping) {
+      const currentDurationMs = Math.max(Math.round(currentAsset.durationSeconds * 1000), 1_000);
+      const overlapMs =
+        playlist.assets.length > 1
+          ? Math.min(Math.max(playlistHandoffOverlapMs, 0), Math.max(currentDurationMs - 1_000, 0))
+          : 0;
+      const displayMs = Math.max(currentDurationMs - overlapMs, 1_000);
+
+      const playbackResult = await Promise.race([
+        waitWithPlaylistPolling(playlist, displayMs),
+        currentPlayer.exited.then((exit) => ({ exit }))
+      ]);
+
+      if (playbackResult.reloadRequested) {
+        log("playlist changed; restarting VLC with the latest local playlist");
+        return;
+      }
+
+      if (playbackResult.exit && !isExpectedPlayerExit(currentPlayer, playbackResult.exit)) {
+        const message = `VLC exited with code ${
+          playbackResult.exit.code ?? "unknown"
+        } signal ${playbackResult.exit.signal ?? "none"}`;
+        quarantineAsset(currentAsset, message);
+        await writePlaybackStatus(playlist, "degraded", {
+          currentAssetId: currentAsset.assetId,
+          currentAssetPath: currentAsset.path,
+          currentAssetDurationSeconds: currentAsset.durationSeconds,
+          lastError: message
+        });
+      }
+
+      let nextIndex = currentIndex;
+      let nextAsset = currentAsset;
+      for (let offset = 1; offset <= playlist.assets.length; offset += 1) {
+        const candidateIndex = (currentIndex + offset) % playlist.assets.length;
+        const candidateAsset = playlist.assets[candidateIndex];
+        if (!activeQuarantineEntry(candidateAsset)) {
+          nextIndex = candidateIndex;
+          nextAsset = candidateAsset;
+          break;
+        }
+      }
+
+      if (activeQuarantineEntry(nextAsset)) {
+        throw new Error(`No playable media assets remain in ${playlistPath}`);
+      }
+
+      if (playlist.assets.length === 1) {
+        continue;
+      }
+
+      const previousPlayer = currentPlayer;
+      const previousAsset = currentAsset;
+      log(`starting next asset ${nextAsset.assetId} before stopping ${previousAsset.assetId}`);
+      const nextPlayer = startAssetPlayer(nextAsset);
+      currentIndex = nextIndex;
+      currentAsset = nextAsset;
+      currentPlayer = nextPlayer;
+      await writePlayingAssetStatus(playlist, nextAsset);
+
+      const overlapResult = await waitWithPlaylistPolling(playlist, overlapMs);
+      if (overlapResult.reloadRequested) {
+        log("playlist changed; restarting VLC with the latest local playlist");
+        stopAssetPlayer(nextPlayer);
+        return;
+      }
+
+      stopAssetPlayer(previousPlayer);
+      previousPlayer.exited.catch((error) => {
+        log(`previous VLC exit check failed: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }
+  } finally {
+    clearInterval(statusHeartbeatTimer);
+    stopAllPlayers();
+  }
 }
 
 async function run() {
@@ -412,7 +533,7 @@ async function run() {
 
 function stop() {
   stopping = true;
-  activePlayer?.kill("SIGTERM");
+  stopAllPlayers();
 }
 
 process.on("SIGINT", stop);
