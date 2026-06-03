@@ -1849,13 +1849,81 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             aria-labelledby="playlist-heading"
             className={selectedView === "playlist" ? "mt-6 space-y-4" : "hidden"}
           >
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="min-w-0 rounded-lg border border-zinc-200 bg-white shadow-sm">
+                <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h2 id="playlist-heading" className="text-xl font-semibold">Playlist sequence</h2>
+                    <p className="mt-1 text-sm text-zinc-600">
+                      {playlist.assets.length === 0 ? "No media in this playlist yet." : `${playlist.name} · order, timing, and item names.`}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 sm:justify-end">
+                    <StatusPill label={`${playlist.assets.length} items`} tone="muted" />
+                    <StatusPill label={totalDuration} tone="muted" />
+                    <StatusPill label={`${videoAssetCount} ready`} tone="good" />
+                    {imageAssetCount > 0 ? <StatusPill label={`${imageAssetCount} needs review`} tone="warn" /> : null}
+                  </div>
+                </div>
+                <LocalPlaylistBuilder
+                  playlistAssetFileNames={playlistAssetFileNames}
+                  playlistId={playlist.playlistId}
+                />
+                {playlist.assets.length > 0 ? (
+                  <LocalPlaylistTimeline
+                    assets={playlist.assets}
+                    piAssetIds={Array.from(piAssetIds)}
+                    playlistId={playlist.playlistId}
+                  />
+                ) : (
+                  <div className="px-5 py-5 text-sm text-zinc-600">
+                    Add local media to this playlist before assigning or publishing.
+                  </div>
+                )}
+                <LocalPlaylistSequence
+                  assets={playlist.assets}
+                  piAssetIds={Array.from(piAssetIds)}
+                  playlistId={playlist.playlistId}
+                />
+              </div>
+
+              <aside className="self-start space-y-4">
+                <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-semibold">Send to screen</h3>
+                      <p className="mt-1 text-sm text-zinc-600">{shortScreenDetail(selectedPlaylistLiveState)}</p>
+                    </div>
+                    <StatusPill label={selectedPlaylistLiveState.label} tone={selectedPlaylistLiveState.tone} />
+                  </div>
+                  <dl className="mt-4 grid gap-2 text-sm">
+                    <div className="rounded-md bg-zinc-50 p-3">
+                      <dt className="font-semibold text-zinc-500">Last sent</dt>
+                      <dd className="mt-1 font-semibold text-zinc-950">{publishStateLabel(publishStatusForSelected)}</dd>
+                      <dd className="mt-1 text-zinc-600">{shortPublishDetail(publishStatusForSelected)}</dd>
+                    </div>
+                    <div className="rounded-md bg-zinc-50 p-3">
+                      <dt className="font-semibold text-zinc-500">Screens</dt>
+                      <dd className="mt-1 text-zinc-700">{assignedScreensLabel}</dd>
+                    </div>
+                  </dl>
+                  <LocalPublishForm
+                    assetCount={playlist.assets.length}
+                    assignedScreenCount={assignedScreens.length}
+                    assignmentTargetId="playlist-screen-assignment"
+                    playlistId={playlist.playlistId}
+                  />
+                </div>
+              </aside>
+            </div>
+
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
               <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <p className="text-sm font-semibold uppercase text-teal-700">Current playlist</p>
                     <div className="mt-1 flex min-w-0 items-center gap-2">
-                      <h2 id="playlist-heading" className="min-w-0 truncate text-3xl font-semibold" title={playlist.name}>{playlist.name}</h2>
+                      <h3 className="min-w-0 truncate text-3xl font-semibold" title={playlist.name}>{playlist.name}</h3>
                       <div className="flex shrink-0 items-center gap-2">
                         <LocalPlaylistRenameButton name={playlist.name} playlistId={playlist.playlistId} />
                         <LocalPlaylistDeleteButton
@@ -1943,75 +2011,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   </div>
                 </div>
               </div>
-            </div>
-
-            <LocalPlaylistBuilder
-              playlistAssetFileNames={playlistAssetFileNames}
-              playlistId={playlist.playlistId}
-            />
-
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-              <div className="min-w-0 rounded-lg border border-zinc-200 bg-white shadow-sm">
-                <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <h3 className="text-xl font-semibold">Playlist sequence</h3>
-                    <p className="mt-1 text-sm text-zinc-600">
-                      {playlist.assets.length === 0 ? "No media in this playlist yet." : "Order, timing, and item names."}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2 sm:justify-end">
-                    <StatusPill label={`${playlist.assets.length} items`} tone="muted" />
-                    <StatusPill label={totalDuration} tone="muted" />
-                    <StatusPill label={`${videoAssetCount} ready`} tone="good" />
-                    {imageAssetCount > 0 ? <StatusPill label={`${imageAssetCount} needs review`} tone="warn" /> : null}
-                  </div>
-                </div>
-                {playlist.assets.length > 0 ? (
-                  <LocalPlaylistTimeline
-                    assets={playlist.assets}
-                    piAssetIds={Array.from(piAssetIds)}
-                    playlistId={playlist.playlistId}
-                  />
-                ) : (
-                  <div className="px-5 py-5 text-sm text-zinc-600">
-                    Add local media to this playlist before assigning or publishing.
-                  </div>
-                )}
-                <LocalPlaylistSequence
-                  assets={playlist.assets}
-                  piAssetIds={Array.from(piAssetIds)}
-                  playlistId={playlist.playlistId}
-                />
-              </div>
-
-              <aside className="self-start space-y-4">
-                <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-lg font-semibold">Send to screen</h3>
-                      <p className="mt-1 text-sm text-zinc-600">{shortScreenDetail(selectedPlaylistLiveState)}</p>
-                    </div>
-                    <StatusPill label={selectedPlaylistLiveState.label} tone={selectedPlaylistLiveState.tone} />
-                  </div>
-                  <dl className="mt-4 grid gap-2 text-sm">
-                    <div className="rounded-md bg-zinc-50 p-3">
-                      <dt className="font-semibold text-zinc-500">Last sent</dt>
-                      <dd className="mt-1 font-semibold text-zinc-950">{publishStateLabel(publishStatusForSelected)}</dd>
-                      <dd className="mt-1 text-zinc-600">{shortPublishDetail(publishStatusForSelected)}</dd>
-                    </div>
-                    <div className="rounded-md bg-zinc-50 p-3">
-                      <dt className="font-semibold text-zinc-500">Screens</dt>
-                      <dd className="mt-1 text-zinc-700">{assignedScreensLabel}</dd>
-                    </div>
-                  </dl>
-                  <LocalPublishForm
-                    assetCount={playlist.assets.length}
-                    assignedScreenCount={assignedScreens.length}
-                    assignmentTargetId="playlist-screen-assignment"
-                    playlistId={playlist.playlistId}
-                  />
-                </div>
-              </aside>
             </div>
 
           </section>

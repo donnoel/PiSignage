@@ -149,14 +149,24 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
   }
 
   return (
-    <div>
-      <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+    <details className="border-b border-zinc-200 bg-zinc-50">
+      <summary className="flex cursor-pointer list-none flex-col gap-3 px-5 py-4 marker:hidden sm:flex-row sm:items-center sm:justify-between [&::-webkit-details-marker]:hidden">
+        <div>
+          <h3 className="text-lg font-semibold">Add media</h3>
+          <p className="mt-1 text-sm text-zinc-600" aria-live="polite">
+            {shouldShowHeaderMessage ? mediaMessage : "Open the media library only when you need to add something."}
+          </p>
+        </div>
+        <span className="inline-flex min-h-10 items-center justify-center rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white">
+          Open media chooser
+        </span>
+      </summary>
+
+      <section aria-label="Add media to playlist" className="border-t border-zinc-200 bg-white">
         <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h3 className="text-lg font-semibold">Add media to playlist</h3>
-            {shouldShowHeaderMessage ? (
-              <p className="mt-1 text-sm text-zinc-600" aria-live="polite">{mediaMessage}</p>
-            ) : null}
+            <h4 className="text-base font-semibold">Media library</h4>
+            <p className="mt-1 text-sm text-zinc-600">Search ready MP4 media and add it to this playlist.</p>
           </div>
           <form
             className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto lg:justify-end"
@@ -180,7 +190,7 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
             </button>
           </form>
         </div>
-        <div className="divide-y divide-zinc-200">
+        <div className="max-h-[460px] divide-y divide-zinc-200 overflow-y-auto">
           {mediaItems.map((item) => (
             <div key={item.id} className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
               <div className="min-w-0">
@@ -209,7 +219,7 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
           ) : null}
         </div>
       </section>
-    </div>
+    </details>
   );
 }
 
@@ -285,12 +295,12 @@ export function LocalPlaylistScreenAssignment({ playlistId }: PlaylistScreenAssi
   }
 
   return (
-    <section
+    <details
       id="playlist-screen-assignment"
       tabIndex={-1}
-      className="mt-5 rounded-md border border-zinc-200 bg-zinc-50 p-4 outline-none transition-shadow"
+      className="mt-5 rounded-md border border-zinc-200 bg-zinc-50 outline-none transition-shadow"
     >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+      <summary className="flex cursor-pointer list-none flex-col gap-2 p-4 marker:hidden sm:flex-row sm:items-center sm:justify-between [&::-webkit-details-marker]:hidden">
         <div>
           <h3 className="text-lg font-semibold">Screens using this playlist</h3>
           <p className="mt-1 text-sm text-zinc-600">
@@ -299,9 +309,12 @@ export function LocalPlaylistScreenAssignment({ playlistId }: PlaylistScreenAssi
               : `${(assignments?.screens ?? []).filter((screen) => screen.playlistId === playlistId).length} selected`}
           </p>
         </div>
-      </div>
+        <span className="inline-flex min-h-10 items-center justify-center rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900">
+          Manage screens
+        </span>
+      </summary>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 border-t border-zinc-200 p-4 sm:grid-cols-2">
         {(assignments?.screens ?? []).map((screen) => {
           const assigned = screen.playlistId === playlistId;
           return (
@@ -335,8 +348,8 @@ export function LocalPlaylistScreenAssignment({ playlistId }: PlaylistScreenAssi
       </div>
 
       {assignmentMessage ? (
-        <p className="mt-4 text-sm text-zinc-600" role="status" aria-live="polite">{assignmentMessage}</p>
+        <p className="border-t border-zinc-200 px-4 py-3 text-sm text-zinc-600" role="status" aria-live="polite">{assignmentMessage}</p>
       ) : null}
-    </section>
+    </details>
   );
 }
