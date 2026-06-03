@@ -1042,7 +1042,11 @@ export function MediaStorePanel() {
         </div>
 
         {showUpload ? (
-          <form onSubmit={handleUpload} className="grid gap-3 border-b border-zinc-200 bg-zinc-50 p-4 xl:grid-cols-[140px_minmax(220px,1fr)_minmax(150px,0.5fr)_110px_minmax(150px,0.55fr)_minmax(150px,0.55fr)_auto] xl:items-end">
+          <form
+            onSubmit={handleUpload}
+            encType="multipart/form-data"
+            className="grid gap-3 border-b border-zinc-200 bg-zinc-50 p-4 xl:grid-cols-[140px_minmax(220px,1fr)_minmax(150px,0.5fr)_110px_minmax(150px,0.55fr)_minmax(150px,0.55fr)_auto] xl:items-end"
+          >
             <fieldset>
               <legend className="text-sm font-semibold text-zinc-950">Upload</legend>
               <div className="mt-1 grid grid-cols-2 overflow-hidden rounded-md border border-zinc-300 bg-white text-sm font-semibold">
@@ -1086,28 +1090,29 @@ export function MediaStorePanel() {
               <label htmlFor={uploadSource === "directory" ? "media-directory" : "media-file"} className="text-sm font-semibold text-zinc-950">
                 {uploadSource === "directory" ? "Directory" : "File"}
               </label>
-              <input
-                ref={fileInputRef}
-                id="media-file"
-                name="media"
-                type="file"
-                accept="video/mp4,video/quicktime,image/jpeg,image/png,.mp4,.mov,.jpg,.jpeg,.png"
-                disabled={isBusy || uploadSource !== "file"}
-                hidden={uploadSource !== "file"}
-                className="mt-1 block min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-950 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white"
-              />
-              <input
-                {...directoryInputAttributes}
-                ref={directoryInputRef}
-                id="media-directory"
-                name="mediaDirectory"
-                type="file"
-                multiple
-                accept="video/mp4,video/quicktime,image/jpeg,image/png,.mp4,.mov,.jpg,.jpeg,.png"
-                disabled={isBusy || uploadSource !== "directory"}
-                hidden={uploadSource !== "directory"}
-                className="mt-1 block min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-950 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white"
-              />
+              {uploadSource === "file" ? (
+                <input
+                  ref={fileInputRef}
+                  id="media-file"
+                  name="media"
+                  type="file"
+                  accept="video/mp4,video/quicktime,image/jpeg,image/png,.mp4,.mov,.jpg,.jpeg,.png"
+                  disabled={isBusy}
+                  className="mt-1 block min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-950 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white"
+                />
+              ) : (
+                <input
+                  {...directoryInputAttributes}
+                  ref={directoryInputRef}
+                  id="media-directory"
+                  name="mediaDirectory"
+                  type="file"
+                  multiple
+                  accept="video/mp4,video/quicktime,image/jpeg,image/png,.mp4,.mov,.jpg,.jpeg,.png"
+                  disabled={isBusy}
+                  className="mt-1 block min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-950 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white"
+                />
+              )}
             </div>
             <div>
               <label htmlFor="media-title" className="text-sm font-semibold text-zinc-950">Title</label>
