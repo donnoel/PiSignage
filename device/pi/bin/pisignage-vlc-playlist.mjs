@@ -414,6 +414,16 @@ async function writePlayingAssetStatus(playlist, asset, extra = {}) {
   });
 }
 
+async function writeContinuousPlaybackStatus(playlist, extra = {}) {
+  await writePlaybackStatus(playlist, "playing", {
+    currentAssetId: null,
+    currentAssetPath: null,
+    currentAssetDurationSeconds: null,
+    lastError: null,
+    ...extra
+  });
+}
+
 async function playPlaylist(playlist) {
   log(`playing playlist with ${playlist.assets.length} media asset(s)`);
   let statusHeartbeatTimer;
@@ -512,13 +522,17 @@ async function playPlaylist(playlist) {
 
 async function playPlaylistContinuously(playlist) {
   log(`playing playlist continuously with ${playlist.assets.length} media asset(s)`);
-  await writePlaybackStatus(playlist, "playing", {
-    currentAssetId: null,
-    currentAssetPath: null,
-    currentAssetDurationSeconds: null,
-    lastError: null
-  });
+  let statusHeartbeatTimer;
+  await writeContinuousPlaybackStatus(playlist);
   const player = startPlaylistPlayer(playlist);
+
+  if (statusHeartbeatIntervalMs > 0) {
+    statusHeartbeatTimer = setInterval(() => {
+      writeContinuousPlaybackStatus(playlist).catch((error) => {
+        log(`status heartbeat failed: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }, statusHeartbeatIntervalMs);
+  }
 
   try {
     while (!stopping) {
@@ -545,6 +559,7 @@ async function playPlaylistContinuously(playlist) {
       }
     }
   } finally {
+    clearInterval(statusHeartbeatTimer);
     stopAssetPlayer(player);
   }
 }
