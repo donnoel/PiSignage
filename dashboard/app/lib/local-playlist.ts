@@ -24,6 +24,11 @@ export type PlaylistStore = {
 };
 
 export type PiPublishResult = {
+  assetsChecked?: number;
+  assetsCopied?: number;
+  assetsSkipped?: number;
+  assetsVerifiedByChecksum?: number;
+  assetsVerifiedBySize?: number;
   enabled: boolean;
   ok: boolean;
   message: string;
@@ -240,6 +245,11 @@ export async function writePublishStatus(
         message: piPublish.message,
         ok: piPublish.ok,
         piPublishEnabled: piPublish.enabled,
+        assetsChecked: piPublish.assetsChecked,
+        assetsCopied: piPublish.assetsCopied,
+        assetsSkipped: piPublish.assetsSkipped,
+        assetsVerifiedByChecksum: piPublish.assetsVerifiedByChecksum,
+        assetsVerifiedBySize: piPublish.assetsVerifiedBySize,
         playlistId: playlist.playlistId,
         playlistName: playlist.name,
         playlistVersion: playlist.version,

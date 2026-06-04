@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   ensureLivePlaylistPath,
+  type PiPublishResult,
   readStoredPlaylist,
   writePlaylist,
   writePublishStatus
@@ -10,6 +11,14 @@ import { piConfigForDevice, targetDevicesForRequest } from "../../../lib/pi-targ
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function sumPublishMetric(
+  results: PiPublishResult[],
+  key: "assetsChecked" | "assetsCopied" | "assetsSkipped" | "assetsVerifiedByChecksum" | "assetsVerifiedBySize"
+): number | undefined {
+  const values = results.map((result) => result[key]).filter((value): value is number => typeof value === "number");
+  return values.length > 0 ? values.reduce((total, value) => total + value, 0) : undefined;
+}
 
 export async function POST(request: Request) {
   try {
@@ -56,6 +65,11 @@ export async function POST(request: Request) {
         ];
     const okCount = publishResults.filter((result) => result.ok).length;
     const piPublish = {
+      assetsChecked: sumPublishMetric(publishResults, "assetsChecked"),
+      assetsCopied: sumPublishMetric(publishResults, "assetsCopied"),
+      assetsSkipped: sumPublishMetric(publishResults, "assetsSkipped"),
+      assetsVerifiedByChecksum: sumPublishMetric(publishResults, "assetsVerifiedByChecksum"),
+      assetsVerifiedBySize: sumPublishMetric(publishResults, "assetsVerifiedBySize"),
       enabled: publishResults.some((result) => result.enabled),
       ok: publishResults.length > 0 && publishResults.every((result) => result.ok),
       message:

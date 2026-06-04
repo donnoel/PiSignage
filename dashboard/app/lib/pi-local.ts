@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { Playlist } from "./local-playlist";
 import type { PiPublishResult } from "./local-playlist";
+import { sha256ForFile } from "./media-processing";
 
 export type PiConfig = {
   host: string;
@@ -15,6 +16,14 @@ export type PiConfig = {
 
 type CommandOptions = {
   timeoutMs?: number;
+};
+
+type AssetSyncSummary = {
+  checked: number;
+  copied: number;
+  skipped: number;
+  verifiedByChecksum: number;
+  verifiedBySize: number;
 };
 
 const execFileAsync = promisify(execFile);
@@ -243,16 +252,89 @@ async function remoteFileSize(config: PiConfig, remotePath: string): Promise<num
   }
 }
 
-async function syncPlaylistAssetsToPi(config: PiConfig, playlist: Playlist): Promise<void> {
+async function remoteFileSha256(config: PiConfig, remotePath: string): Promise<string | null> {
+  try {
+    const quotedPath = quoteRemoteShell(remotePath);
+    const output = await runSsh(
+      config,
+      [
+        "if command -v sha256sum >/dev/null 2>&1; then",
+        `sha256sum ${quotedPath} | awk '{print $1}'`,
+        "elif command -v shasum >/dev/null 2>&1; then",
+        `shasum -a 256 ${quotedPath} | awk '{print $1}'`,
+        "else exit 127; fi"
+      ].join(" "),
+      { timeoutMs: 30_000 }
+    );
+    const digest = output.trim().split(/\s+/)[0] ?? "";
+    return /^[a-f0-9]{64}$/i.test(digest) ? digest.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function assertRemoteAssetMatches(
+  config: PiConfig,
+  remoteAssetPath: string,
+  localHash: string,
+  localSize: number
+): Promise<"checksum" | "size"> {
+  const remoteHash = await remoteFileSha256(config, remoteAssetPath);
+  if (remoteHash) {
+    if (remoteHash !== localHash) {
+      throw new Error(`Published media checksum did not match on Pi: ${path.posix.basename(remoteAssetPath)}`);
+    }
+
+    return "checksum";
+  }
+
+  const remoteSize = await remoteFileSize(config, remoteAssetPath);
+  if (remoteSize !== localSize) {
+    throw new Error(`Published media size did not match on Pi: ${path.posix.basename(remoteAssetPath)}`);
+  }
+
+  return "size";
+}
+
+function assetSyncMessage(summary: AssetSyncSummary): string {
+  const verification =
+    summary.verifiedByChecksum > 0
+      ? `${summary.verifiedByChecksum} hash-verified`
+      : `${summary.verifiedBySize} size-verified`;
+  return ` Assets checked: ${summary.checked}; copied ${summary.copied}, skipped ${summary.skipped}; ${verification}.`;
+}
+
+async function syncPlaylistAssetsToPi(config: PiConfig, playlist: Playlist): Promise<AssetSyncSummary> {
+  const summary: AssetSyncSummary = {
+    checked: 0,
+    copied: 0,
+    skipped: 0,
+    verifiedByChecksum: 0,
+    verifiedBySize: 0
+  };
+
   for (const asset of playlist.assets) {
     const normalizedUri = normalizedPlaylistAssetUri(asset);
     const localAssetPath = await repoFilePath(path.join("sample-content", normalizedUri));
     const localAsset = await stat(localAssetPath);
+    const localHash = await sha256ForFile(localAssetPath);
     const remoteAssetPath = path.posix.join(config.root, "sample-content", normalizedUri);
-    const remoteSize = await remoteFileSize(config, remoteAssetPath);
+    const remoteHash = await remoteFileSha256(config, remoteAssetPath);
+    summary.checked += 1;
 
-    if (remoteSize === localAsset.size) {
+    if (remoteHash === localHash) {
+      summary.skipped += 1;
+      summary.verifiedByChecksum += 1;
       continue;
+    }
+
+    if (!remoteHash) {
+      const remoteSize = await remoteFileSize(config, remoteAssetPath);
+      if (remoteSize === localAsset.size) {
+        summary.skipped += 1;
+        summary.verifiedBySize += 1;
+        continue;
+      }
     }
 
     const temporaryAssetPath = `${remoteAssetPath}.${Date.now()}.tmp`;
@@ -263,7 +345,16 @@ async function syncPlaylistAssetsToPi(config: PiConfig, playlist: Playlist): Pro
       `mv ${quoteRemoteShell(temporaryAssetPath)} ${quoteRemoteShell(remoteAssetPath)}`,
       { timeoutMs: 60_000 }
     );
+    const verification = await assertRemoteAssetMatches(config, remoteAssetPath, localHash, localAsset.size);
+    summary.copied += 1;
+    if (verification === "checksum") {
+      summary.verifiedByChecksum += 1;
+    } else {
+      summary.verifiedBySize += 1;
+    }
   }
+
+  return summary;
 }
 
 export async function publishPlaylistToPi(
@@ -286,7 +377,7 @@ export async function publishPlaylistToPi(
   const temporaryPlaylistPath = `${remotePlaylistPath}.${Date.now()}.tmp`;
 
   try {
-    await syncPlaylistAssetsToPi(config, playlist);
+    const assetSync = await syncPlaylistAssetsToPi(config, playlist);
     await runSsh(
       config,
       requiredRemoteAssetPaths(config, playlist)
@@ -300,9 +391,14 @@ export async function publishPlaylistToPi(
     );
 
     return {
+      assetsChecked: assetSync.checked,
+      assetsCopied: assetSync.copied,
+      assetsSkipped: assetSync.skipped,
+      assetsVerifiedByChecksum: assetSync.verifiedByChecksum,
+      assetsVerifiedBySize: assetSync.verifiedBySize,
       enabled: true,
       ok: true,
-      message: messages.success ?? `Published playlist to Pi at ${config.host}.`
+      message: `${messages.success ?? `Published playlist to Pi at ${config.host}.`}${assetSyncMessage(assetSync)}`
     };
   } catch (error) {
     console.error("local playlist publish failed", error);
