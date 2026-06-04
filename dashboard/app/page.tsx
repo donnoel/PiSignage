@@ -109,6 +109,7 @@ type PublishStatus = {
   assetCount: number;
   assetsChecked?: number;
   assetsCopied?: number;
+  assetsRemoved?: number;
   assetsSkipped?: number;
   assetsVerifiedByChecksum?: number;
   assetsVerifiedBySize?: number;
@@ -825,6 +826,7 @@ function publishAssetSyncDetail(publishStatus: PublishStatus | null): string {
   }
 
   const copied = formatCount(publishStatus.assetsCopied);
+  const removed = formatCount(publishStatus.assetsRemoved);
   const skipped = formatCount(publishStatus.assetsSkipped);
   const hashVerified = formatCount(publishStatus.assetsVerifiedByChecksum);
   const sizeVerified = formatCount(publishStatus.assetsVerifiedBySize);
@@ -835,7 +837,7 @@ function publishAssetSyncDetail(publishStatus: PublishStatus | null): string {
         ? `${sizeVerified} size-verified`
         : "verification not recorded";
 
-  return `Checked ${publishStatus.assetsChecked} asset${publishStatus.assetsChecked === 1 ? "" : "s"}; copied ${copied}, skipped ${skipped}; ${verification}.`;
+  return `Checked ${publishStatus.assetsChecked} asset${publishStatus.assetsChecked === 1 ? "" : "s"}; copied ${copied}, skipped ${skipped}, removed ${removed} stale; ${verification}.`;
 }
 
 function publishStatusDisplayMessage(publishStatus: PublishStatus): string {

@@ -21,6 +21,7 @@ type CommandOptions = {
 type AssetSyncSummary = {
   checked: number;
   copied: number;
+  removed: number;
   skipped: number;
   verifiedByChecksum: number;
   verifiedBySize: number;
@@ -301,13 +302,49 @@ function assetSyncMessage(summary: AssetSyncSummary): string {
     summary.verifiedByChecksum > 0
       ? `${summary.verifiedByChecksum} hash-verified`
       : `${summary.verifiedBySize} size-verified`;
-  return ` Assets checked: ${summary.checked}; copied ${summary.copied}, skipped ${summary.skipped}; ${verification}.`;
+  return ` Assets checked: ${summary.checked}; copied ${summary.copied}, skipped ${summary.skipped}, removed ${summary.removed} stale; ${verification}.`;
+}
+
+async function pruneStaleRemoteAssets(config: PiConfig, playlist: Playlist): Promise<number> {
+  const remoteAssetDirectory = path.posix.join(config.root, "sample-content", "assets");
+  const expectedAssetPaths = playlist.assets.map((asset) =>
+    path.posix.join(config.root, "sample-content", normalizedPlaylistAssetUri(asset))
+  );
+  const pruneScript = `
+node <<'NODE'
+const fs = require("node:fs");
+const path = require("node:path");
+
+const assetDirectory = ${JSON.stringify(remoteAssetDirectory)};
+const expectedAssetPaths = new Set(${JSON.stringify(expectedAssetPaths)});
+let removed = 0;
+
+fs.mkdirSync(assetDirectory, { recursive: true });
+for (const entry of fs.readdirSync(assetDirectory, { withFileTypes: true })) {
+  if (!entry.isFile()) {
+    continue;
+  }
+
+  const assetPath = path.join(assetDirectory, entry.name);
+  if (!expectedAssetPaths.has(assetPath)) {
+    fs.rmSync(assetPath, { force: true });
+    removed += 1;
+  }
+}
+
+console.log(JSON.stringify({ removed }));
+NODE
+`;
+  const output = await runSsh(config, pruneScript, { timeoutMs: 60_000 });
+  const parsed = output.match(/"removed"\s*:\s*(\d+)/);
+  return parsed ? Number.parseInt(parsed[1], 10) : 0;
 }
 
 async function syncPlaylistAssetsToPi(config: PiConfig, playlist: Playlist): Promise<AssetSyncSummary> {
   const summary: AssetSyncSummary = {
     checked: 0,
     copied: 0,
+    removed: 0,
     skipped: 0,
     verifiedByChecksum: 0,
     verifiedBySize: 0
@@ -354,6 +391,7 @@ async function syncPlaylistAssetsToPi(config: PiConfig, playlist: Playlist): Pro
     }
   }
 
+  summary.removed = await pruneStaleRemoteAssets(config, playlist);
   return summary;
 }
 
@@ -393,6 +431,7 @@ export async function publishPlaylistToPi(
     return {
       assetsChecked: assetSync.checked,
       assetsCopied: assetSync.copied,
+      assetsRemoved: assetSync.removed,
       assetsSkipped: assetSync.skipped,
       assetsVerifiedByChecksum: assetSync.verifiedByChecksum,
       assetsVerifiedBySize: assetSync.verifiedBySize,

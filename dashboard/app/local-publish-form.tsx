@@ -9,6 +9,7 @@ type PublishResponse = {
   piPublish?: {
     assetsChecked?: number;
     assetsCopied?: number;
+    assetsRemoved?: number;
     assetsSkipped?: number;
     assetsVerifiedByChecksum?: number;
     assetsVerifiedBySize?: number;

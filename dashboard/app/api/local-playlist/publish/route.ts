@@ -14,7 +14,13 @@ export const dynamic = "force-dynamic";
 
 function sumPublishMetric(
   results: PiPublishResult[],
-  key: "assetsChecked" | "assetsCopied" | "assetsSkipped" | "assetsVerifiedByChecksum" | "assetsVerifiedBySize"
+  key:
+    | "assetsChecked"
+    | "assetsCopied"
+    | "assetsRemoved"
+    | "assetsSkipped"
+    | "assetsVerifiedByChecksum"
+    | "assetsVerifiedBySize"
 ): number | undefined {
   const values = results.map((result) => result[key]).filter((value): value is number => typeof value === "number");
   return values.length > 0 ? values.reduce((total, value) => total + value, 0) : undefined;
@@ -67,6 +73,7 @@ export async function POST(request: Request) {
     const piPublish = {
       assetsChecked: sumPublishMetric(publishResults, "assetsChecked"),
       assetsCopied: sumPublishMetric(publishResults, "assetsCopied"),
+      assetsRemoved: sumPublishMetric(publishResults, "assetsRemoved"),
       assetsSkipped: sumPublishMetric(publishResults, "assetsSkipped"),
       assetsVerifiedByChecksum: sumPublishMetric(publishResults, "assetsVerifiedByChecksum"),
       assetsVerifiedBySize: sumPublishMetric(publishResults, "assetsVerifiedBySize"),
