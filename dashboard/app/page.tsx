@@ -2016,14 +2016,14 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               </div>
             </div>
 
-            <details className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+            <details open className="rounded-lg border border-zinc-200 bg-white shadow-sm">
               <summary className="flex cursor-pointer list-none flex-col gap-2 p-5 marker:hidden sm:flex-row sm:items-center sm:justify-between [&::-webkit-details-marker]:hidden">
                 <div>
                   <h3 className="text-lg font-semibold">Playlist library</h3>
-                  <p className="mt-1 text-sm text-zinc-600">{pluralize(playlistOptions.length, "playlist")} saved.</p>
+                  <p className="mt-1 text-sm text-zinc-600">{pluralize(playlistOptions.length, "playlist")} saved. Create or reset playlists here.</p>
                 </div>
                 <span className="inline-flex min-h-10 items-center justify-center rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900">
-                  Open library
+                  Library tools
                 </span>
               </summary>
               <div className="flex flex-col gap-3 border-t border-zinc-200 p-5 sm:flex-row sm:items-center sm:justify-between">
