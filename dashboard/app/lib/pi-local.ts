@@ -245,7 +245,7 @@ function normalizedPlaylistAssetUri(asset: Playlist["assets"][number]): string {
 async function remoteFileSize(config: PiConfig, remotePath: string): Promise<number | null> {
   try {
     const output = await runSsh(config, `stat -c %s ${quoteRemoteShell(remotePath)}`, { timeoutMs: 20_000 });
-    const parsed = Number.parseInt(output.trim(), 10);
+    const parsed = Number.parseInt(output.match(/\b\d+\b/g)?.at(-1) ?? "", 10);
     return Number.isFinite(parsed) ? parsed : null;
   } catch {
     return null;
@@ -259,14 +259,14 @@ async function remoteFileSha256(config: PiConfig, remotePath: string): Promise<s
       config,
       [
         "if command -v sha256sum >/dev/null 2>&1; then",
-        `sha256sum ${quotedPath} | awk '{print $1}'`,
+        `sha256sum ${quotedPath} | awk '{print $1}';`,
         "elif command -v shasum >/dev/null 2>&1; then",
-        `shasum -a 256 ${quotedPath} | awk '{print $1}'`,
+        `shasum -a 256 ${quotedPath} | awk '{print $1}';`,
         "else exit 127; fi"
       ].join(" "),
       { timeoutMs: 30_000 }
     );
-    const digest = output.trim().split(/\s+/)[0] ?? "";
+    const digest = output.match(/\b[a-f0-9]{64}\b/i)?.[0] ?? "";
     return /^[a-f0-9]{64}$/i.test(digest) ? digest.toLowerCase() : null;
   } catch {
     return null;
