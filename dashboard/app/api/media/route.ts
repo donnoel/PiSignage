@@ -16,6 +16,7 @@ import {
 import { readPlaylistStore, sampleAssetsDirectory, writeFileAtomic } from "../../lib/local-playlist";
 import type { PlaylistAsset } from "../../lib/local-playlist";
 import {
+  assertPlaybackSafeVideoFile,
   createPlaybackSafeVideoClip,
   createStillVideoClip,
   defaultDurationSeconds,
@@ -24,7 +25,9 @@ import {
   maxUploadBytes,
   MediaUploadError,
   mediaSourceTypeFromFileName,
+  playbackPrepProfile,
   sanitizeMediaFileName,
+  sha256ForFile,
   stillClipFileName,
   transcodedVideoFileName,
   uniqueFileName
@@ -80,10 +83,6 @@ function mimeTypeFromExtension(fileName: string): string {
   return "application/octet-stream";
 }
 
-function isMovFile(fileName: string): boolean {
-  return path.extname(fileName).toLowerCase() === ".mov";
-}
-
 function parsePositiveInt(value: string | null, fallback: number, maximum: number): number {
   if (!value) {
     return fallback;
@@ -95,6 +94,14 @@ function parsePositiveInt(value: string | null, fallback: number, maximum: numbe
   }
 
   return Math.min(parsed, maximum);
+}
+
+function roundedPositiveDuration(value: number | null, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return fallback;
+  }
+
+  return Math.max(1, Math.round(value));
 }
 
 function normalize(value: string): string {
@@ -322,7 +329,6 @@ export async function POST(request: Request) {
     const uploadedBytes = Buffer.from(await file.arrayBuffer());
     const assetsDirectory = sampleAssetsDirectory();
     const isVideoSource = sourceType === "video";
-    const isMovSource = isVideoSource && isMovFile(safeFileName);
     const playbackFileName = await uniqueFileName(
       assetsDirectory,
       sourceType === "image"
@@ -355,6 +361,8 @@ export async function POST(request: Request) {
       }
     }
 
+    const playbackProbe = await assertPlaybackSafeVideoFile(playbackFilePath);
+    const checksumSha256 = await sha256ForFile(playbackFilePath);
     const now = new Date().toISOString();
     const playbackFile = await fs.stat(playbackFilePath);
     const titleEntry = formData.get("title");
@@ -370,14 +378,24 @@ export async function POST(request: Request) {
       tags: parseTags(formData.get("tags")),
       sourceFileName: safeFileName,
       playbackFileName,
-      mimeType:
-        sourceType === "image"
-          ? "video/mp4"
-          : isMovSource
-            ? "video/mp4"
-            : file.type || mimeTypeFromExtension(safeFileName),
+      mimeType: "video/mp4",
       sizeBytes: playbackFile.size,
-      durationSeconds: sourceType === "image" ? stillDurationSeconds : defaultDurationSeconds,
+      sourceSizeBytes: uploadedBytes.byteLength,
+      durationSeconds:
+        sourceType === "image"
+          ? stillDurationSeconds
+          : roundedPositiveDuration(playbackProbe.durationSeconds, defaultDurationSeconds),
+      checksumSha256,
+      playbackProfile: playbackPrepProfile.id,
+      preparedAt: now,
+      width: playbackProbe.width,
+      height: playbackProbe.height,
+      fps: playbackProbe.fps,
+      videoCodec: playbackProbe.videoCodec,
+      videoProfile: playbackProbe.videoProfile,
+      pixelFormat: playbackProbe.pixelFormat,
+      audioCodec: playbackProbe.audioCodec,
+      bitRate: playbackProbe.bitRate,
       status: "ready" as const,
       createdAt: now,
       updatedAt: now

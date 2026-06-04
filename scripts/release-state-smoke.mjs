@@ -98,6 +98,22 @@ function isPlaybackSafeVideoFileName(fileName) {
   );
 }
 
+function isSha256(value) {
+  return typeof value === "string" && /^[a-f0-9]{64}$/i.test(value);
+}
+
+function isOptionalPositiveNumber(value) {
+  return value === undefined || (Number.isFinite(value) && value > 0);
+}
+
+function isOptionalPositiveNumberOrNull(value) {
+  return value === undefined || value === null || (Number.isFinite(value) && value > 0);
+}
+
+function isOptionalStringOrNull(value) {
+  return value === undefined || value === null || typeof value === "string";
+}
+
 async function requireAssetOnDisk(assetPath, label) {
   if (!requireAssetFiles) {
     return;
@@ -178,7 +194,19 @@ async function validateMediaStore(mediaStore) {
     assert(typeof item.playbackFileName === "string" && path.basename(item.playbackFileName) === item.playbackFileName, `${label}: playbackFileName must be a file name`);
     assert(typeof item.mimeType === "string" && item.mimeType.trim(), `${label}: mimeType is required`);
     assert(Number.isFinite(item.sizeBytes) && item.sizeBytes > 0, `${label}: sizeBytes must be positive`);
+    assert(isOptionalPositiveNumber(item.sourceSizeBytes), `${label}: sourceSizeBytes must be positive when present`);
     assert(item.durationSeconds === null || (Number.isFinite(item.durationSeconds) && item.durationSeconds > 0), `${label}: durationSeconds must be null or positive`);
+    assert(item.checksumSha256 === undefined || isSha256(item.checksumSha256), `${label}: checksumSha256 must be a SHA-256 hex digest when present`);
+    assert(item.playbackProfile === undefined || (typeof item.playbackProfile === "string" && item.playbackProfile.trim()), `${label}: playbackProfile must be a non-empty string when present`);
+    assert(item.preparedAt === undefined || isValidDate(item.preparedAt), `${label}: preparedAt must be valid when present`);
+    assert(isOptionalPositiveNumberOrNull(item.width), `${label}: width must be positive or null when present`);
+    assert(isOptionalPositiveNumberOrNull(item.height), `${label}: height must be positive or null when present`);
+    assert(isOptionalPositiveNumberOrNull(item.fps), `${label}: fps must be positive or null when present`);
+    assert(isOptionalPositiveNumberOrNull(item.bitRate), `${label}: bitRate must be positive or null when present`);
+    assert(isOptionalStringOrNull(item.videoCodec), `${label}: videoCodec must be a string or null when present`);
+    assert(isOptionalStringOrNull(item.videoProfile), `${label}: videoProfile must be a string or null when present`);
+    assert(isOptionalStringOrNull(item.pixelFormat), `${label}: pixelFormat must be a string or null when present`);
+    assert(isOptionalStringOrNull(item.audioCodec), `${label}: audioCodec must be a string or null when present`);
     assert(item.status === "ready" || item.status === "processing" || item.status === "failed", `${label}: status is invalid`);
     assert(isValidDate(item.createdAt), `${label}: createdAt must be valid`);
     assert(isValidDate(item.updatedAt), `${label}: updatedAt must be valid`);
