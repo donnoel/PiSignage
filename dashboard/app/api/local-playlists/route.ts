@@ -37,6 +37,34 @@ function uniquePlaylistId(name: string, existingIds: Set<string>): string {
   return playlistId;
 }
 
+async function clearPlaylistAssignments(playlistIds: Set<string>, timestamp: string): Promise<void> {
+  const [screenStore, deviceStore] = await Promise.all([readScreenStore(), readDeviceStore()]);
+  const nextScreens = screenStore.items.map((screen) =>
+    screen.playlistId && playlistIds.has(screen.playlistId) ? { ...screen, playlistId: null, updatedAt: timestamp } : screen
+  );
+  const nextDevices = deviceStore.items.map((device) =>
+    device.playlistId && playlistIds.has(device.playlistId) ? { ...device, playlistId: null, updatedAt: timestamp } : device
+  );
+
+  if (JSON.stringify(nextScreens) !== JSON.stringify(screenStore.items)) {
+    await writeScreenStore({
+      ...screenStore,
+      items: nextScreens,
+      updatedAt: timestamp,
+      version: screenStore.version + 1
+    });
+  }
+
+  if (JSON.stringify(nextDevices) !== JSON.stringify(deviceStore.items)) {
+    await writeDeviceStore({
+      ...deviceStore,
+      items: nextDevices,
+      updatedAt: timestamp,
+      version: deviceStore.version + 1
+    });
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as {
@@ -157,8 +185,51 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const body = (await request.json()) as {
+      resetLibrary?: boolean;
+      resetName?: string;
       playlistId?: string;
     };
+    const timestamp = nowIso();
+
+    if (body.resetLibrary) {
+      const store = await readPlaylistStore();
+      const resetName = body.resetName?.trim().slice(0, 80) || "New playlist";
+      const resetPlaylist: Playlist = {
+        playlistId: uniquePlaylistId(resetName, new Set()),
+        name: resetName,
+        version: 1,
+        updatedAt: timestamp,
+        assets: []
+      };
+      const removedPlaylistIds = new Set(store.items.map((item) => item.playlistId));
+
+      await writePlaylistStore({
+        ...store,
+        items: [resetPlaylist],
+        updatedAt: timestamp,
+        version: store.version + 1
+      });
+      await writePlaylist(livePlaylistPath(), resetPlaylist);
+      await clearPlaylistAssignments(removedPlaylistIds, timestamp);
+
+      await appendActivityRecord({
+        id: randomUUID(),
+        action: "playlist-library-reset",
+        actor: "local-operator",
+        entityId: resetPlaylist.playlistId,
+        entityType: "playlist",
+        message: `Reset playlist library and created ${resetPlaylist.name}. Publish manually when the new playlist is ready.`,
+        result: "warning",
+        timestamp
+      });
+
+      return NextResponse.json({
+        deleted: store.items.length,
+        nextPlaylistId: resetPlaylist.playlistId,
+        playlist: resetPlaylist
+      });
+    }
+
     const playlistId = body.playlistId?.trim();
 
     if (!playlistId) {
@@ -175,7 +246,6 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "Playlist was not found." }, { status: 404 });
     }
 
-    const timestamp = nowIso();
     const nextItems = store.items.filter((item) => item.playlistId !== playlistId);
     const fallbackPlaylist = nextItems[0];
     if (!fallbackPlaylist) {
@@ -194,31 +264,7 @@ export async function DELETE(request: Request) {
       await writePlaylist(livePlaylistPath(), fallbackPlaylist);
     }
 
-    const [screenStore, deviceStore] = await Promise.all([readScreenStore(), readDeviceStore()]);
-    const nextScreens = screenStore.items.map((screen) =>
-      screen.playlistId === playlistId ? { ...screen, playlistId: null, updatedAt: timestamp } : screen
-    );
-    const nextDevices = deviceStore.items.map((device) =>
-      device.playlistId === playlistId ? { ...device, playlistId: null, updatedAt: timestamp } : device
-    );
-
-    if (JSON.stringify(nextScreens) !== JSON.stringify(screenStore.items)) {
-      await writeScreenStore({
-        ...screenStore,
-        items: nextScreens,
-        updatedAt: timestamp,
-        version: screenStore.version + 1
-      });
-    }
-
-    if (JSON.stringify(nextDevices) !== JSON.stringify(deviceStore.items)) {
-      await writeDeviceStore({
-        ...deviceStore,
-        items: nextDevices,
-        updatedAt: timestamp,
-        version: deviceStore.version + 1
-      });
-    }
+    await clearPlaylistAssignments(new Set([playlistId]), timestamp);
 
     await appendActivityRecord({
       id: randomUUID(),

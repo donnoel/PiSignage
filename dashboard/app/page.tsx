@@ -16,6 +16,7 @@ import { LocalPlaylistBuilder, LocalPlaylistScreenAssignment } from "./local-pla
 import { LocalPlaylistCreateForm } from "./local-playlist-create-form";
 import { LocalPlaylistDeleteButton } from "./local-playlist-delete-button";
 import { LocalPlaylistRenameButton } from "./local-playlist-rename-button";
+import { LocalPlaylistResetButton } from "./local-playlist-reset-button";
 import { LocalPlaylistSwitcher } from "./local-playlist-switcher";
 import { LocalPublishForm } from "./local-publish-form";
 import { LocalPlaylistSequence } from "./local-playlist-sequence";
@@ -2027,8 +2028,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               </summary>
               <div className="flex flex-col gap-3 border-t border-zinc-200 p-5 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-zinc-600">Create playlists or compare saved playlists without leaving the active workflow.</p>
-                <div className="w-full sm:max-w-xl">
+                <div className="grid w-full gap-2 sm:max-w-2xl sm:grid-cols-[minmax(220px,1fr)_auto]">
                   <LocalPlaylistCreateForm />
+                  <LocalPlaylistResetButton playlistCount={playlistOptions.length} />
                 </div>
               </div>
               <div className="grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
