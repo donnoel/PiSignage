@@ -112,7 +112,7 @@ export function stillClipFileName(fileName: string, durationSeconds: number): st
 
 export function transcodedVideoFileName(fileName: string): string {
   const baseName = path.basename(fileName, path.extname(fileName));
-  return `${baseName}.transcoded.mp4`;
+  return `${baseName}.signage-720p.mp4`;
 }
 
 export async function createStillVideoClip(
@@ -269,14 +269,14 @@ export async function createPlaybackSafeVideoClip(
 
     if (nodeError.code === "ENOENT") {
       throw new MediaUploadError(
-        "MOV uploads need ffmpeg conversion before Pi playback. Install ffmpeg locally or set PISIGNAGE_FFMPEG_BIN, then try again.",
+        "Video uploads need ffmpeg conversion before Pi playback. Install ffmpeg locally or set PISIGNAGE_FFMPEG_BIN, then try again.",
         503
       );
     }
 
     if (nodeError.killed || nodeError.signal === "SIGTERM") {
       throw new MediaUploadError(
-        "The MOV conversion timed out before ffmpeg finished. Try a shorter or smaller source video.",
+        "The video conversion timed out before ffmpeg finished. Try a shorter or smaller source video.",
         504
       );
     }
@@ -285,7 +285,7 @@ export async function createPlaybackSafeVideoClip(
       ? ` ffmpeg said: ${nodeError.stderr.trim().split("\n").at(-1)}`
       : "";
     throw new MediaUploadError(
-      `That MOV file could not be converted into a Pi-safe MP4.${detail}`,
+      `That video file could not be converted into a Pi-safe MP4.${detail}`,
       422
     );
   }

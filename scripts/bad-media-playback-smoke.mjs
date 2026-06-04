@@ -153,19 +153,19 @@ async function runVlcUnexpectedExitSmoke(tempRoot) {
   const output = `${result.stdout}\n${result.stderr}`;
 
   if (result.status === 0) {
-    throw new Error("VLC unexpected-exit smoke should fail when VLC exits unexpectedly.");
-  }
-  if (output.includes("quarantining asset asset-first") || output.includes("quarantining asset asset-second")) {
-    throw new Error(`Unexpected VLC exit quarantined a readable playlist asset.\n${output}`);
+    throw new Error("VLC unexpected-exit smoke should fail after every playable asset crashes.");
   }
   requireOutput("vlc unexpected exit", output, "VLC exited with code 23");
+  requireOutput("vlc crash quarantine first asset", output, "quarantining asset asset-first");
+  requireOutput("vlc crash quarantine second asset", output, "quarantining asset asset-second");
+  requireOutput("vlc crash exhausted playlist", output, "No playable media assets remain");
 
   const status = JSON.parse(await readFile(statusPath, "utf8"));
   if (status.state !== "failed") {
     throw new Error(`Expected failed player status after unexpected VLC exit, got ${status.state}`);
   }
-  if ((status.quarantinedAssetIds ?? []).length !== 0) {
-    throw new Error("Unexpected VLC exit should not quarantine readable assets.");
+  if ((status.quarantinedAssetIds ?? []).length !== 2) {
+    throw new Error("Unexpected VLC exit should quarantine every crashing asset before failing.");
   }
 
   console.log("VLC unexpected-exit smoke passed.");

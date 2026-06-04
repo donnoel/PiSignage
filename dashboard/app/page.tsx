@@ -10,6 +10,7 @@ import type { Playlist, PlaylistAsset, PlaylistStore } from "./lib/local-playlis
 import { readPiConfig, runSsh } from "./lib/pi-local";
 import type { PiConfig } from "./lib/pi-local";
 import { piConfigForDevice } from "./lib/pi-targets";
+import { isPlaybackSafeVideoFileName } from "./lib/playback-safety";
 import { MediaStorePanel } from "./media-store-panel";
 import { LocalPlaylistBuilder, LocalPlaylistScreenAssignment } from "./local-playlist-builder";
 import { LocalPlaylistCreateForm } from "./local-playlist-create-form";
@@ -1173,8 +1174,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const piPlayerUrl =
     process.env.PISIGNAGE_PLAYER_URL?.trim() ||
     (pi.host ? `http://${pi.host}:5173/?playlist=/playlist.local.json` : null);
-  const videoAssetCount = playlist.assets.filter((asset) => asset.type === "video").length;
-  const imageAssetCount = playlist.assets.length - videoAssetCount;
+  const readyAssetCount = playlist.assets.filter((asset) => {
+    const fileName = asset.uri.split("/").filter(Boolean).at(-1) ?? asset.uri;
+    return asset.type === "video" && isPlaybackSafeVideoFileName(fileName);
+  }).length;
+  const needsPrepAssetCount = playlist.assets.length - readyAssetCount;
   const playlistReportingStatus = playlistScreens(playlist.playlistId)
     .map((screen) => {
       const device = linkedDeviceForScreen(screen);
@@ -1909,8 +1913,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 <div className="flex flex-wrap gap-2 sm:justify-end">
                   <StatusPill label={`${playlist.assets.length} items`} tone="muted" />
                   <StatusPill label={totalDuration} tone="muted" />
-                  <StatusPill label={`${videoAssetCount} ready`} tone="good" />
-                  {imageAssetCount > 0 ? <StatusPill label={`${imageAssetCount} needs review`} tone="warn" /> : null}
+                  <StatusPill label={`${readyAssetCount} ready`} tone="good" />
+                  {needsPrepAssetCount > 0 ? <StatusPill label={`${needsPrepAssetCount} needs prep`} tone="warn" /> : null}
                 </div>
               </div>
               <div className="grid xl:grid-cols-[minmax(0,1fr)_360px]">

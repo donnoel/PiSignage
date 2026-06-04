@@ -321,12 +321,13 @@ export async function POST(request: Request) {
     const stillDurationSeconds = imageDurationFromForm(formData.get("durationSeconds"));
     const uploadedBytes = Buffer.from(await file.arrayBuffer());
     const assetsDirectory = sampleAssetsDirectory();
-    const isMovSource = sourceType === "video" && isMovFile(safeFileName);
+    const isVideoSource = sourceType === "video";
+    const isMovSource = isVideoSource && isMovFile(safeFileName);
     const playbackFileName = await uniqueFileName(
       assetsDirectory,
       sourceType === "image"
         ? stillClipFileName(safeFileName, stillDurationSeconds)
-        : isMovSource
+        : isVideoSource
           ? transcodedVideoFileName(safeFileName)
           : safeFileName
     );
@@ -342,7 +343,7 @@ export async function POST(request: Request) {
       } finally {
         await fs.rm(temporaryDirectory, { force: true, recursive: true });
       }
-    } else if (isMovSource) {
+    } else if (isVideoSource) {
       const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "pisignage-media-store-video-"));
       const sourceVideoPath = path.join(temporaryDirectory, safeFileName);
 
@@ -352,11 +353,10 @@ export async function POST(request: Request) {
       } finally {
         await fs.rm(temporaryDirectory, { force: true, recursive: true });
       }
-    } else {
-      await writeFileAtomic(playbackFilePath, uploadedBytes);
     }
 
     const now = new Date().toISOString();
+    const playbackFile = await fs.stat(playbackFilePath);
     const titleEntry = formData.get("title");
     const descriptionEntry = formData.get("description");
     const mediaStore = await readMediaStore();
@@ -376,7 +376,7 @@ export async function POST(request: Request) {
           : isMovSource
             ? "video/mp4"
             : file.type || mimeTypeFromExtension(safeFileName),
-      sizeBytes: uploadedBytes.byteLength,
+      sizeBytes: playbackFile.size,
       durationSeconds: sourceType === "image" ? stillDurationSeconds : defaultDurationSeconds,
       status: "ready" as const,
       createdAt: now,

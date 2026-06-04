@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Monitor, Plus, X } from "lucide-react";
+import { isPlaybackSafeVideoFileName } from "./lib/playback-safety";
 
 type MediaItem = {
   id: string;
@@ -56,7 +57,7 @@ type PlaylistScreenAssignmentProps = {
 };
 
 function isPlaylistSafeMedia(item: MediaItem, selectedFileNames: Set<string>): boolean {
-  return item.status === "ready" && !selectedFileNames.has(item.playbackFileName) && /\.mp4$/i.test(item.playbackFileName);
+  return item.status === "ready" && !selectedFileNames.has(item.playbackFileName) && isPlaybackSafeVideoFileName(item.playbackFileName);
 }
 
 function savedMessage(piPublish: PlaylistActionResponse["piPublish"]): string {
@@ -268,7 +269,7 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <h4 id="media-picker-heading" className="text-xl font-semibold">Add media</h4>
-                  <p className="mt-1 text-sm text-zinc-600">Search ready MP4 media, filter the list, then add one or many items.</p>
+                  <p className="mt-1 text-sm text-zinc-600">Search Pi-safe MP4 media, filter the list, then add one or many items.</p>
                 </div>
                 <button
                   type="button"

@@ -4,6 +4,7 @@ import type { InputHTMLAttributes } from "react";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { StatusPill } from "./dashboard-ui";
+import { isPlaybackSafeVideoFileName, isStillClipFileName } from "./lib/playback-safety";
 
 type MediaFolder = {
   id: string;
@@ -159,10 +160,6 @@ function isSkippedDirectoryEntry(file: File): boolean {
   return pathParts.some((part) => part.startsWith(".") || part === "__MACOSX") || !isSupportedUploadFile(file.name);
 }
 
-function isStillClipFileName(fileName: string): boolean {
-  return /\.still-\d+s(?:-\d+)?\.mp4$/i.test(fileName);
-}
-
 function mediaKind(item: MediaItem): "Image" | "Video" | "MOV" | "File" {
   if (isStillClipFileName(item.playbackFileName)) {
     return "Image";
@@ -212,9 +209,18 @@ function playbackSafety(item: MediaItem): PlaybackSafety {
     };
   }
 
+  if (!isPlaybackSafeVideoFileName(item.playbackFileName)) {
+    return {
+      canUseInPlaylist: false,
+      detail: "This MP4 needs Pi-safe 720p preparation before playlist use.",
+      label: "Needs prep",
+      tone: "warn"
+    };
+  }
+
   return {
     canUseInPlaylist: true,
-    detail: "Ready for the playlist.",
+    detail: "Ready for the Pi playlist.",
     label: "Ready",
     tone: "good"
   };

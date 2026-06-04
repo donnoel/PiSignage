@@ -6,6 +6,7 @@ const localStateRoot = path.join(repoRoot, "dashboard", "local-state");
 const sampleContentRoot = path.join(repoRoot, "sample-content");
 const sampleAssetsRoot = path.join(sampleContentRoot, "assets");
 const livePlaylistPath = path.join(localStateRoot, "playlist.local.json");
+const playlistStorePath = path.join(localStateRoot, "playlists.local.json");
 const samplePlaylistPath = path.join(sampleContentRoot, "playlist.local.json");
 const requireAssetFiles = !process.argv.includes("--allow-missing-assets");
 
@@ -89,6 +90,14 @@ function isSafeRelativeUri(value) {
   return value.split("/").every((part) => part && part !== "." && part !== "..");
 }
 
+function isPlaybackSafeVideoFileName(fileName) {
+  return (
+    /\.signage-720p(?:-\d+)?\.mp4$/i.test(fileName) ||
+    /\.transcoded(?:-\d+)?\.mp4$/i.test(fileName) ||
+    /\.still-\d+s(?:-\d+)?\.mp4$/i.test(fileName)
+  );
+}
+
 async function requireAssetOnDisk(assetPath, label) {
   if (!requireAssetFiles) {
     return;
@@ -140,7 +149,11 @@ async function validatePlaylist(playlist, label) {
     }
 
     const extension = path.extname(asset.uri ?? "").toLowerCase();
-    assert(extension === ".mp4" || extension === ".mov", `${assetLabel}: playback file must be MP4 or MOV`);
+    assert(extension === ".mp4", `${assetLabel}: playback file must be MP4`);
+    assert(
+      isPlaybackSafeVideoFileName(path.basename(asset.uri ?? "")),
+      `${assetLabel}: playback file must be a Pi-safe MP4`
+    );
     const assetPath = path.join(sampleContentRoot, asset.uri ?? "");
     assert(isInside(assetPath, sampleContentRoot), `${assetLabel}: uri escapes sample-content`);
     await requireAssetOnDisk(assetPath, assetLabel);
@@ -178,7 +191,7 @@ async function validateMediaStore(mediaStore) {
   }
 }
 
-function validateInventory(screensStore, devicesStore, playlistId) {
+function validateInventory(screensStore, devicesStore, validPlaylistIds) {
   if (screensStore && !validateStoreShell(screensStore, "Screens store")) {
     return;
   }
@@ -205,7 +218,7 @@ function validateInventory(screensStore, devicesStore, playlistId) {
     assert(typeof screen.location === "string" && screen.location.trim(), `${label}: location is required`);
     assert(typeof screen.group === "string" && screen.group.trim(), `${label}: group is required`);
     assert(typeof screen.notes === "string", `${label}: notes must be present`);
-    assert(screen.playlistId === null || screen.playlistId === playlistId, `${label}: playlistId must be null or the live playlist`);
+    assert(screen.playlistId === null || validPlaylistIds.has(screen.playlistId), `${label}: playlistId must be null or a saved playlist`);
     assert(screen.deviceId === null || deviceIds.has(screen.deviceId), `${label}: deviceId must reference a known device`);
     assert(isValidDate(screen.updatedAt), `${label}: updatedAt must be valid`);
   }
@@ -223,7 +236,7 @@ function validateInventory(screensStore, devicesStore, playlistId) {
     assert(device.playerType === "vlc", `${label}: playerType must be vlc`);
     assert(typeof device.rootPath === "string" && device.rootPath.trim(), `${label}: rootPath is required`);
     assert(typeof device.sshUser === "string" && device.sshUser.trim(), `${label}: sshUser is required`);
-    assert(device.playlistId === null || device.playlistId === playlistId, `${label}: playlistId must be null or the live playlist`);
+    assert(device.playlistId === null || validPlaylistIds.has(device.playlistId), `${label}: playlistId must be null or a saved playlist`);
     assert(device.screenId === null || screenIds.has(device.screenId), `${label}: screenId must reference a known screen`);
     assert(isValidDate(device.updatedAt), `${label}: updatedAt must be valid`);
   }
@@ -352,6 +365,25 @@ if (playlist) {
   await validatePlaylist(playlist, playlistLabel);
 }
 
+const playlistStore = (await fileExists(playlistStorePath))
+  ? await readJson(playlistStorePath, "Playlist store")
+  : null;
+const validPlaylistIds = new Set(playlist?.playlistId ? [playlist.playlistId] : []);
+if (playlistStore) {
+  if (validateStoreShell(playlistStore, "Playlist store")) {
+    const seenPlaylistIds = new Set();
+    for (const storedPlaylist of playlistStore.items) {
+      const label = `Playlist store ${storedPlaylist?.playlistId ?? "(missing id)"}`;
+      assert(!seenPlaylistIds.has(storedPlaylist?.playlistId), `${label}: duplicate playlistId`);
+      seenPlaylistIds.add(storedPlaylist?.playlistId);
+      if (typeof storedPlaylist?.playlistId === "string") {
+        validPlaylistIds.add(storedPlaylist.playlistId);
+      }
+      await validatePlaylist(storedPlaylist, label);
+    }
+  }
+}
+
 const mediaStore = await readOptionalJson("media.local.json", "Media store");
 if (mediaStore) {
   await validateMediaStore(mediaStore);
@@ -359,9 +391,7 @@ if (mediaStore) {
 
 const screensStore = await readOptionalJson("screens.local.json", "Screens store");
 const devicesStore = await readOptionalJson("devices.local.json", "Devices store");
-if (playlist) {
-  validateInventory(screensStore, devicesStore, playlist.playlistId);
-}
+validateInventory(screensStore, devicesStore, validPlaylistIds);
 
 const scheduleStore = await readOptionalJson("schedules.local.json", "Schedule store");
 validateSchedules(scheduleStore, screensStore);

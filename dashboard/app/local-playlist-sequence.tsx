@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { StatusPill } from "./dashboard-ui";
 import { LocalPlaylistItemEditor } from "./local-playlist-item-editor";
 import type { PlaylistAsset } from "./lib/local-playlist";
+import { isPlaybackSafeVideoFileName } from "./lib/playback-safety";
 import { Trash2 } from "lucide-react";
 
 type PlaylistSequenceProps = {
@@ -42,7 +43,7 @@ function assetTypeLabel(asset: PlaylistAsset): string {
     return "Image needs conversion";
   }
 
-  return /\.mp4$/i.test(asset.uri) ? "Ready MP4" : "Video";
+  return isPlaybackSafeVideoFileName(fileNameFromUri(asset.uri)) ? "Pi-safe MP4" : "Needs prep";
 }
 
 function assetTypeTone(asset: PlaylistAsset): "good" | "warn" | "muted" {
@@ -50,7 +51,7 @@ function assetTypeTone(asset: PlaylistAsset): "good" | "warn" | "muted" {
     return "warn";
   }
 
-  return /\.mp4$/i.test(asset.uri) ? "good" : "muted";
+  return isPlaybackSafeVideoFileName(fileNameFromUri(asset.uri)) ? "good" : "warn";
 }
 
 function moveItem(items: PlaylistAsset[], fromIndex: number, toIndex: number): PlaylistAsset[] {
