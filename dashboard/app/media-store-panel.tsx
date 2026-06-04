@@ -78,6 +78,14 @@ type DeleteResponse = {
   error?: string;
 };
 
+type BulkDeleteResponse = {
+  blockedIds?: string[];
+  deleted?: number;
+  deletedIds?: string[];
+  error?: string;
+  missingIds?: string[];
+};
+
 type MediaUpdateResponse = {
   error?: string;
   item?: MediaItem;
@@ -372,6 +380,7 @@ export function MediaStorePanel() {
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
+  const [isDeletingSelected, setIsDeletingSelected] = useState(false);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
   const [addingMediaId, setAddingMediaId] = useState<string | null>(null);
@@ -434,6 +443,7 @@ export function MediaStorePanel() {
     isLoading ||
     isUploading ||
     isMoving ||
+    isDeletingSelected ||
     isCreatingFolder ||
     deletingFolderId !== null ||
     addingMediaId !== null ||
@@ -790,6 +800,65 @@ export function MediaStorePanel() {
     }
   }
 
+  async function handleDeleteSelected() {
+    if (isBusy || selectedMediaIds.length === 0) {
+      return;
+    }
+
+    const selectedItems = items.filter((item) => selectedIds.has(item.id));
+    const deletableItems = selectedItems.filter(canDeleteMedia);
+    if (deletableItems.length === 0) {
+      setMessage("Selected media is used by playlists or managed from the Playlist view.");
+      setMessageTone("warning");
+      return;
+    }
+
+    const skippedCount = selectedItems.length - deletableItems.length;
+    const confirmed = window.confirm(
+      `Delete ${deletableItems.length} selected media item${deletableItems.length === 1 ? "" : "s"} from Media Store?${skippedCount > 0 ? ` ${skippedCount} selected item${skippedCount === 1 ? "" : "s"} will be skipped because it is in a playlist or playlist-managed.` : ""}`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeletingSelected(true);
+    setMessage(`Deleting ${deletableItems.length} selected item${deletableItems.length === 1 ? "" : "s"}...`);
+    setMessageTone("idle");
+    try {
+      const response = await fetch("/api/media", {
+        method: "DELETE",
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          mediaIds: deletableItems.map((item) => item.id)
+        })
+      });
+      const result = (await response.json()) as BulkDeleteResponse;
+      if (!response.ok || result.error || typeof result.deleted !== "number") {
+        throw new Error(result.error ?? "Could not delete selected media.");
+      }
+
+      const blockedCount = result.blockedIds?.length ?? 0;
+      const missingCount = result.missingIds?.length ?? 0;
+      setSelectedMediaIds((current) => current.filter((id) => !(result.deletedIds ?? []).includes(id)));
+      await loadMedia(true);
+      setMessage(
+        `${result.deleted} item${result.deleted === 1 ? "" : "s"} deleted.${
+          blockedCount > 0 ? ` ${blockedCount} still in playlist.` : ""
+        }${missingCount > 0 ? ` ${missingCount} no longer found.` : ""}`
+      );
+      setMessageTone(blockedCount > 0 || missingCount > 0 ? "warning" : "success");
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not delete selected media.");
+      setMessageTone("error");
+    } finally {
+      setIsDeletingSelected(false);
+    }
+  }
+
   function startEditingTags(item: MediaItem) {
     setEditingTagMediaId(item.id);
     setEditingTags(tagString(item.tags));
@@ -1033,7 +1102,7 @@ export function MediaStorePanel() {
             </div>
           </form>
 
-          <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_180px_auto] md:items-center">
+          <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_180px_auto_auto] md:items-center">
             <p className="text-sm text-zinc-600">{selectedMediaIds.length} selected</p>
             <label className="sr-only" htmlFor="move-media-folder">Move selected to folder</label>
             <select
@@ -1055,6 +1124,14 @@ export function MediaStorePanel() {
               className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400"
             >
               {isMoving ? "Moving" : "Move"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDeleteSelected()}
+              disabled={isBusy || selectedMediaIds.length === 0}
+              className="min-h-10 rounded-md border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-700 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400"
+            >
+              {isDeletingSelected ? "Deleting" : "Delete selected"}
             </button>
           </div>
         </div>

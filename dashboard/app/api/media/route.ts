@@ -45,6 +45,12 @@ type MediaApiItem = MediaRecord & {
   playlistUseCount: number;
 };
 
+type BulkDeleteMediaResult = {
+  blockedIds: string[];
+  deletedIds: string[];
+  missingIds: string[];
+};
+
 function parseTags(value: FormDataEntryValue | null): string[] {
   if (typeof value !== "string") {
     return [];
@@ -136,6 +142,119 @@ function playlistAssetFileName(asset: PlaylistAsset): string | null {
   }
 
   return path.basename(asset.uri);
+}
+
+function requestedMediaIds(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      value
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .slice(0, 500)
+    )
+  );
+}
+
+async function playlistFileNamesInUse(): Promise<Set<string>> {
+  const playlistStore = await readPlaylistStore();
+  const fileNames = new Set<string>();
+
+  for (const playlist of playlistStore.items) {
+    for (const asset of playlist.assets) {
+      const fileName = playlistAssetFileName(asset);
+      if (fileName) {
+        fileNames.add(fileName);
+      }
+    }
+  }
+
+  return fileNames;
+}
+
+async function deleteMediaRecords(mediaIds: string[]): Promise<BulkDeleteMediaResult> {
+  const mediaStore = await readMediaStore();
+  const requestedIds = new Set(mediaIds.filter((id) => !id.startsWith("playlist:")));
+  const missingIds = mediaIds.filter((id) => id.startsWith("playlist:"));
+  const playlistFileNames = await playlistFileNamesInUse();
+  const deletedIds: string[] = [];
+  const blockedIds: string[] = [];
+  const deletedFileNames = new Set<string>();
+
+  for (const item of mediaStore.items) {
+    if (!requestedIds.has(item.id)) {
+      continue;
+    }
+
+    if (playlistFileNames.has(item.playbackFileName)) {
+      blockedIds.push(item.id);
+      continue;
+    }
+
+    deletedIds.push(item.id);
+    deletedFileNames.add(item.playbackFileName);
+  }
+
+  for (const id of requestedIds) {
+    if (
+      !deletedIds.includes(id) &&
+      !blockedIds.includes(id) &&
+      !mediaStore.items.some((item) => item.id === id)
+    ) {
+      missingIds.push(id);
+    }
+  }
+
+  if (deletedIds.length === 0) {
+    return { blockedIds, deletedIds, missingIds };
+  }
+
+  const now = new Date().toISOString();
+  const deletedIdSet = new Set(deletedIds);
+  const nextItems = mediaStore.items.filter((item) => !deletedIdSet.has(item.id));
+  const folderStore = await readMediaFolderStore();
+  const assignments = { ...folderStore.assignments };
+
+  for (const id of deletedIds) {
+    delete assignments[id];
+  }
+
+  await writeMediaStore({
+    ...mediaStore,
+    items: nextItems,
+    version: mediaStore.version + 1,
+    updatedAt: now
+  });
+  await writeMediaFolderStore({
+    ...folderStore,
+    assignments,
+    version: folderStore.version + 1,
+    updatedAt: now
+  });
+
+  for (const fileName of deletedFileNames) {
+    const fileStillReferenced = nextItems.some((item) => item.playbackFileName === fileName);
+    if (!fileStillReferenced && !playlistFileNames.has(fileName)) {
+      await fs.rm(path.join(sampleAssetsDirectory(), path.basename(fileName)), { force: true });
+    }
+  }
+
+  await appendActivityRecord({
+    id: randomUUID(),
+    action: "media-bulk-delete",
+    actor: "local-operator",
+    entityId: deletedIds.join(","),
+    entityType: "media",
+    message: `Deleted ${deletedIds.length} media item${deletedIds.length === 1 ? "" : "s"} from media store.`,
+    result: blockedIds.length > 0 ? "warning" : "success",
+    timestamp: now
+  });
+
+  return { blockedIds, deletedIds, missingIds };
 }
 
 async function fileSizeForPlaybackFile(fileName: string): Promise<{ missingFile: boolean; sizeBytes: number }> {
@@ -441,5 +560,40 @@ export async function POST(request: Request) {
       console.warn("media store upload rejected", message);
     }
     return NextResponse.json({ error: message }, { status });
+  }
+}
+
+export async function DELETE(request: Request) {
+  await ensureLocalDataFoundation();
+
+  try {
+    const body = (await request.json().catch(() => ({}))) as {
+      mediaIds?: unknown;
+    };
+    const mediaIds = requestedMediaIds(body.mediaIds);
+    if (mediaIds.length === 0) {
+      return NextResponse.json({ error: "Choose media to delete." }, { status: 400 });
+    }
+
+    const result = await deleteMediaRecords(mediaIds);
+    if (result.deletedIds.length === 0 && result.blockedIds.length > 0) {
+      return NextResponse.json(
+        {
+          ...result,
+          deleted: 0,
+          error: "Selected media is still used by a playlist. Remove it from playlists before deleting it."
+        },
+        { status: 409 }
+      );
+    }
+
+    return NextResponse.json({
+      ...result,
+      deleted: result.deletedIds.length
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Bulk media delete failed.";
+    console.error("bulk media delete failed", error);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
