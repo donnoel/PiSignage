@@ -7,6 +7,11 @@ type PublishResponse = {
   error?: string;
   playlistVersion?: number;
   piPublish?: {
+    assetsChecked?: number;
+    assetsCopied?: number;
+    assetsSkipped?: number;
+    assetsVerifiedByChecksum?: number;
+    assetsVerifiedBySize?: number;
     enabled: boolean;
     ok: boolean;
     message: string;
@@ -85,7 +90,7 @@ export function LocalPublishForm({
       }
 
       const publishMessage = result.piPublish?.message ?? "Publish saved.";
-      setMessage(result.piPublish?.ok ? "Sent." : publishMessage);
+      setMessage(publishMessage);
       setMessageKind(result.piPublish && !result.piPublish.ok ? "warning" : "success");
       startTransition(() => router.refresh());
     } catch (error) {

@@ -106,6 +106,11 @@ type DeviceLiveStatus = {
 type PublishStatus = {
   action: string;
   assetCount: number;
+  assetsChecked?: number;
+  assetsCopied?: number;
+  assetsSkipped?: number;
+  assetsVerifiedByChecksum?: number;
+  assetsVerifiedBySize?: number;
   message: string;
   ok: boolean;
   piPublishEnabled: boolean;
@@ -809,6 +814,29 @@ function shortPublishDetail(publishStatus: PublishStatus | null): string {
   return publishStatus.piPublishEnabled ? "Needs attention" : "Saved locally";
 }
 
+function formatCount(value: number | undefined, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function publishAssetSyncDetail(publishStatus: PublishStatus | null): string {
+  if (!publishStatus || typeof publishStatus.assetsChecked !== "number") {
+    return "No asset diff recorded yet.";
+  }
+
+  const copied = formatCount(publishStatus.assetsCopied);
+  const skipped = formatCount(publishStatus.assetsSkipped);
+  const hashVerified = formatCount(publishStatus.assetsVerifiedByChecksum);
+  const sizeVerified = formatCount(publishStatus.assetsVerifiedBySize);
+  const verification =
+    hashVerified > 0
+      ? `${hashVerified} hash-verified`
+      : sizeVerified > 0
+        ? `${sizeVerified} size-verified`
+        : "verification not recorded";
+
+  return `Checked ${publishStatus.assetsChecked} asset${publishStatus.assetsChecked === 1 ? "" : "s"}; copied ${copied}, skipped ${skipped}; ${verification}.`;
+}
+
 function publishStatusDisplayMessage(publishStatus: PublishStatus): string {
   if (publishStatus.message.includes("could not verify every media file on the Pi")) {
     return "Saved locally. Beam cannot verify every media file on the Pi until the Pi and media are available.";
@@ -1412,7 +1440,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             : "Pending publish"
         : "Not recorded",
       detail: publishStatusForSelected
-        ? `${actionLabel(publishStatusForSelected.action)} wrote playlist v${publishStatusForSelected.playlistVersion}. ${publishStatusDisplayMessage(publishStatusForSelected)}`
+        ? `${actionLabel(publishStatusForSelected.action)} wrote playlist v${publishStatusForSelected.playlistVersion}. ${publishStatusDisplayMessage(publishStatusForSelected)} ${publishAssetSyncDetail(publishStatusForSelected)}`
         : "No local publish status file has been written yet.",
       tone: publishStatusForSelected
         ? publishStatusForSelected.ok
@@ -1962,6 +1990,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                       <dt className="font-semibold text-zinc-500">Last sent</dt>
                       <dd className="mt-1 font-semibold text-zinc-950">{publishStateLabel(publishStatusForSelected)}</dd>
                       <dd className="mt-1 text-zinc-600">{shortPublishDetail(publishStatusForSelected)}</dd>
+                    </div>
+                    <div className="rounded-md bg-zinc-50 p-3">
+                      <dt className="font-semibold text-zinc-500">Asset sync</dt>
+                      <dd className="mt-1 text-zinc-700">{publishAssetSyncDetail(publishStatusForSelected)}</dd>
                     </div>
                     <div className="rounded-md bg-zinc-50 p-3">
                       <dt className="font-semibold text-zinc-500">Screens</dt>
