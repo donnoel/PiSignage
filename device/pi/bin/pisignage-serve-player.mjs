@@ -59,6 +59,11 @@ async function resolveRequestPath(pathname) {
   }
 
   if (pathname.startsWith("/assets/")) {
+    const distAssetPath = pathWithin(distRoot, pathname);
+    if (distAssetPath && (await fileExists(distAssetPath))) {
+      return distAssetPath;
+    }
+
     const contentAssetPath = pathWithin(contentRoot, pathname);
     if (contentAssetPath && (await fileExists(contentAssetPath))) {
       return contentAssetPath;

@@ -37,8 +37,13 @@ async function withTempPlaybackFixture(run) {
 
   try {
     await mkdir(assetsRoot, { recursive: true });
-    await mkdir(distRoot, { recursive: true });
-    await writeFile(path.join(distRoot, "index.html"), "<!doctype html><title>PiSignage smoke</title>\n", "utf8");
+    await mkdir(path.join(distRoot, "assets"), { recursive: true });
+    await writeFile(
+      path.join(distRoot, "index.html"),
+      '<!doctype html><title>PiSignage smoke</title><script type="module" src="/assets/player.js"></script>\n',
+      "utf8"
+    );
+    await writeFile(path.join(distRoot, "assets", "player.js"), "console.log('player smoke');\n", "utf8");
     await writeFile(path.join(assetsRoot, "good.mp4"), Buffer.alloc(16));
     await writeFile(
       path.join(contentRoot, "playlist.local.json"),
@@ -214,6 +219,18 @@ async function runBrowserMissingMediaSmoke(contentRoot, distRoot) {
     }
     const missingAssetBody = await missingAssetResponse.text();
     requireOutput("missing asset message", missingAssetBody, "Asset not found: /assets/missing.mp4");
+
+    const playerAssetResponse = await fetchWithTimeout(`${baseUrl}/assets/player.js`);
+    if (playerAssetResponse.status !== 200) {
+      throw new Error(`Expected 200 for player dist asset, got ${playerAssetResponse.status}`);
+    }
+    const playerAssetBody = await playerAssetResponse.text();
+    requireOutput("player dist asset", playerAssetBody, "player smoke");
+
+    const mediaAssetResponse = await fetchWithTimeout(`${baseUrl}/assets/good.mp4`);
+    if (mediaAssetResponse.status !== 200) {
+      throw new Error(`Expected 200 for media asset, got ${mediaAssetResponse.status}`);
+    }
 
     await rm(path.join(contentRoot, "playlist.local.json"), { force: true });
     const missingPlaylistResponse = await fetchWithTimeout(`${baseUrl}/playlist.local.json`);
