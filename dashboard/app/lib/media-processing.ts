@@ -26,6 +26,7 @@ export type MediaSourceType = "image" | "video";
 
 export type PlaybackPrepProfile = {
   audioCodec: "aac";
+  fps: number;
   height: number;
   id: string;
   pixelFormat: "yuv420p";
@@ -35,6 +36,7 @@ export type PlaybackPrepProfile = {
 
 export type MediaProbe = {
   audioCodec: string | null;
+  averageFps: number | null;
   bitRate: number | null;
   durationSeconds: number | null;
   fps: number | null;
@@ -46,6 +48,7 @@ export type MediaProbe = {
 };
 
 type FfprobeStream = {
+  avg_frame_rate?: string;
   bit_rate?: string;
   codec_name?: string;
   codec_type?: string;
@@ -66,12 +69,22 @@ type FfprobeOutput = {
 
 export const playbackPrepProfile: PlaybackPrepProfile = {
   audioCodec: "aac",
+  fps: 30,
   height: 720,
-  id: "signage-720p-v1",
+  id: "signage-720p-v3",
   pixelFormat: "yuv420p",
   videoCodec: "h264",
   width: 1280
 };
+
+const defaultVideoTranscodeTimeoutMs = 30 * 60 * 1000;
+const configuredVideoTranscodeTimeoutMs = Number.parseInt(
+  process.env.PISIGNAGE_VIDEO_TRANSCODE_TIMEOUT_MS ?? "",
+  10
+);
+const videoTranscodeTimeoutMs = Number.isFinite(configuredVideoTranscodeTimeoutMs)
+  ? configuredVideoTranscodeTimeoutMs
+  : defaultVideoTranscodeTimeoutMs;
 
 export class MediaUploadError extends Error {
   constructor(
@@ -191,6 +204,25 @@ function parseFrameRate(value: string | undefined): number | null {
   return numerator / denominator;
 }
 
+function sourceFpsForProbe(probe: MediaProbe): number | null {
+  return probe.averageFps ?? probe.fps;
+}
+
+function shouldMotionInterpolate(probe: MediaProbe): boolean {
+  const fps = sourceFpsForProbe(probe);
+  return fps !== null && fps > 0 && fps < playbackPrepProfile.fps - 0.25;
+}
+
+function playbackSafeVideoFilter(probe: MediaProbe): string {
+  const scaleAndPad =
+    "scale=1280:720:force_original_aspect_ratio=decrease:in_range=full:out_range=tv,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1";
+  const cadence = shouldMotionInterpolate(probe)
+    ? `minterpolate=fps=${playbackPrepProfile.fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1`
+    : `fps=${playbackPrepProfile.fps}`;
+
+  return `${scaleAndPad},${cadence},format=yuv420p`;
+}
+
 export async function sha256ForFile(filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = createHash("sha256");
@@ -222,6 +254,7 @@ export async function probeMediaFile(filePath: string): Promise<MediaProbe> {
 
     return {
       audioCodec: audio?.codec_name ?? null,
+      averageFps: parseFrameRate(video?.avg_frame_rate),
       bitRate: parseNullableNumber(video?.bit_rate ?? output.format?.bit_rate),
       durationSeconds: parseNullableNumber(output.format?.duration),
       fps: parseFrameRate(video?.r_frame_rate),
@@ -259,8 +292,13 @@ export function validatePlaybackSafeProbe(probe: MediaProbe): string[] {
   if (probe.pixelFormat !== playbackPrepProfile.pixelFormat) {
     failures.push(`pixel format must be ${playbackPrepProfile.pixelFormat}`);
   }
-  if (probe.fps === null || Math.abs(probe.fps - 30) > 0.01) {
-    failures.push("frame rate must be 30fps");
+  if (
+    probe.fps === null ||
+    probe.averageFps === null ||
+    Math.abs(probe.fps - playbackPrepProfile.fps) > 0.05 ||
+    Math.abs(probe.averageFps - playbackPrepProfile.fps) > 0.05
+  ) {
+    failures.push(`frame rate must be constant ${playbackPrepProfile.fps}fps`);
   }
   if (probe.audioCodec !== null && probe.audioCodec !== playbackPrepProfile.audioCodec) {
     failures.push(`audio codec must be ${playbackPrepProfile.audioCodec} when audio is present`);
@@ -386,6 +424,9 @@ export async function createPlaybackSafeVideoClip(
   const temporaryOutputPath = `${outputVideoPath}.${process.pid}.tmp.mp4`;
 
   try {
+    const sourceProbe = await probeMediaFile(sourceVideoPath);
+    const targetVideoFilter = playbackSafeVideoFilter(sourceProbe);
+
     await execFileAsync(
       ffmpegBinary,
       [
@@ -396,21 +437,27 @@ export async function createPlaybackSafeVideoClip(
         "-i",
         sourceVideoPath,
         "-vf",
-        "scale=1280:720:force_original_aspect_ratio=decrease:in_range=full:out_range=tv,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,format=yuv420p",
-        "-r",
-        "30",
+        targetVideoFilter,
         "-c:v",
         "libx264",
         "-preset",
-        "slow",
+        "medium",
+        "-crf",
+        "18",
         "-profile:v",
-        "baseline",
+        "high",
         "-level:v",
-        "3.1",
+        "4.0",
         "-pix_fmt",
         "yuv420p",
-        "-x264-params",
-        "keyint=30:min-keyint=30:scenecut=0:bframes=0",
+        "-color_range",
+        "tv",
+        "-colorspace",
+        "bt709",
+        "-color_primaries",
+        "bt709",
+        "-color_trc",
+        "bt709",
         "-movflags",
         "+faststart",
         "-c:a",
@@ -423,7 +470,7 @@ export async function createPlaybackSafeVideoClip(
         "2",
         temporaryOutputPath
       ],
-      { timeout: 300_000, maxBuffer: 1024 * 1024 * 4 }
+      { timeout: videoTranscodeTimeoutMs, maxBuffer: 1024 * 1024 * 4 }
     );
     await fs.rename(temporaryOutputPath, outputVideoPath);
   } catch (error) {
