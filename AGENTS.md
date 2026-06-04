@@ -6,6 +6,7 @@ This repo is a local-first Raspberry Pi digital signage proof of concept. You ar
 - Keep changes small and focused. No broad rewrites unless explicitly requested.
 - Preserve the local-first contract. Do not introduce AWS/cloud work unless the user explicitly asks for it.
 - Keep playback and recovery first-class. Do not regress fullscreen playback, reboot recovery, power-loss recovery, network-loss tolerance, or local playlist behavior.
+- Keep the five Pi appliances identical at all times except intentional identity/network fields such as hostname, IP address, screen name, screen assignment, and location. Beam-managed scripts, services, package/runtime baselines, playlist files, and published media sets must not drift between C1-C5.
 - Keep dashboard, player, and Pi/device scripts clearly separated.
 - No real secrets in git. Keep `.env.local`, local state, credentials, generated output, and uploaded media out of source control.
 - Use atomic writes for local JSON state where practical.
@@ -42,6 +43,7 @@ This repo is a local-first Raspberry Pi digital signage proof of concept. You ar
 
 ## Pi And Playback Rules
 
+- C1-C5 must remain identical Beam appliances except for identity/network metadata. Treat drift between Pis as a production defect: before and after Pi changes, verify managed script/service hashes, Node/VLC package baselines, playlist hash, published asset count/hash set, and active service state across all five when the hardware is reachable.
 - VLC is the preferred field playback path for appliance mode unless the user explicitly asks to test another player.
 - Keep Chromium/browser playback available as a fallback/experimental path when already present.
 - Pi changes should be reproducible through repo scripts, docs, or systemd units rather than only manual shell history.

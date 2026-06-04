@@ -76,6 +76,7 @@ Future AWS services are expected to include API Gateway, Lambda, DynamoDB, S3, C
 
 Do not regress these contracts:
 
+- C1-C5 must remain identical Beam appliances except for intentional identity/network fields such as hostname, IP address, screen name, screen assignment, and location. Any drift in Beam-managed scripts, services, package/runtime baselines, playlist files, published media sets, or service state is a production defect.
 - Device playback must work from local playlist/cache data.
 - Device startup should recover to playback without dashboard interaction.
 - A missing network connection must not stop already-cached playback.
@@ -117,6 +118,7 @@ Near-term priority order:
 ## Player Rules
 
 - Reliable fullscreen playback is the first playback target.
+- Playback and publish changes must preserve Pi parity. When reachable, verify all five Pis share the same managed VLC/player script hashes, systemd service hashes, Node/VLC package baselines, playlist hash, published asset set, and active service state after changes.
 - VLC is the preferred field playback path for appliance mode unless the user explicitly asks to revisit another player.
 - The player must load from a real local playlist JSON path.
 - JPEG and PNG dashboard uploads should become Pi-safe MP4 still clips before VLC sees them.
