@@ -4,8 +4,7 @@ Description=PiSignage Player Static Server
 [Service]
 Type=simple
 WorkingDirectory=/home/donnoel/PiSignage
-ExecStartPre=/usr/bin/npm --workspace player run build
-ExecStart=/usr/bin/npm run serve:player
+ExecStart=/usr/bin/node /home/donnoel/PiSignage/device/pi/bin/pisignage-serve-player.mjs
 Restart=always
 RestartSec=5
 
