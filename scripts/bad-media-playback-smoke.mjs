@@ -151,7 +151,8 @@ async function runVlcUnexpectedExitSmoke(tempRoot) {
       PISIGNAGE_PLAYLIST_FILE: "playlist.local.json",
       PISIGNAGE_STARTUP_SETTLE_MS: "0",
       PISIGNAGE_STATUS_PATH: statusPath,
-      PISIGNAGE_VLC_BIN: fakeVlcPath
+      PISIGNAGE_VLC_BIN: fakeVlcPath,
+      PISIGNAGE_VLC_PLAYBACK_MODE: "per-asset"
     },
     encoding: "utf8"
   });

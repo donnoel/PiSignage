@@ -17,8 +17,8 @@ const vlcBinary = process.env.PISIGNAGE_VLC_BIN ?? "/usr/bin/cvlc";
 const displayOutput = process.env.PISIGNAGE_DISPLAY_OUTPUT ?? "HDMI-A-1";
 const displayMode = process.env.PISIGNAGE_DISPLAY_RESOLUTION ?? "1920x1080@60.000000";
 const vlcVideoOutput = process.env.PISIGNAGE_VLC_VIDEO_OUTPUT ?? "wl_shm";
-const vlcAvcodecHardware = process.env.PISIGNAGE_VLC_AVCODEC_HW ?? "none";
-const vlcAudioMode = process.env.PISIGNAGE_VLC_AUDIO ?? "off";
+const vlcAvcodecHardware = process.env.PISIGNAGE_VLC_AVCODEC_HW?.trim() ?? "";
+const vlcAudioMode = process.env.PISIGNAGE_VLC_AUDIO?.trim() ?? "on";
 const vlcWaylandDisplay =
   process.env.PISIGNAGE_VLC_WAYLAND_DISPLAY ?? process.env.WAYLAND_DISPLAY ?? "wayland-0";
 const statusPath = path.resolve(
@@ -35,9 +35,10 @@ const playlistPollIntervalMs = Number.parseInt(
   10
 );
 const playlistHandoffOverlapMs = Number.parseInt(
-  process.env.PISIGNAGE_PLAYLIST_HANDOFF_OVERLAP_MS ?? "1000",
+  process.env.PISIGNAGE_PLAYLIST_HANDOFF_OVERLAP_MS ?? "0",
   10
 );
+const playlistPlaybackMode = process.env.PISIGNAGE_VLC_PLAYBACK_MODE ?? "continuous";
 const vlcStopSignal = process.env.PISIGNAGE_VLC_STOP_SIGNAL ?? "SIGKILL";
 const statusHeartbeatIntervalMs = Number.parseInt(
   process.env.PISIGNAGE_STATUS_HEARTBEAT_INTERVAL_MS ?? "15000",
@@ -64,6 +65,7 @@ let activeStatus = {
   displayMode,
   vlcAudioMode,
   vlcAvcodecHardware,
+  playlistPlaybackMode,
   vlcVideoOutput,
   vlcWaylandDisplay,
   playlistId: null,
@@ -315,15 +317,15 @@ async function playlistHasChanged(playlist) {
   return playlistStats.mtimeMs !== playlist.modifiedMs;
 }
 
-function vlcArgsForAsset(asset) {
+function vlcBaseArgs() {
   const waylandArgs = vlcVideoOutput.startsWith("wl_")
     ? ["--wl-display", vlcWaylandDisplay]
     : [];
+  const hardwareArgs = vlcAvcodecHardware ? ["--avcodec-hw", vlcAvcodecHardware] : [];
   const audioArgs = vlcAudioMode === "off" ? ["--no-audio"] : [];
 
   return [
-    "--avcodec-hw",
-    vlcAvcodecHardware,
+    ...hardwareArgs,
     ...audioArgs,
     "-V",
     vlcVideoOutput,
@@ -335,13 +337,20 @@ function vlcArgsForAsset(asset) {
     "--no-video-title-show",
     "--quiet",
     "--drm-vout-display",
-    displayOutput,
-    asset.path
+    displayOutput
   ];
 }
 
-function startAssetPlayer(asset) {
-  const child = spawn(vlcBinary, vlcArgsForAsset(asset), {
+function vlcArgsForAsset(asset) {
+  return [...vlcBaseArgs(), asset.path];
+}
+
+function vlcArgsForPlaylist(playlist) {
+  return [...vlcBaseArgs(), ...playlist.assets.map((asset) => asset.path)];
+}
+
+function startPlayer(args, asset = null) {
+  const child = spawn(vlcBinary, args, {
     stdio: "inherit"
   });
 
@@ -360,6 +369,14 @@ function startAssetPlayer(asset) {
 
   activePlayers.add(handle);
   return handle;
+}
+
+function startAssetPlayer(asset) {
+  return startPlayer(vlcArgsForAsset(asset), asset);
+}
+
+function startPlaylistPlayer(playlist) {
+  return startPlayer(vlcArgsForPlaylist(playlist));
 }
 
 function stopAssetPlayer(handle) {
@@ -493,6 +510,45 @@ async function playPlaylist(playlist) {
   }
 }
 
+async function playPlaylistContinuously(playlist) {
+  log(`playing playlist continuously with ${playlist.assets.length} media asset(s)`);
+  await writePlaybackStatus(playlist, "playing", {
+    currentAssetId: null,
+    currentAssetPath: null,
+    currentAssetDurationSeconds: null,
+    lastError: null
+  });
+  const player = startPlaylistPlayer(playlist);
+
+  try {
+    while (!stopping) {
+      const playbackResult = await Promise.race([
+        waitWithPlaylistPolling(playlist, playlistPollIntervalMs),
+        player.exited.then((exit) => ({ exit }))
+      ]);
+
+      if (playbackResult.reloadRequested) {
+        log("playlist changed; restarting VLC with the latest local playlist");
+        return;
+      }
+
+      if (playbackResult.exit) {
+        if (isExpectedPlayerExit(player, playbackResult.exit)) {
+          return;
+        }
+
+        const message = `VLC exited with code ${
+          playbackResult.exit.code ?? "unknown"
+        } signal ${playbackResult.exit.signal ?? "none"}`;
+        await writePlaybackStatus(playlist, "failed", { lastError: message });
+        throw new Error(message);
+      }
+    }
+  } finally {
+    stopAssetPlayer(player);
+  }
+}
+
 async function run() {
   if (dryRun) {
     const playlist = await playableAssetsFromPlaylist();
@@ -525,7 +581,11 @@ async function run() {
       `loaded ${playlist.assets.length} media asset(s) from ${playlist.playlistId} version ${playlist.version}`
     );
     await writePlaybackStatus(playlist, "playing", { lastError: null });
-    await playPlaylist(playlist);
+    if (playlistPlaybackMode === "per-asset") {
+      await playPlaylist(playlist);
+    } else {
+      await playPlaylistContinuously(playlist);
+    }
   }
 
   await writeStatus({ state: "stopped" });
