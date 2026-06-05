@@ -451,9 +451,10 @@ export async function publishPlaylistToPi(
 
 export async function publishScheduleStoreToPi(
   schedulePath: string,
-  messages: { notConfigured: string; failure: string; success?: string }
+  messages: { notConfigured: string; failure: string; success?: string },
+  targetConfig?: PiConfig
 ): Promise<PiPublishResult> {
-  const config = readPiConfig();
+  const config = targetConfig ?? readPiConfig();
 
   if (!config) {
     return {

@@ -6,14 +6,12 @@ import {
   readActivityStore,
   readScheduleStore,
   readSettingsRecord,
-  scheduleStorePath,
   type ScheduleRecord,
   type ScheduleStore,
   writeScheduleStore
 } from "../../lib/local-data-store";
 import { readNormalizedInventory, repairSchedulesForScreens } from "../../lib/local-inventory";
 import { readLivePlaylist, readPlaylistStore } from "../../lib/local-playlist";
-import { publishScheduleStoreToPi, readPiConfig, runSsh } from "../../lib/pi-local";
 import {
   dayOptions,
   isValidTime,
@@ -101,52 +99,19 @@ async function inventoryForSchedules() {
   return readNormalizedInventory(playlist.playlistId);
 }
 
-async function publishSchedules() {
-  const publish = await publishScheduleStoreToPi(scheduleStorePath(), {
-    failure: "Schedule publish needs attention.",
-    notConfigured: "Pi schedule publish is not configured; schedules stayed local."
-  });
-
-  await appendActivityRecord({
-    id: randomUUID(),
-    action: "schedule-publish",
-    actor: "local-operator",
-    entityId: "schedules",
-    entityType: "schedule",
-    message: publish.message,
-    result: publish.ok ? "success" : publish.enabled ? "warning" : "warning",
-    timestamp: isoNow()
-  });
-
-  return publish;
-}
-
-async function checkPiReachable() {
-  const config = readPiConfig();
-
-  if (!config) {
-    return false;
-  }
-
-  try {
-    await runSsh(config, "true", { timeoutMs: 3_000 });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function scheduleResponse(publish?: Awaited<ReturnType<typeof publishSchedules>>) {
+async function scheduleResponse(publish?: {
+  enabled: boolean;
+  message: string;
+  ok: boolean;
+}) {
   await ensureLocalDataFoundation();
   const inventory = await inventoryForSchedules();
   await repairSchedulesForScreens(inventory.screens.items.map((screen) => screen.id));
-  const [scheduleStore, settings, playlistStore, activityStore, piConfig, piReachable] = await Promise.all([
+  const [scheduleStore, settings, playlistStore, activityStore] = await Promise.all([
     readScheduleStore(),
     readSettingsRecord(),
     readPlaylistStore(),
-    readActivityStore(),
-    Promise.resolve(readPiConfig()),
-    checkPiReachable()
+    readActivityStore()
   ]);
   const screenStates = inventory.screens.items.map((screen) =>
     scheduleStateForScreen(scheduleStore.items, screen)
@@ -182,6 +147,7 @@ async function scheduleResponse(publish?: Awaited<ReturnType<typeof publishSched
       deviceName: linkedDevice?.name ?? null
     };
   });
+  const configuredScreenCount = screens.filter((screen) => Boolean(screen.deviceHost)).length;
 
   return NextResponse.json({
     defaultTimezone: settings.defaultScheduleTimezone,
@@ -194,7 +160,7 @@ async function scheduleResponse(publish?: Awaited<ReturnType<typeof publishSched
     })),
     publish: publish ?? null,
     scheduleSupport: {
-      host: piConfig?.host ?? null,
+      configuredScreenCount,
       lastPublish: lastSchedulePublish
         ? {
             message: lastSchedulePublish.message,
@@ -210,8 +176,7 @@ async function scheduleResponse(publish?: Awaited<ReturnType<typeof publishSched
           }
         : null,
       pendingLocalChanges,
-      piConfigured: Boolean(piConfig),
-      reachable: piReachable
+      piConfigured: configuredScreenCount > 0
     },
     schedules: scheduleStore.items,
     screens,
@@ -266,7 +231,11 @@ export async function POST(request: Request) {
       timestamp
     });
 
-    return scheduleResponse(await publishSchedules());
+    return scheduleResponse({
+      enabled: false,
+      ok: true,
+      message: `Saved ${schedule.name}. Publish hours when you are ready to send them to screens.`
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Schedule create failed." },
@@ -325,7 +294,11 @@ export async function PATCH(request: Request) {
       timestamp
     });
 
-    return scheduleResponse(await publishSchedules());
+    return scheduleResponse({
+      enabled: false,
+      ok: true,
+      message: `Saved ${input.name}. Publish hours when you are ready to send them to screens.`
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Schedule update failed." },
@@ -366,7 +339,11 @@ export async function DELETE(request: Request) {
       timestamp
     });
 
-    return scheduleResponse(await publishSchedules());
+    return scheduleResponse({
+      enabled: false,
+      ok: true,
+      message: `Cleared ${schedule.name}. Publish hours when you are ready to update screens.`
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Schedule remove failed." },

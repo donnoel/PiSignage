@@ -57,12 +57,11 @@ type SchedulePublishSummary = {
 };
 
 type ScheduleSupport = {
-  host: string | null;
+  configuredScreenCount: number;
   lastPublish: SchedulePublishSummary | null;
   lastSuccessfulPublish: SchedulePublishSummary | null;
   pendingLocalChanges: boolean;
   piConfigured: boolean;
-  reachable: boolean;
 };
 
 type ScheduleResponse = {
@@ -154,14 +153,17 @@ function screenPublishStatus(screen: ScreenRecord, support: ScheduleSupport | un
     return { label: "Local only", tone: "muted" };
   }
 
-  const isLiveScreen = Boolean(screen.deviceHost && support.host && screen.deviceHost === support.host);
-  if (!isLiveScreen) {
-    return { label: "Inventory only", tone: "muted" };
+  if (!screen.deviceHost) {
+    return { label: "No Pi linked", tone: "muted" };
   }
 
-  return support.reachable
-    ? { label: "Live screen", tone: "good" }
-    : { label: "Screen down", tone: "danger" };
+  if (support.pendingLocalChanges) {
+    return { label: "Publish needed", tone: "warn" };
+  }
+
+  return support.lastSuccessfulPublish
+    ? { label: "Published", tone: "good" }
+    : { label: "Ready to publish", tone: "muted" };
 }
 
 export function SchedulingPanel() {
@@ -175,7 +177,7 @@ export function SchedulingPanel() {
   const [endTime, setEndTime] = useState("17:00");
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>(defaultDays);
   const [screenIds, setScreenIds] = useState<string[]>([]);
-  const [busyAction, setBusyAction] = useState<"clear" | "load" | "save" | null>(null);
+  const [busyAction, setBusyAction] = useState<"clear" | "load" | "publish" | "save" | null>(null);
   const [isPending, startTransition] = useTransition();
   const isBusy = Boolean(busyAction) || isPending;
 
@@ -327,7 +329,7 @@ export function SchedulingPanel() {
         throw new Error(result.error ?? "Schedule save failed.");
       }
       setData(result);
-      setMessage(result.publish?.message ?? "Schedule saved.");
+      setMessage(result.publish?.message ?? "Schedule saved locally.");
       resetForm(result.defaultTimezone);
       startTransition(() => router.refresh());
     } catch (error) {
@@ -375,13 +377,42 @@ export function SchedulingPanel() {
         throw new Error(result.error ?? "Schedule clear failed.");
       }
       setData(result);
-      setMessage(result.publish?.message ?? `Cleared hours for ${screen.name}.`);
+      setMessage(result.publish?.message ?? `Cleared hours for ${screen.name} locally.`);
       if (editingId === schedule.id) {
         resetForm(result.defaultTimezone);
       }
       startTransition(() => router.refresh());
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Schedule clear failed.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function publishScheduleForScreen(screen: ScreenRecord) {
+    if (isBusy) {
+      return;
+    }
+
+    setBusyAction("publish");
+    setMessage(`Publishing hours to ${screen.name}...`);
+    try {
+      const response = await fetch("/api/local-schedules/publish", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ screenId: screen.id })
+      });
+      const result = (await response.json()) as { error?: string; publish?: ScheduleResponse["publish"] };
+      if (!response.ok || result.error) {
+        throw new Error(result.error ?? "Schedule publish failed.");
+      }
+      setMessage(result.publish?.message ?? `Published hours to ${screen.name}.`);
+      await loadSchedules();
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Schedule publish failed.");
     } finally {
       setBusyAction(null);
     }
@@ -443,6 +474,7 @@ export function SchedulingPanel() {
                 const playlist = screen.playlistId ? playlistsById.get(screen.playlistId) : null;
                 const isSelected = screenIds.includes(screen.id);
                 const publishStatus = screenPublishStatus(screen, data?.scheduleSupport);
+                const canPublishScreenSchedule = Boolean(screen.deviceHost && (schedule || data?.scheduleSupport.pendingLocalChanges));
 
                 return (
                   <li
@@ -479,6 +511,16 @@ export function SchedulingPanel() {
                           className="min-h-9 rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           Clear
+                        </button>
+                      ) : null}
+                      {canPublishScreenSchedule ? (
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => void publishScheduleForScreen(screen)}
+                          className="min-h-9 rounded-md border border-teal-200 bg-white px-3 py-2 text-xs font-semibold text-teal-800 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {busyAction === "publish" ? "Publishing..." : "Publish"}
                         </button>
                       ) : null}
                     </div>
