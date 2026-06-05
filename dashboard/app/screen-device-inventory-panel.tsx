@@ -57,17 +57,8 @@ type PublishResponse = {
 
 type InventoryPanelProps = {
   deviceStatuses: Record<string, DeviceLiveStatus>;
-  liveHost: string | null;
-  livePlaybackHealthy: boolean;
-  livePlaybackState: string;
-  livePlaylistId: string | null;
-  livePlaylistVersion: number | null;
-  liveReachable: boolean;
-  liveStatusStale: boolean;
   playlistId: string;
   playlists: PlaylistOption[];
-  statusAgeLabel: string;
-  statusTimestampLabel: string;
 };
 
 type DeviceLiveStatus = {
@@ -282,17 +273,8 @@ function piLabel(device: DeviceRecord | null, screen?: ScreenRecord): string {
 
 export function ScreenDeviceInventoryPanel({
   deviceStatuses,
-  liveHost,
-  livePlaybackHealthy,
-  livePlaybackState,
-  livePlaylistId,
-  livePlaylistVersion,
-  liveReachable,
-  liveStatusStale,
   playlistId,
-  playlists,
-  statusAgeLabel,
-  statusTimestampLabel
+  playlists
 }: InventoryPanelProps) {
   const router = useRouter();
   const [inventory, setInventory] = useState<InventoryResponse | null>(null);
@@ -339,7 +321,7 @@ export function ScreenDeviceInventoryPanel({
   }
 
   function deviceIsLive(device: DeviceRecord): boolean {
-    return Boolean(deviceStatuses[device.id]) || Boolean(liveHost && normalized(device.host) === normalized(liveHost));
+    return Boolean(deviceStatuses[device.id]);
   }
 
   function statusFor(device: DeviceRecord | null): DeviceLiveStatus | null {
@@ -380,7 +362,7 @@ export function ScreenDeviceInventoryPanel({
 
     const status = statusFor(device);
     if (deviceIsLive(device)) {
-      const reachable = status?.reachable ?? liveReachable;
+      const reachable = status?.reachable ?? false;
       return reachable
         ? {
             detail: "Beam can reach this screen on the local network.",
@@ -415,10 +397,10 @@ export function ScreenDeviceInventoryPanel({
       };
     }
 
-    const reachable = status?.reachable ?? liveReachable;
-    const playbackHealthy = status?.playbackHealthy ?? livePlaybackHealthy;
-    const playbackLabel = status?.playbackLabel ?? livePlaybackState;
-    const stale = status?.stale ?? liveStatusStale;
+    const reachable = status?.reachable ?? false;
+    const playbackHealthy = status?.playbackHealthy ?? false;
+    const playbackLabel = status?.playbackLabel ?? "unknown";
+    const stale = status?.stale ?? false;
     if (!reachable) {
       return {
         detail: "Playback may continue locally, but Beam cannot verify it until the screen is reachable.",
@@ -484,9 +466,9 @@ export function ScreenDeviceInventoryPanel({
     }
 
     const status = statusFor(device);
-    const reachable = status?.reachable ?? liveReachable;
-    const reportedPlaylistId = status?.playerStatus?.playlistId ?? livePlaylistId;
-    const reportedPlaylistVersion = status?.playerStatus?.playlistVersion ?? livePlaylistVersion;
+    const reachable = status?.reachable ?? false;
+    const reportedPlaylistId = status?.playerStatus?.playlistId ?? null;
+    const reportedPlaylistVersion = status?.playerStatus?.playlistVersion;
     if (!reachable) {
       return {
         detail: "Beam cannot reach this screen to confirm the playlist.",
@@ -549,7 +531,7 @@ export function ScreenDeviceInventoryPanel({
 
     const status = statusFor(device);
     if (deviceIsLive(device)) {
-      const reachable = status?.reachable ?? liveReachable;
+      const reachable = status?.reachable ?? false;
       return reachable
         ? {
             detail: "Reachable on the local network.",
@@ -579,8 +561,8 @@ export function ScreenDeviceInventoryPanel({
       const assignedPlaylist = screen.playlistId ? playlistsById.get(screen.playlistId) ?? null : null;
       const isLive = Boolean(device && deviceIsLive(device));
       const liveStatus = statusFor(device);
-      const reportedPlaylistId = liveStatus?.playerStatus?.playlistId ?? (isLive ? livePlaylistId : null);
-      const reportedPlaylistVersion = liveStatus?.playerStatus?.playlistVersion ?? (isLive ? livePlaylistVersion : null);
+      const reportedPlaylistId = liveStatus?.playerStatus?.playlistId ?? null;
+      const reportedPlaylistVersion = liveStatus?.playerStatus?.playlistVersion ?? null;
       const devicePlaylistLine =
         device?.playlistId && device.playlistId !== screen.playlistId
           ? `Pi saved as ${playlistName(device.playlistId)}.`
@@ -599,8 +581,8 @@ export function ScreenDeviceInventoryPanel({
         device,
         devicePlaylistLine,
         isLive,
-        lastSeenAge: isLive ? liveStatus?.ageLabel ?? statusAgeLabel : "Not seen yet",
-        lastSeenFull: isLive ? liveStatus?.timestampLabel ?? statusTimestampLabel : "No live report yet",
+        lastSeenAge: isLive ? liveStatus?.ageLabel ?? "No timestamp" : "Not seen yet",
+        lastSeenFull: isLive ? liveStatus?.timestampLabel ?? "No timestamp available" : "No live report yet",
         lastSeenSort: sortableTimestamp(liveStatus?.playerStatus?.updatedAt),
         needsAttention:
           status.tone === "warn" ||
@@ -621,17 +603,8 @@ export function ScreenDeviceInventoryPanel({
   }, [
     devicesById,
     devicesByScreenId,
-    liveHost,
-    livePlaylistId,
-    livePlaylistVersion,
-    livePlaybackHealthy,
-    livePlaybackState,
-    liveReachable,
-    liveStatusStale,
     playlistsById,
     screens,
-    statusAgeLabel,
-    statusTimestampLabel
   ]);
   const sortedScreenRows = useMemo(() => sortScreenRows(screenRows, screenSort), [screenRows, screenSort]);
 

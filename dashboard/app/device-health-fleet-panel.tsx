@@ -31,20 +31,11 @@ type FleetDeviceHealthPanelProps = {
   screens: ScreenRecord[];
   liveHost: string | null;
   livePlayerUrl: string | null;
-  livePlaylistId: string | null;
-  livePlaybackHealthy: boolean;
-  livePlaybackState: string;
-  livePlaylistVersion: number | null;
-  liveReachable: boolean;
-  liveStatusStale: boolean;
   playlists: Array<{
     name: string;
     playlistId: string;
     version: number;
   }>;
-  statusAgeLabel: string;
-  statusUpdatedAt: string | null;
-  statusTimestampLabel: string;
 };
 
 type DeviceLiveStatus = {
@@ -75,6 +66,7 @@ type RowState = {
   isLive: boolean;
   lastSeenAge: string;
   lastSeenFull: string;
+  lastStatusUpdatedAt: string | null;
   linkedScreen: ScreenRecord | null;
   needsAttention: boolean;
   playbackDetail: string;
@@ -156,16 +148,7 @@ export function DeviceHealthFleetPanel({
   screens,
   liveHost,
   livePlayerUrl,
-  livePlaylistId,
-  livePlaybackHealthy,
-  livePlaybackState,
-  livePlaylistVersion,
-  liveReachable,
-  liveStatusStale,
-  playlists,
-  statusAgeLabel,
-  statusUpdatedAt,
-  statusTimestampLabel
+  playlists
 }: FleetDeviceHealthPanelProps) {
   const router = useRouter();
   const [filter, setFilter] = useState<FilterKey>("all");
@@ -216,13 +199,13 @@ export function DeviceHealthFleetPanel({
         const assignedPlaylistId = linkedScreen?.playlistId ?? device.playlistId;
         const assignedPlaylist = assignedPlaylistId ? playlistsById.get(assignedPlaylistId) : null;
         const status = deviceStatuses[device.id] ?? null;
-        const isLive = Boolean(status) || deviceMatchesLiveHost(device, liveHost);
-        const reachable = status?.reachable ?? liveReachable;
-        const rowPlaybackHealthy = status?.playbackHealthy ?? livePlaybackHealthy;
-        const rowPlaybackLabel = status?.playbackLabel ?? livePlaybackState;
-        const rowStale = status?.stale ?? liveStatusStale;
-        const reportedPlaylistId = status?.playerStatus?.playlistId ?? livePlaylistId;
-        const reportedPlaylistVersion = status?.playerStatus?.playlistVersion ?? livePlaylistVersion;
+        const isLive = Boolean(status);
+        const reachable = status?.reachable ?? false;
+        const rowPlaybackHealthy = status?.playbackHealthy ?? false;
+        const rowPlaybackLabel = status?.playbackLabel ?? "unknown";
+        const rowStale = status?.stale ?? false;
+        const reportedPlaylistId = status?.playerStatus?.playlistId ?? null;
+        const reportedPlaylistVersion = status?.playerStatus?.playlistVersion;
         const hostConfigured = Boolean(device.host.trim()) && device.host !== "Not configured";
         let healthLabel = "Waiting";
         let healthDetail = "Saved in Beam, but this screen has not checked in yet.";
@@ -319,8 +302,9 @@ export function DeviceHealthFleetPanel({
           healthLabel,
           healthTone,
           isLive,
-          lastSeenAge: isLive ? status?.ageLabel ?? statusAgeLabel : "Not seen yet",
-          lastSeenFull: isLive ? status?.timestampLabel ?? statusTimestampLabel : "No live report yet",
+          lastSeenAge: isLive ? status?.ageLabel ?? "No timestamp" : "Not seen yet",
+          lastSeenFull: isLive ? status?.timestampLabel ?? "No timestamp available" : "No live report yet",
+          lastStatusUpdatedAt: status?.playerStatus?.updatedAt ?? null,
           linkedScreen,
           needsAttention,
           playbackDetail,
@@ -339,17 +323,8 @@ export function DeviceHealthFleetPanel({
   }, [
     devices,
     deviceStatuses,
-    liveHost,
-    livePlaylistId,
-    livePlaybackHealthy,
-    livePlaybackState,
-    livePlaylistVersion,
-    liveReachable,
-    liveStatusStale,
     playlistsById,
     screensByDeviceId,
-    statusAgeLabel,
-    statusTimestampLabel
   ]);
 
   const visibleRows = rows.filter((row) => {
@@ -378,10 +353,10 @@ export function DeviceHealthFleetPanel({
       return row.healthLabel === "Offline";
     }
     if (filter === "playing") {
-      return row.isLive && livePlaybackHealthy;
+      return row.playbackLabel === "Playing";
     }
     if (filter === "stale") {
-      return row.isLive && liveStatusStale;
+      return row.playbackLabel === "Old report";
     }
     if (filter === "sync") {
       return row.syncTone === "warn";
@@ -399,23 +374,25 @@ export function DeviceHealthFleetPanel({
   const selectedSshUrl = selectedRow ? sshUrlFor(selectedRow) : null;
   const onlineCount = rows.filter((row) => row.healthLabel === "Online").length;
   const offlineCount = rows.filter((row) => row.healthLabel === "Offline").length;
-  const staleCount = rows.filter((row) => row.isLive && liveStatusStale).length;
-  const playingCount = rows.filter((row) => row.isLive && livePlaybackHealthy).length;
+  const staleCount = rows.filter((row) => row.playbackLabel === "Old report").length;
+  const playingCount = rows.filter((row) => row.playbackLabel === "Playing").length;
   const attentionCount = rows.filter((row) => row.needsAttention).length;
   const syncIssueCount = rows.filter((row) => row.syncTone === "warn").length;
   const waitingCount = rows.filter((row) => row.healthLabel === "Waiting").length;
   const rebootWatchApplies = Boolean(rebootWatch && selectedRow?.device.id === rebootWatch.deviceId);
   const rebootBaselineTimestamp = rebootWatch?.baselineStatusUpdatedAt ?? rebootWatch?.requestedAt ?? null;
+  const selectedStatusUpdatedAt = rebootWatchApplies ? selectedRow?.lastStatusUpdatedAt ?? null : null;
+  const selectedReachable = rebootWatchApplies ? selectedRow?.healthLabel === "Online" : false;
   const hasNewerStatusAfterReboot =
-    Boolean(rebootBaselineTimestamp && statusUpdatedAt) &&
-    Date.parse(statusUpdatedAt ?? "") > Date.parse(rebootBaselineTimestamp ?? "");
+    Boolean(rebootBaselineTimestamp && selectedStatusUpdatedAt) &&
+    Date.parse(selectedStatusUpdatedAt ?? "") > Date.parse(rebootBaselineTimestamp ?? "");
 
   useEffect(() => {
     if (!rebootWatch) {
       return;
     }
 
-    if (rebootWatchApplies && liveReachable && hasNewerStatusAfterReboot) {
+    if (rebootWatchApplies && selectedReachable && hasNewerStatusAfterReboot) {
       setMessage("Pi is back online with a fresh check-in after reboot.");
       setRebootWatch(null);
       return;
@@ -426,7 +403,7 @@ export function DeviceHealthFleetPanel({
     }, 10_000);
 
     return () => window.clearTimeout(timeout);
-  }, [hasNewerStatusAfterReboot, liveReachable, rebootWatch, rebootWatchApplies, router, startTransition]);
+  }, [hasNewerStatusAfterReboot, rebootWatch, rebootWatchApplies, router, selectedReachable, startTransition]);
 
   function refreshStatus() {
     if (isBusy) {
@@ -496,7 +473,7 @@ export function DeviceHealthFleetPanel({
       const publishMessage = result.piPublish?.message ? ` ${result.piPublish.message}` : "";
       if (action === "reboot") {
         setRebootWatch({
-          baselineStatusUpdatedAt: statusUpdatedAt,
+          baselineStatusUpdatedAt: row.lastStatusUpdatedAt,
           deviceId: row.device.id,
           requestedAt: new Date().toISOString()
         });
