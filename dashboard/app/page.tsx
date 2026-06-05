@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import { Socket } from "node:net";
 import { DashboardAutoRefresh } from "./dashboard-auto-refresh";
 import { Metric, StatusPill } from "./dashboard-ui";
 import { DeviceHealthFleetPanel } from "./device-health-fleet-panel";
@@ -131,8 +132,18 @@ type PlaylistSyncState = {
 };
 
 const execTimeoutMs = 4_000;
+const sshReachabilityTimeoutMs = 750;
+const probeCacheTtlMs = 10_000;
 const staleStatusThresholdMs = 45_000;
 const staleHeartbeatThresholdMs = 120_000;
+
+type PiProbeCacheEntry = {
+  pending: Promise<void> | null;
+  probe: PiProbe;
+  updatedAt: number;
+};
+
+const piProbeCache = new Map<string, PiProbeCacheEntry>();
 
 type DashboardView =
   | "dashboard"
@@ -542,10 +553,120 @@ function parseServiceStatus(rawValue: string): Pick<
   };
 }
 
+function canReachSshPort(host: string, timeoutMs = sshReachabilityTimeoutMs): Promise<boolean> {
+  const trimmedHost = host.trim();
+  if (!trimmedHost) {
+    return Promise.resolve(false);
+  }
+
+  return new Promise((resolve) => {
+    const socket = new Socket();
+    let settled = false;
+
+    const finish = (reachable: boolean) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      socket.destroy();
+      resolve(reachable);
+    };
+
+    socket.setTimeout(timeoutMs);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+    try {
+      socket.connect(22, trimmedHost);
+    } catch {
+      finish(false);
+    }
+  });
+}
+
+function unavailablePiProbe(config: PiConfig | null, message: string): PiProbe {
+  return {
+    configured: Boolean(config),
+    reachable: false,
+    host: config?.host ?? null,
+    message,
+    playerStatus: null,
+    temp: null,
+    throttled: null,
+    vlcMemoryMb: null,
+    vlcCpuPercent: null,
+    serviceActiveState: null,
+    serviceSubState: null,
+    serviceRestartCount: null,
+    uptime: null,
+    bootId: null,
+    displayMode: null
+  };
+}
+
+function piProbeCacheKey(config: PiConfig): string {
+  return `${config.user}@${config.host}:${config.root}`;
+}
+
+function schedulePiProbeRefresh(config: PiConfig, entry: PiProbeCacheEntry | undefined): void {
+  if (entry?.pending) {
+    return;
+  }
+
+  const key = piProbeCacheKey(config);
+  const pending = loadPiProbe(config)
+    .then((probe) => {
+      piProbeCache.set(key, {
+        pending: null,
+        probe,
+        updatedAt: Date.now()
+      });
+    })
+    .catch((error) => {
+      piProbeCache.set(key, {
+        pending: null,
+        probe: unavailablePiProbe(
+          config,
+          error instanceof Error ? error.message : `Beam could not refresh ${config.host}.`
+        ),
+        updatedAt: Date.now()
+      });
+    });
+
+  piProbeCache.set(key, {
+    pending,
+    probe:
+      entry?.probe ??
+      unavailablePiProbe(config, `Beam is checking ${config.host}. Last live status is not available yet.`),
+    updatedAt: entry?.updatedAt ?? 0
+  });
+}
+
+function loadCachedPiProbe(config: PiConfig | null): PiProbe {
+  if (!config) {
+    return unavailablePiProbe(null, "Add a local Pi in Screens, or configure Pi SSH in dashboard/.env.local.");
+  }
+
+  const key = piProbeCacheKey(config);
+  const entry = piProbeCache.get(key);
+  if (!entry || Date.now() - entry.updatedAt > probeCacheTtlMs) {
+    schedulePiProbeRefresh(config, entry);
+  }
+
+  return piProbeCache.get(key)?.probe ?? unavailablePiProbe(config, `Beam is checking ${config.host}.`);
+}
+
 function piConfigFromInventory(inventory: { devices: DeviceStore }): PiConfig | null {
-  const savedDevice = inventory.devices.items.find((device) => {
+  const savedDevices = inventory.devices.items.filter((device) => {
     return Boolean(device.host.trim()) && device.host !== "Not configured";
   });
+  const reachableDevice =
+    savedDevices.find((device) => {
+      const probe = piProbeCache.get(piProbeCacheKey(piConfigForDevice(device)))?.probe;
+      return probe?.reachable;
+    }) ?? null;
+  const savedDevice = reachableDevice ?? savedDevices[0] ?? null;
   const fallbackConfig = readPiConfig();
 
   if (!savedDevice) {
@@ -562,23 +683,15 @@ function piConfigFromInventory(inventory: { devices: DeviceStore }): PiConfig | 
 
 async function loadPiProbe(config: PiConfig | null): Promise<PiProbe> {
   if (!config) {
-    return {
-      configured: false,
-      reachable: false,
-      host: null,
-      message: "Add a local Pi in Screens, or configure Pi SSH in dashboard/.env.local.",
-      playerStatus: null,
-      temp: null,
-      throttled: null,
-      vlcMemoryMb: null,
-      vlcCpuPercent: null,
-      serviceActiveState: null,
-      serviceSubState: null,
-      serviceRestartCount: null,
-      uptime: null,
-      bootId: null,
-      displayMode: null
-    };
+    return unavailablePiProbe(null, "Add a local Pi in Screens, or configure Pi SSH in dashboard/.env.local.");
+  }
+
+  const sshReachable = await canReachSshPort(config.host);
+  if (!sshReachable) {
+    return unavailablePiProbe(
+      config,
+      `Beam cannot reach SSH on ${config.host} from this network. The screen remains saved and will show offline until it is reachable again.`
+    );
   }
 
   const remoteCommand = [
@@ -669,7 +782,7 @@ async function loadDeviceStatuses(inventory: DashboardState["inventory"]): Promi
         return [device.id, null] as const;
       }
 
-      const probe = await loadPiProbe(piConfigForDevice(device));
+      const probe = loadCachedPiProbe(piConfigForDevice(device));
       const status = probe.playerStatus;
       const playbackState = status?.state ?? (probe.reachable ? "unknown" : "unreachable");
       const isPlaying = playbackState === "playing";
@@ -720,10 +833,9 @@ async function loadDashboardState(selectedPlaylistId?: string | null): Promise<D
     readNormalizedInventory(seedPlaylistId),
     readJsonFile<PublishStatus>(publishStatusPath())
   ]);
-  const [pi, deviceStatuses] = await Promise.all([
-    loadPiProbe(piConfigFromInventory(inventory)),
-    loadDeviceStatuses(inventory)
-  ]);
+  const primaryPiConfig = piConfigFromInventory(inventory);
+  const pi = loadCachedPiProbe(primaryPiConfig);
+  const deviceStatuses = await loadDeviceStatuses(inventory);
   const lastKnownPlayback = await resolveLastKnownPlayback(pi);
 
   return { deviceStatuses, heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi };
