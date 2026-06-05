@@ -53,19 +53,25 @@ type DeviceLiveStatus = {
   timestampLabel: string;
 };
 
-type FilterKey = "all" | "attention" | "offline" | "online" | "playing" | "stale" | "sync" | "waiting";
+type FilterKey = "all" | "attention" | "offline" | "online" | "stale" | "sync" | "waiting";
+type SortDirection = "asc" | "desc";
+type SortKey = "action" | "lastSeen" | "playlist" | "screen" | "status";
 
 type RowState = {
   assignedPlaylistId: string | null;
   assignedPlaylistName: string;
   attentionReason: string;
   device: DeviceRecord;
+  nextActionDetail: string;
+  nextActionLabel: string;
+  nextActionTone: Tone;
   healthDetail: string;
   healthLabel: string;
   healthTone: Tone;
   isLive: boolean;
   lastSeenAge: string;
   lastSeenFull: string;
+  lastSeenSortValue: number;
   lastStatusUpdatedAt: string | null;
   linkedScreen: ScreenRecord | null;
   needsAttention: boolean;
@@ -90,6 +96,22 @@ type ActionResponse = {
 
 function compareText(left: string, right: string): number {
   return left.localeCompare(right, undefined, { sensitivity: "base" });
+}
+
+function compareNullableNumber(left: number, right: number): number {
+  if (left === right) {
+    return 0;
+  }
+
+  if (left === 0) {
+    return 1;
+  }
+
+  if (right === 0) {
+    return -1;
+  }
+
+  return left - right;
 }
 
 function formatCount(count: number, label: string): string {
@@ -142,6 +164,143 @@ function sshUrlFor(row: RowState): string | null {
   return host ? `ssh://${host}` : null;
 }
 
+function screenName(row: RowState): string {
+  return row.linkedScreen?.name ?? row.device.name;
+}
+
+function statusSortRank(row: RowState): number {
+  if (row.healthLabel === "Offline") {
+    return 0;
+  }
+
+  if (row.healthLabel === "Set up needed") {
+    return 1;
+  }
+
+  if (row.healthLabel === "Waiting") {
+    return 2;
+  }
+
+  return 3;
+}
+
+function actionSortRank(row: RowState): number {
+  if (row.nextActionTone === "warn") {
+    return 0;
+  }
+
+  if (row.nextActionTone === "muted") {
+    return 1;
+  }
+
+  return 2;
+}
+
+function compareRows(left: RowState, right: RowState, sortKey: SortKey): number {
+  if (sortKey === "status") {
+    return (
+      statusSortRank(left) - statusSortRank(right) ||
+      compareText(left.healthLabel, right.healthLabel) ||
+      compareText(screenName(left), screenName(right))
+    );
+  }
+
+  if (sortKey === "playlist") {
+    return (
+      compareText(left.assignedPlaylistName, right.assignedPlaylistName) ||
+      compareText(left.syncLabel, right.syncLabel) ||
+      compareText(screenName(left), screenName(right))
+    );
+  }
+
+  if (sortKey === "action") {
+    return (
+      actionSortRank(left) - actionSortRank(right) ||
+      compareText(left.nextActionLabel, right.nextActionLabel) ||
+      compareText(screenName(left), screenName(right))
+    );
+  }
+
+  if (sortKey === "lastSeen") {
+    return compareNullableNumber(left.lastSeenSortValue, right.lastSeenSortValue) || compareText(screenName(left), screenName(right));
+  }
+
+  return compareText(screenName(left), screenName(right));
+}
+
+function rowActionFor(input: {
+  healthLabel: string;
+  hostConfigured: boolean;
+  isLive: boolean;
+  isOffline: boolean;
+  isStale: boolean;
+  rowPlaybackHealthy: boolean;
+  syncLabel: string;
+  syncTone: Tone;
+}): { detail: string; label: string; tone: Tone } {
+  if (!input.hostConfigured) {
+    return {
+      detail: "Add the Pi address in Screens before Beam can check it.",
+      label: "Add Pi address",
+      tone: "warn"
+    };
+  }
+
+  if (input.syncLabel === "Choose playlist") {
+    return {
+      detail: "Assign a playlist before publishing to this screen.",
+      label: "Assign playlist",
+      tone: "warn"
+    };
+  }
+
+  if (input.isOffline) {
+    return {
+      detail: "Check power, local network, or wait for the Pi to report again.",
+      label: "Check Pi",
+      tone: "warn"
+    };
+  }
+
+  if (input.syncTone === "warn") {
+    return {
+      detail: "Publish the saved playlist to bring this screen current.",
+      label: "Publish playlist",
+      tone: "warn"
+    };
+  }
+
+  if (input.isStale) {
+    return {
+      detail: "Refresh status or inspect diagnostics before recovery.",
+      label: "Refresh status",
+      tone: "warn"
+    };
+  }
+
+  if (input.isLive && !input.rowPlaybackHealthy) {
+    return {
+      detail: "Playback is not confirmed from the latest report.",
+      label: "Check playback",
+      tone: "warn"
+    };
+  }
+
+  if (input.healthLabel === "Waiting") {
+    return {
+      detail: "Beam has inventory but no live report yet.",
+      label: "Await report",
+      tone: "muted"
+    };
+  }
+
+  return {
+    detail: "No operator action is needed from the latest evidence.",
+    label: "No action",
+    tone: "good"
+  };
+}
+
 export function DeviceHealthFleetPanel({
   deviceStatuses,
   devices,
@@ -153,6 +312,8 @@ export function DeviceHealthFleetPanel({
   const router = useRouter();
   const [filter, setFilter] = useState<FilterKey>("all");
   const [query, setQuery] = useState("");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [sortKey, setSortKey] = useState<SortKey>("screen");
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(devices[0]?.id ?? null);
   const [message, setMessage] = useState("");
   const [busyAction, setBusyAction] = useState<"publish" | "reboot" | "recover" | "refresh" | "restart" | null>(null);
@@ -293,17 +454,32 @@ export function DeviceHealthFleetPanel({
                   ? "playback not confirmed"
                   : "no action needed";
 
+        const nextAction = rowActionFor({
+          healthLabel,
+          hostConfigured,
+          isLive,
+          isOffline,
+          isStale,
+          rowPlaybackHealthy,
+          syncLabel,
+          syncTone
+        });
+
         return {
           device,
           assignedPlaylistId: assignedPlaylistId ?? null,
           assignedPlaylistName: assignedPlaylist?.name ?? "No playlist assigned",
           attentionReason,
+          nextActionDetail: nextAction.detail,
+          nextActionLabel: nextAction.label,
+          nextActionTone: nextAction.tone,
           healthDetail,
           healthLabel,
           healthTone,
           isLive,
           lastSeenAge: isLive ? status?.ageLabel ?? "No timestamp" : "Not seen yet",
           lastSeenFull: isLive ? status?.timestampLabel ?? "No timestamp available" : "No live report yet",
+          lastSeenSortValue: Date.parse(status?.playerStatus?.updatedAt ?? "") || 0,
           lastStatusUpdatedAt: status?.playerStatus?.updatedAt ?? null,
           linkedScreen,
           needsAttention,
@@ -352,9 +528,6 @@ export function DeviceHealthFleetPanel({
     if (filter === "offline") {
       return row.healthLabel === "Offline";
     }
-    if (filter === "playing") {
-      return row.playbackLabel === "Playing";
-    }
     if (filter === "stale") {
       return row.playbackLabel === "Old report";
     }
@@ -368,14 +541,40 @@ export function DeviceHealthFleetPanel({
     return true;
   });
 
+  const sortedVisibleRows = visibleRows
+    .slice()
+    .sort((left, right) => {
+      if (sortKey === "lastSeen") {
+        const leftMissing = left.lastSeenSortValue === 0;
+        const rightMissing = right.lastSeenSortValue === 0;
+        if (leftMissing && rightMissing) {
+          return compareText(screenName(left), screenName(right));
+        }
+        if (leftMissing) {
+          return 1;
+        }
+        if (rightMissing) {
+          return -1;
+        }
+
+        const result =
+          sortDirection === "asc"
+            ? right.lastSeenSortValue - left.lastSeenSortValue
+            : left.lastSeenSortValue - right.lastSeenSortValue;
+        return result || compareText(screenName(left), screenName(right));
+      }
+
+      const result = compareRows(left, right, sortKey);
+      return sortDirection === "asc" ? result : -result;
+    });
+
   const selectedRow =
-    visibleRows.find((row) => row.device.id === selectedDeviceId) ?? visibleRows[0] ?? rows[0] ?? null;
+    sortedVisibleRows.find((row) => row.device.id === selectedDeviceId) ?? sortedVisibleRows[0] ?? rows[0] ?? null;
   const selectedPlayerUrl = selectedRow ? playerUrlFor(selectedRow, liveHost, livePlayerUrl) : null;
   const selectedSshUrl = selectedRow ? sshUrlFor(selectedRow) : null;
   const onlineCount = rows.filter((row) => row.healthLabel === "Online").length;
   const offlineCount = rows.filter((row) => row.healthLabel === "Offline").length;
   const staleCount = rows.filter((row) => row.playbackLabel === "Old report").length;
-  const playingCount = rows.filter((row) => row.playbackLabel === "Playing").length;
   const attentionCount = rows.filter((row) => row.needsAttention).length;
   const syncIssueCount = rows.filter((row) => row.syncTone === "warn").length;
   const waitingCount = rows.filter((row) => row.healthLabel === "Waiting").length;
@@ -511,20 +710,8 @@ export function DeviceHealthFleetPanel({
     {
       count: offlineCount,
       key: "offline",
-      label: "Offline",
+      label: "Down",
       toneClassName: "bg-rose-50 text-rose-800 ring-rose-100 hover:bg-rose-100"
-    },
-    {
-      count: staleCount,
-      key: "stale",
-      label: "Stale report",
-      toneClassName: "bg-amber-50 text-amber-900 ring-amber-100 hover:bg-amber-100"
-    },
-    {
-      count: playingCount,
-      key: "playing",
-      label: "Playing now",
-      toneClassName: "bg-sky-50 text-sky-800 ring-sky-100 hover:bg-sky-100"
     },
     {
       count: attentionCount,
@@ -533,17 +720,18 @@ export function DeviceHealthFleetPanel({
       toneClassName: "bg-orange-50 text-orange-800 ring-orange-100 hover:bg-orange-100"
     },
     {
-      count: rows.length,
-      key: "all",
-      label: "Saved screens",
-      toneClassName: "bg-zinc-50 text-zinc-700 ring-zinc-200 hover:bg-zinc-100"
-    },
-    {
       count: syncIssueCount,
       hideWhenZero: true,
       key: "sync",
-      label: "Publish required",
+      label: "Playlist needed",
       toneClassName: "bg-yellow-50 text-yellow-900 ring-yellow-100 hover:bg-yellow-100"
+    },
+    {
+      count: staleCount,
+      hideWhenZero: true,
+      key: "stale",
+      label: "Stale report",
+      toneClassName: "bg-amber-50 text-amber-900 ring-amber-100 hover:bg-amber-100"
     },
     {
       count: waitingCount,
@@ -554,6 +742,21 @@ export function DeviceHealthFleetPanel({
     }
   ];
   const summaryCards = summaryCardOptions.filter((item) => !item.hideWhenZero || item.count > 0);
+  const sortOptions: Array<{ label: string; value: SortKey }> = [
+    { label: "Screen", value: "screen" },
+    { label: "Status", value: "status" },
+    { label: "Playlist", value: "playlist" },
+    { label: "Next action", value: "action" },
+    { label: "Last check-in", value: "lastSeen" }
+  ];
+  const sortDirectionLabel =
+    sortKey === "lastSeen"
+      ? sortDirection === "asc"
+        ? "Newest first"
+        : "Oldest first"
+      : sortDirection === "asc"
+        ? "Ascending"
+        : "Descending";
 
   return (
     <section aria-labelledby="fleet-health-heading" className="mt-6 space-y-4">
@@ -562,7 +765,7 @@ export function DeviceHealthFleetPanel({
           <div>
             <h2 id="fleet-health-heading" className="text-xl font-semibold">Screen Health</h2>
             <p className="mt-1 text-sm text-zinc-600">
-              Check connection, playback, playlist update, and recovery actions for each screen.
+              See which screens are up, which are down, and the next action for each Pi.
             </p>
           </div>
         </div>
@@ -586,42 +789,88 @@ export function DeviceHealthFleetPanel({
                   <span className="block text-xs font-semibold uppercase">{item.label}</span>
                   <span className="mt-1 block text-xl font-semibold">{item.count}</span>
                   <span className={`mt-2 block text-xs font-medium ${isActive ? "text-teal-50" : "text-zinc-500"}`}>
-                    {isActive ? "Filtering list" : item.key === "all" ? "Show all" : "Filter list"}
+                    {isActive ? "Filtering list" : "Filter list"}
                   </span>
                 </button>
               );
             })}
+          </div>
+          <div className="mt-3 flex flex-col gap-2 text-sm text-zinc-600 sm:flex-row sm:items-center sm:justify-between">
+            <p>
+              {filter === "all"
+                ? `Showing all ${formatCount(rows.length, "screen")}.`
+                : `Filtered to ${formatCount(visibleRows.length, "screen")}.`}
+            </p>
+            {filter !== "all" ? (
+              <button
+                type="button"
+                onClick={() => setFilter("all")}
+                className="self-start rounded-md px-2 py-1 text-sm font-semibold text-teal-800 hover:bg-teal-50 focus:outline-none focus:ring-2 focus:ring-teal-600"
+              >
+                Show all screens
+              </button>
+            ) : null}
           </div>
         </div>
 
         <div className="border-t border-zinc-200 p-5">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <h3 className="text-base font-semibold text-zinc-950">Screens and devices</h3>
+              <h3 className="text-base font-semibold text-zinc-950">Device list</h3>
               <p className="mt-1 text-sm text-zinc-600">
-                Select a row to inspect actions and evidence. The list scrolls independently for larger installs.
+                Select a screen to see details and controls below.
               </p>
             </div>
-            <div className="w-full xl:max-w-md">
-              <label htmlFor="device-health-search" className="text-xs font-semibold uppercase text-zinc-500">
-                Search screens
-              </label>
-              <input
-                id="device-health-search"
-                value={query}
-                onChange={(event) => setQuery(event.currentTarget.value)}
-                placeholder="Screen, Pi, address, location, or group"
-                className="mt-2 min-h-11 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-100"
-              />
+            <div className="grid w-full gap-3 xl:max-w-3xl xl:grid-cols-[minmax(240px,1fr)_180px_auto] xl:items-end">
+              <div>
+                <label htmlFor="device-health-search" className="text-xs font-semibold uppercase text-zinc-500">
+                  Search screens
+                </label>
+                <input
+                  id="device-health-search"
+                  value={query}
+                  onChange={(event) => setQuery(event.currentTarget.value)}
+                  placeholder="Screen, Pi, address, location, or group"
+                  className="mt-2 min-h-11 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                />
+              </div>
+              <div>
+                <label htmlFor="device-health-sort" className="text-xs font-semibold uppercase text-zinc-500">
+                  Sort by
+                </label>
+                <select
+                  id="device-health-sort"
+                  value={sortKey}
+                  onChange={(event) => {
+                    const nextSortKey = event.currentTarget.value as SortKey;
+                    setSortKey(nextSortKey);
+                    setSortDirection("asc");
+                  }}
+                  className="mt-2 min-h-11 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-950 focus:border-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                >
+                  {sortOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSortDirection((current) => (current === "asc" ? "desc" : "asc"))}
+                className="min-h-11 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-teal-600"
+              >
+                {sortDirectionLabel}
+              </button>
             </div>
           </div>
           <p className="mt-3 text-sm text-zinc-600">
-            Showing {formatCount(visibleRows.length, "screen")} from {formatCount(rows.length, "screen")}.
+            Showing {formatCount(sortedVisibleRows.length, "screen")} from {formatCount(rows.length, "screen")}.
           </p>
 
           <div className="mt-4 max-h-[520px] overflow-auto rounded-md border border-zinc-200">
             <ol className="divide-y divide-zinc-200">
-              {visibleRows.map((row) => {
+              {sortedVisibleRows.map((row) => {
                 const isSelected = selectedRow?.device.id === row.device.id;
 
                 return (
@@ -630,7 +879,7 @@ export function DeviceHealthFleetPanel({
                       type="button"
                       aria-pressed={isSelected}
                       onClick={() => setSelectedDeviceId(row.device.id)}
-                      className={`grid w-full gap-3 px-4 py-3 text-left text-sm lg:grid-cols-[minmax(0,1fr)_220px_minmax(0,1fr)] lg:items-center ${
+                      className={`grid w-full gap-3 px-4 py-3 text-left text-sm lg:grid-cols-[minmax(0,1fr)_150px_90px_minmax(180px,1fr)_140px] lg:items-center ${
                         isSelected ? "bg-teal-50" : "bg-white hover:bg-zinc-50"
                       }`}
                     >
@@ -646,16 +895,21 @@ export function DeviceHealthFleetPanel({
                         <span className="block truncate font-semibold text-zinc-800">{piLabel(row.device, row.linkedScreen)}</span>
                         <span className="mt-1 block truncate text-xs text-zinc-600">{row.device.host}</span>
                       </span>
-                      <span className="flex flex-wrap items-center justify-end gap-2 lg:justify-self-end">
+                      <span className="lg:justify-self-start">
                         <StatusPill label={row.healthLabel} tone={row.healthTone} />
-                        <StatusPill label={row.playbackLabel} tone={row.playbackTone} />
-                        <StatusPill label={row.syncLabel} tone={row.syncTone} />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate font-semibold text-zinc-900">{row.assignedPlaylistName}</span>
+                        <span className="mt-1 block truncate text-xs text-zinc-600">{row.syncLabel}</span>
+                      </span>
+                      <span className="flex flex-wrap items-center gap-2 lg:justify-self-end">
+                        <StatusPill label={row.nextActionLabel} tone={row.nextActionTone} />
                       </span>
                     </button>
                   </li>
                 );
               })}
-              {visibleRows.length === 0 ? (
+              {sortedVisibleRows.length === 0 ? (
                 <li className="px-4 py-6 text-sm text-zinc-600">No screens match this view.</li>
               ) : null}
             </ol>
@@ -685,7 +939,7 @@ export function DeviceHealthFleetPanel({
                   <dd className="mt-1 text-sm text-zinc-600">{selectedRow.healthDetail}</dd>
                 </div>
                 <div className="rounded-md bg-zinc-50 p-4">
-                  <dt className="text-xs font-semibold uppercase text-zinc-500">Now playing</dt>
+                  <dt className="text-xs font-semibold uppercase text-zinc-500">Playback</dt>
                   <dd className="mt-2 font-semibold text-zinc-950">{selectedRow.playbackLabel}</dd>
                   <dd className="mt-1 text-sm text-zinc-600">{selectedRow.playbackDetail}</dd>
                 </div>
@@ -699,26 +953,25 @@ export function DeviceHealthFleetPanel({
                   <dd className="mt-1 text-sm text-zinc-700">{selectedRow.syncDetail}</dd>
                 </div>
                 <div className="rounded-md bg-zinc-50 p-4">
-                  <dt className="text-xs font-semibold uppercase text-zinc-500">Last check-in</dt>
-                  <dd className="mt-2 font-semibold text-zinc-950">{selectedRow.lastSeenAge}</dd>
-                  <dd className="mt-1 text-sm text-zinc-600">{selectedRow.isLive ? selectedRow.lastSeenFull : "No live report yet."}</dd>
+                  <dt className="text-xs font-semibold uppercase text-zinc-500">Next action</dt>
+                  <dd className="mt-2 font-semibold text-zinc-950">{selectedRow.nextActionLabel}</dd>
+                  <dd className="mt-1 text-sm text-zinc-600">{selectedRow.nextActionDetail}</dd>
                 </div>
               </dl>
 
               <div className="mt-5 rounded-md border border-zinc-200 bg-zinc-50 p-4">
-                <h4 className="text-sm font-semibold text-zinc-950">Actions for this screen</h4>
-                <p className="mt-1 text-sm text-zinc-600">
-                  Retry sync sends the saved playlist again. Playback controls use the connected local Pi.
-                </p>
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h4 className="text-sm font-semibold text-zinc-950">Actions for this screen</h4>
+                    <p className="mt-1 text-sm text-zinc-600">
+                      Safe checks are first. Recovery and reboot actions are grouped at the end.
+                    </p>
+                  </div>
+                  <div className="text-sm text-zinc-600">
+                    Last check-in: <span className="font-semibold text-zinc-900">{selectedRow.lastSeenAge}</span>
+                  </div>
+                </div>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={!selectedRow.isLive || !selectedRow.assignedPlaylistId || isBusy}
-                    onClick={() => void runAction("publish", selectedRow)}
-                    className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
-                  >
-                    {busyAction === "publish" ? "Syncing..." : "Retry sync"}
-                  </button>
                   <button
                     type="button"
                     disabled={isBusy}
@@ -729,19 +982,11 @@ export function DeviceHealthFleetPanel({
                   </button>
                   <button
                     type="button"
-                    disabled={!selectedRow.isLive || isBusy}
-                    onClick={() => void runAction("restart", selectedRow)}
-                    className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!selectedRow.isLive || !selectedRow.assignedPlaylistId || isBusy}
+                    onClick={() => void runAction("publish", selectedRow)}
+                    className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
                   >
-                    {busyAction === "restart" ? "Restarting..." : "Restart playback"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!selectedRow.isLive || isBusy}
-                    onClick={() => void runAction("recover", selectedRow)}
-                    className="min-h-10 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {busyAction === "recover" ? "Recovering..." : "Run full recovery"}
+                    {busyAction === "publish" ? "Publishing..." : "Retry publish"}
                   </button>
                   {selectedPlayerUrl ? (
                     <a
@@ -761,6 +1006,24 @@ export function DeviceHealthFleetPanel({
                       Open SSH
                     </a>
                   ) : null}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2 border-t border-zinc-200 pt-3">
+                  <button
+                    type="button"
+                    disabled={!selectedRow.isLive || isBusy}
+                    onClick={() => void runAction("restart", selectedRow)}
+                    className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busyAction === "restart" ? "Restarting..." : "Restart playback"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!selectedRow.isLive || isBusy}
+                    onClick={() => void runAction("recover", selectedRow)}
+                    className="min-h-10 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busyAction === "recover" ? "Recovering..." : "Run full recovery"}
+                  </button>
                   <button
                     type="button"
                     disabled={!selectedRow.isLive || isBusy}

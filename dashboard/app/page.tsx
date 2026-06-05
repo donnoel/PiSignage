@@ -1877,12 +1877,18 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </section>
 
           <section
-            aria-labelledby="recovery-history-heading"
+            id="screen-health-diagnostics"
+            aria-labelledby="screen-health-diagnostics-heading"
             className={selectedView === "device-health" ? "mt-6 rounded-lg border border-zinc-200 bg-white shadow-sm" : "hidden"}
           >
             <details>
-              <summary className="flex cursor-pointer items-center justify-between gap-3 border-b border-zinc-200 p-5 text-xl font-semibold" id="recovery-history-heading">
-                <span>Playback evidence</span>
+              <summary className="flex cursor-pointer list-none flex-col gap-2 p-5 marker:hidden sm:flex-row sm:items-center sm:justify-between [&::-webkit-details-marker]:hidden">
+                <div>
+                  <h2 id="screen-health-diagnostics-heading" className="text-xl font-semibold">Advanced diagnostics</h2>
+                  <p className="mt-1 text-sm text-zinc-600">
+                    Pi evidence, setup details, logs, and recovery history for deeper troubleshooting.
+                  </p>
+                </div>
                 <StatusPill
                   label={
                     supportAttentionCount === 0
@@ -1892,85 +1898,77 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   tone={supportAttentionCount === 0 ? "good" : "warn"}
                 />
               </summary>
-              <div className="px-5 pb-2 pt-4">
-                <p className="text-sm text-zinc-600">
-                  Detailed local evidence from the connected Pi. Items that need attention appear first.
-                </p>
-              </div>
-              <ol className="divide-y divide-zinc-200">
-                {supportEvidence.map((item) => (
-                  <li key={item.label} className="grid gap-3 px-5 py-4 text-sm md:grid-cols-[180px_1fr_auto] md:items-start">
-                    <div>
-                      <p className="font-semibold text-zinc-950">{item.label}</p>
-                      <p className="mt-1 text-xs font-medium text-zinc-500">{item.timestamp ? formatTimestamp(item.timestamp) : "Latest check"}</p>
-                    </div>
-                    <div>
-                      <p className="font-semibold text-zinc-950">{item.value}</p>
-                      <p className="mt-1 leading-6 text-zinc-600">{item.detail}</p>
-                    </div>
-                    <div className="md:justify-self-end">
-                      <StatusPill label={item.tone === "good" ? "OK" : item.tone === "warn" ? "Check" : "Info"} tone={item.tone} />
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            </details>
-          </section>
+              <div className="border-t border-zinc-200">
+                <section aria-labelledby="recovery-history-heading">
+                  <div className="border-b border-zinc-200 px-5 pb-2 pt-4">
+                    <h3 id="recovery-history-heading" className="text-lg font-semibold">Playback evidence</h3>
+                    <p className="mt-1 text-sm text-zinc-600">
+                      Detailed local evidence from the connected Pi. Items that need attention appear first.
+                    </p>
+                  </div>
+                  <ol className="divide-y divide-zinc-200">
+                    {supportEvidence.map((item) => (
+                      <li key={item.label} className="grid gap-3 px-5 py-4 text-sm md:grid-cols-[180px_1fr_auto] md:items-start">
+                        <div>
+                          <p className="font-semibold text-zinc-950">{item.label}</p>
+                          <p className="mt-1 text-xs font-medium text-zinc-500">{item.timestamp ? formatTimestamp(item.timestamp) : "Latest check"}</p>
+                        </div>
+                        <div>
+                          <p className="font-semibold text-zinc-950">{item.value}</p>
+                          <p className="mt-1 leading-6 text-zinc-600">{item.detail}</p>
+                        </div>
+                        <div className="md:justify-self-end">
+                          <StatusPill label={item.tone === "good" ? "OK" : item.tone === "warn" ? "Check" : "Info"} tone={item.tone} />
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </section>
 
-          <section
-            id="field-setup"
-            aria-labelledby="field-setup-heading"
-            className={selectedView === "device-health" ? "mt-6 rounded-lg border border-zinc-200 bg-white shadow-sm" : "hidden"}
-          >
-            <details>
-              <summary className="cursor-pointer border-b border-zinc-200 p-5 text-xl font-semibold" id="field-setup-heading">
-                Setup and Pi details
-              </summary>
-              <div className="grid gap-4 p-5 xl:grid-cols-[1.1fr_0.9fr]">
-                <div className="rounded-md border border-zinc-200 bg-zinc-50">
+                <section id="field-setup" aria-labelledby="field-setup-heading" className="border-t border-zinc-200">
                   <div className="border-b border-zinc-200 p-5">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <h2 className="text-lg font-semibold">{setupLocationName}</h2>
-                        <p className="mt-1 text-sm text-zinc-600">Local setup from saved configuration and the latest Pi check.</p>
+                    <h3 id="field-setup-heading" className="text-lg font-semibold">Setup and Pi details</h3>
+                  </div>
+                  <div className="grid gap-4 p-5 xl:grid-cols-[1.1fr_0.9fr]">
+                    <div className="rounded-md border border-zinc-200 bg-zinc-50">
+                      <div className="border-b border-zinc-200 p-5">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <h4 className="text-lg font-semibold">{setupLocationName}</h4>
+                            <p className="mt-1 text-sm text-zinc-600">Local setup from saved configuration and the latest Pi check.</p>
+                          </div>
+                          <StatusPill label={setupStatusLabel} tone={setupStatusTone} />
+                        </div>
                       </div>
-                      <StatusPill label={setupStatusLabel} tone={setupStatusTone} />
+                      <dl className="grid gap-0 divide-y divide-zinc-200 text-sm sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+                        <div className="p-5">
+                          <dt className="font-semibold text-zinc-500">Screen</dt>
+                          <dd className="mt-2 text-lg font-semibold">{setupScreenName}</dd>
+                          <dd className="mt-1 text-zinc-600">Pi: {setupDeviceIdentifier}</dd>
+                        </div>
+                        <div className="p-5">
+                          <dt className="font-semibold text-zinc-500">Last local status</dt>
+                          <dd className="mt-2 text-lg font-semibold">{setupStatusTimestamp}</dd>
+                          <dd className="mt-1 text-zinc-600">{setupStatusDetail}</dd>
+                        </div>
+                      </dl>
+                    </div>
+
+                    <div id="device-health" className="rounded-md border border-zinc-200 bg-zinc-50 p-5">
+                      <h4 className="text-lg font-semibold">Pi readings</h4>
+                      <dl className="mt-5 grid gap-3 sm:grid-cols-2">
+                        <Metric label="Temperature" value={setupTemperature} />
+                        <Metric label="Throttle" value={setupThrottle} />
+                        <Metric label="Uptime" value={setupUptime} />
+                        <Metric label="Disk free" value={setupDiskFree} />
+                      </dl>
                     </div>
                   </div>
-                  <dl className="grid gap-0 divide-y divide-zinc-200 text-sm sm:grid-cols-2 sm:divide-x sm:divide-y-0">
-                    <div className="p-5">
-                      <dt className="font-semibold text-zinc-500">Screen</dt>
-                      <dd className="mt-2 text-lg font-semibold">{setupScreenName}</dd>
-                      <dd className="mt-1 text-zinc-600">Pi: {setupDeviceIdentifier}</dd>
-                    </div>
-                    <div className="p-5">
-                      <dt className="font-semibold text-zinc-500">Last local status</dt>
-                      <dd className="mt-2 text-lg font-semibold">{setupStatusTimestamp}</dd>
-                      <dd className="mt-1 text-zinc-600">{setupStatusDetail}</dd>
-                    </div>
-                  </dl>
-                </div>
+                </section>
 
-                <div id="device-health" className="rounded-md border border-zinc-200 bg-zinc-50 p-5">
-                  <h2 className="text-lg font-semibold">Pi readings</h2>
-                  <dl className="mt-5 grid gap-3 sm:grid-cols-2">
-                    <Metric label="Temperature" value={setupTemperature} />
-                    <Metric label="Throttle" value={setupThrottle} />
-                    <Metric label="Uptime" value={setupUptime} />
-                    <Metric label="Disk free" value={setupDiskFree} />
-                  </dl>
-                </div>
+                <TroubleshootingPanel screens={troubleshootingScreens} />
               </div>
             </details>
-          </section>
-
-          <section
-            id="screen-health-diagnostics"
-            aria-labelledby="screen-health-diagnostics-heading"
-            className={selectedView === "device-health" ? "mt-6" : "hidden"}
-          >
-            <h2 id="screen-health-diagnostics-heading" className="sr-only">Screen Health Diagnostics</h2>
-            <TroubleshootingPanel screens={troubleshootingScreens} />
           </section>
 
           <section

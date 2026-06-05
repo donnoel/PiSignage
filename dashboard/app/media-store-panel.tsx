@@ -2,6 +2,7 @@
 
 import type { InputHTMLAttributes } from "react";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { FileUp, FolderOpen, UploadCloud } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { StatusPill } from "./dashboard-ui";
 import { isPlaybackSafeVideoFileName, isStillClipFileName } from "./lib/playback-safety";
@@ -178,6 +179,19 @@ function uploadRelativePath(file: File): string {
 function isSkippedDirectoryEntry(file: File): boolean {
   const pathParts = uploadRelativePath(file).split(/[\\/]/).filter(Boolean);
   return pathParts.some((part) => part.startsWith(".") || part === "__MACOSX") || !isSupportedUploadFile(file.name);
+}
+
+function uploadSelectionLabel(files: File[], source: UploadSource): string {
+  if (files.length === 0) {
+    return source === "directory" ? "No directory selected" : "No file selected";
+  }
+
+  if (files.length === 1) {
+    return files[0].name;
+  }
+
+  const supportedCount = files.filter((file) => !isSkippedDirectoryEntry(file)).length;
+  return `${supportedCount} supported file${supportedCount === 1 ? "" : "s"} selected`;
 }
 
 function mediaKind(item: MediaItem): "Image" | "Video" | "MOV" | "File" {
@@ -371,6 +385,7 @@ export function MediaStorePanel() {
   const [uploadTags, setUploadTags] = useState("");
   const [uploadFolderId, setUploadFolderId] = useState("");
   const [uploadSource, setUploadSource] = useState<UploadSource>("file");
+  const [uploadSelection, setUploadSelection] = useState("No file selected");
   const [durationSeconds, setDurationSeconds] = useState("10");
   const [newFolderName, setNewFolderName] = useState("");
   const [targetFolderId, setTargetFolderId] = useState("");
@@ -681,6 +696,7 @@ export function MediaStorePanel() {
       if (directoryInputRef.current) {
         directoryInputRef.current.value = "";
       }
+      resetUploadSelection(uploadSource);
       setUploadTitle("");
       setUploadTags("");
       setQuery("");
@@ -950,6 +966,10 @@ export function MediaStorePanel() {
     );
   }
 
+  function resetUploadSelection(source: UploadSource) {
+    setUploadSelection(source === "directory" ? "No directory selected" : "No file selected");
+  }
+
   return (
     <section className="min-w-0 rounded-lg border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-200 p-4">
@@ -1140,146 +1160,212 @@ export function MediaStorePanel() {
           <form
             onSubmit={handleUpload}
             encType="multipart/form-data"
-            className="grid gap-3 border-b border-zinc-200 bg-zinc-50 p-4 xl:grid-cols-[140px_minmax(220px,1fr)_minmax(150px,0.5fr)_110px_minmax(150px,0.55fr)_minmax(150px,0.55fr)_auto] xl:items-end"
+            className="border-b border-zinc-200 bg-zinc-50 p-4"
           >
-            <fieldset>
-              <legend className="text-sm font-semibold text-zinc-950">Upload</legend>
-              <div className="mt-1 grid grid-cols-2 overflow-hidden rounded-md border border-zinc-300 bg-white text-sm font-semibold">
-                <label className={uploadSource === "file" ? "bg-zinc-900 text-white" : "text-zinc-700"}>
-                  <input
-                    type="radio"
-                    name="uploadSource"
-                    value="file"
-                    checked={uploadSource === "file"}
-                    onChange={() => {
-                      setUploadSource("file");
-                      if (directoryInputRef.current) {
-                        directoryInputRef.current.value = "";
-                      }
-                    }}
-                    disabled={isBusy}
-                    className="sr-only"
-                  />
-                  <span className="flex min-h-10 items-center justify-center px-3">File</span>
-                </label>
-                <label className={uploadSource === "directory" ? "bg-zinc-900 text-white" : "text-zinc-700"}>
-                  <input
-                    type="radio"
-                    name="uploadSource"
-                    value="directory"
-                    checked={uploadSource === "directory"}
-                    onChange={() => {
-                      setUploadSource("directory");
-                      if (fileInputRef.current) {
-                        fileInputRef.current.value = "";
-                      }
-                    }}
-                    disabled={isBusy}
-                    className="sr-only"
-                  />
-                  <span className="flex min-h-10 items-center justify-center px-3">Directory</span>
-                </label>
+            <div className="rounded-md border border-zinc-200 bg-white shadow-sm">
+              <div className="flex flex-col gap-3 border-b border-zinc-200 p-4 md:flex-row md:items-start md:justify-between">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <UploadCloud className="h-5 w-5 text-teal-700" aria-hidden="true" />
+                    <h3 className="text-lg font-semibold text-zinc-950">Upload media</h3>
+                  </div>
+                  <p className="mt-1 text-sm leading-6 text-zinc-600">
+                    Add MP4, MOV, JPG, or PNG files. Images are prepared as timed video clips for Pi playback.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowUpload(false)}
+                  disabled={isUploading}
+                  className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400"
+                >
+                  Close
+                </button>
               </div>
-            </fieldset>
-            <div>
-              <label htmlFor={uploadSource === "directory" ? "media-directory" : "media-file"} className="text-sm font-semibold text-zinc-950">
-                {uploadSource === "directory" ? "Directory" : "File"}
-              </label>
-              {uploadSource === "file" ? (
-                <input
-                  ref={fileInputRef}
-                  id="media-file"
-                  name="media"
-                  type="file"
-                  accept="video/mp4,video/quicktime,image/jpeg,image/png,.mp4,.mov,.jpg,.jpeg,.png"
-                  disabled={isBusy}
-                  className="mt-1 block min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-950 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white"
-                />
-              ) : (
-                <input
-                  {...directoryInputAttributes}
-                  ref={directoryInputRef}
-                  id="media-directory"
-                  name="mediaDirectory"
-                  type="file"
-                  multiple
-                  accept="video/mp4,video/quicktime,image/jpeg,image/png,.mp4,.mov,.jpg,.jpeg,.png"
-                  disabled={isBusy}
-                  className="mt-1 block min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-950 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white"
-                />
-              )}
-            </div>
-            <div>
-              <label htmlFor="media-title" className="text-sm font-semibold text-zinc-950">Title</label>
-              <input
-                id="media-title"
-                name="title"
-                value={uploadTitle}
-                onChange={(event) => setUploadTitle(event.currentTarget.value)}
-                disabled={isBusy}
-                className="mt-1 min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-              />
-            </div>
-            <div>
-              <label htmlFor="media-duration" className="text-sm font-semibold text-zinc-950">Image time</label>
-              <input
-                id="media-duration"
-                name="durationSeconds"
-                type="number"
-                min="1"
-                max="300"
-                value={durationSeconds}
-                onChange={(event) => setDurationSeconds(event.currentTarget.value)}
-                disabled={isBusy}
-                className="mt-1 min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-              />
-            </div>
-            <div>
-              <label htmlFor="media-tags" className="text-sm font-semibold text-zinc-950">Tags</label>
-              <input
-                id="media-tags"
-                name="tags"
-                value={uploadTags}
-                onChange={(event) => setUploadTags(event.currentTarget.value)}
-                disabled={isBusy}
-                className="mt-1 min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-              />
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {cannedTags.map((tag) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    onClick={() => setUploadTags((current) => appendTagText(current, tag))}
-                    disabled={isBusy}
-                    className="min-h-8 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs font-semibold text-zinc-700 disabled:cursor-not-allowed disabled:bg-zinc-100"
-                  >
-                    {tag}
-                  </button>
-                ))}
+
+              <div className="grid gap-4 p-4 xl:grid-cols-[minmax(280px,0.9fr)_minmax(0,1.6fr)]">
+                <div className="min-w-0 rounded-md border border-dashed border-teal-300 bg-teal-50/50 p-4">
+                  <fieldset>
+                    <legend className="text-sm font-semibold text-zinc-950">Source</legend>
+                    <div className="mt-2 grid grid-cols-2 overflow-hidden rounded-md border border-zinc-300 bg-white text-sm font-semibold">
+                      <label className={uploadSource === "file" ? "bg-zinc-900 text-white" : "text-zinc-700 hover:bg-zinc-50"}>
+                        <input
+                          type="radio"
+                          name="uploadSource"
+                          value="file"
+                          checked={uploadSource === "file"}
+                          onChange={() => {
+                            setUploadSource("file");
+                            resetUploadSelection("file");
+                            if (directoryInputRef.current) {
+                              directoryInputRef.current.value = "";
+                            }
+                          }}
+                          disabled={isBusy}
+                          className="sr-only"
+                        />
+                        <span className="flex min-h-10 items-center justify-center gap-2 px-3">
+                          <FileUp className="h-4 w-4" aria-hidden="true" />
+                          File
+                        </span>
+                      </label>
+                      <label className={uploadSource === "directory" ? "bg-zinc-900 text-white" : "text-zinc-700 hover:bg-zinc-50"}>
+                        <input
+                          type="radio"
+                          name="uploadSource"
+                          value="directory"
+                          checked={uploadSource === "directory"}
+                          onChange={() => {
+                            setUploadSource("directory");
+                            resetUploadSelection("directory");
+                            if (fileInputRef.current) {
+                              fileInputRef.current.value = "";
+                            }
+                          }}
+                          disabled={isBusy}
+                          className="sr-only"
+                        />
+                        <span className="flex min-h-10 items-center justify-center gap-2 px-3">
+                          <FolderOpen className="h-4 w-4" aria-hidden="true" />
+                          Folder
+                        </span>
+                      </label>
+                    </div>
+                  </fieldset>
+
+                  <div className="mt-4">
+                    {uploadSource === "file" ? (
+                      <>
+                        <input
+                          ref={fileInputRef}
+                          id="media-file"
+                          name="media"
+                          type="file"
+                          accept="video/mp4,video/quicktime,image/jpeg,image/png,.mp4,.mov,.jpg,.jpeg,.png"
+                          disabled={isBusy}
+                          onChange={(event) => setUploadSelection(uploadSelectionLabel(Array.from(event.currentTarget.files ?? []), "file"))}
+                          className="sr-only"
+                        />
+                        <label
+                          htmlFor="media-file"
+                          className="flex min-h-14 cursor-pointer items-center justify-center rounded-md bg-teal-700 px-4 py-3 text-sm font-semibold text-white hover:bg-teal-800"
+                        >
+                          Choose file
+                        </label>
+                      </>
+                    ) : (
+                      <>
+                        <input
+                          {...directoryInputAttributes}
+                          ref={directoryInputRef}
+                          id="media-directory"
+                          name="mediaDirectory"
+                          type="file"
+                          multiple
+                          accept="video/mp4,video/quicktime,image/jpeg,image/png,.mp4,.mov,.jpg,.jpeg,.png"
+                          disabled={isBusy}
+                          onChange={(event) => setUploadSelection(uploadSelectionLabel(Array.from(event.currentTarget.files ?? []), "directory"))}
+                          className="sr-only"
+                        />
+                        <label
+                          htmlFor="media-directory"
+                          className="flex min-h-14 cursor-pointer items-center justify-center rounded-md bg-teal-700 px-4 py-3 text-sm font-semibold text-white hover:bg-teal-800"
+                        >
+                          Choose folder
+                        </label>
+                      </>
+                    )}
+                    <p className="mt-3 break-words text-sm font-semibold text-zinc-950">{uploadSelection}</p>
+                    <p className="mt-1 text-xs leading-5 text-zinc-600">
+                      Hidden files and unsupported formats are skipped when uploading a folder.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="min-w-0">
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="md:col-span-2">
+                      <label htmlFor="media-title" className="text-sm font-semibold text-zinc-950">Title</label>
+                      <input
+                        id="media-title"
+                        name="title"
+                        value={uploadTitle}
+                        onChange={(event) => setUploadTitle(event.currentTarget.value)}
+                        disabled={isBusy}
+                        placeholder={uploadSource === "directory" ? "Optional; folder uploads keep file names" : "Optional display name"}
+                        className="mt-1 min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="media-duration" className="text-sm font-semibold text-zinc-950">Image time</label>
+                      <input
+                        id="media-duration"
+                        name="durationSeconds"
+                        type="number"
+                        min="1"
+                        max="300"
+                        value={durationSeconds}
+                        onChange={(event) => setDurationSeconds(event.currentTarget.value)}
+                        disabled={isBusy}
+                        className="mt-1 min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="upload-media-folder" className="text-sm font-semibold text-zinc-950">Folder</label>
+                      <select
+                        id="upload-media-folder"
+                        value={uploadFolderId}
+                        onChange={(event) => setUploadFolderId(event.currentTarget.value)}
+                        disabled={isBusy}
+                        className="mt-1 min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+                      >
+                        <option value="">Unfiled</option>
+                        {folders.map((folder) => (
+                          <option key={folder.id} value={folder.id}>{folder.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <label htmlFor="media-tags" className="text-sm font-semibold text-zinc-950">Tags</label>
+                    <input
+                      id="media-tags"
+                      name="tags"
+                      value={uploadTags}
+                      onChange={(event) => setUploadTags(event.currentTarget.value)}
+                      disabled={isBusy}
+                      placeholder="Separate tags with commas"
+                      className="mt-1 min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+                    />
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {cannedTags.map((tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => setUploadTags((current) => appendTagText(current, tag))}
+                          disabled={isBusy}
+                          className="min-h-8 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs font-semibold text-zinc-700 disabled:cursor-not-allowed disabled:bg-zinc-100"
+                        >
+                          {tag}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-zinc-600" aria-live="polite">{isUploading ? message : "Upload saves locally. Publish sends media to screens later."}</p>
+                    <button
+                      type="submit"
+                      disabled={isBusy}
+                      className="min-h-11 rounded-md bg-teal-700 px-5 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
+                    >
+                      {isUploading ? "Uploading..." : "Save upload"}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
-            <div>
-              <label htmlFor="upload-media-folder" className="text-sm font-semibold text-zinc-950">Folder</label>
-              <select
-                id="upload-media-folder"
-                value={uploadFolderId}
-                onChange={(event) => setUploadFolderId(event.currentTarget.value)}
-                disabled={isBusy}
-                className="mt-1 min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-              >
-                <option value="">Unfiled</option>
-                {folders.map((folder) => (
-                  <option key={folder.id} value={folder.id}>{folder.name}</option>
-                ))}
-              </select>
-            </div>
-            <button
-              type="submit"
-              disabled={isBusy}
-              className="min-h-10 rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
-            >
-              {isUploading ? "Uploading" : "Save"}
-            </button>
           </form>
         ) : null}
 
