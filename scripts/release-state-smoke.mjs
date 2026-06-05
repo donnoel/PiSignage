@@ -326,6 +326,19 @@ function validatePublishStatus(status, playlist) {
   assert(typeof status.ok === "boolean", "Publish status: ok must be boolean");
   assert(typeof status.piPublishEnabled === "boolean", "Publish status: piPublishEnabled must be boolean");
   assert(status.playlistVersion === playlist.version, "Publish status: playlistVersion is stale");
+  if (status.targets !== undefined) {
+    assert(Array.isArray(status.targets), "Publish status: targets must be an array when present");
+    for (const target of status.targets) {
+      const label = `Publish target ${target?.deviceId ?? target?.deviceName ?? "(unknown)"}`;
+      assert(target.deviceId === null || typeof target.deviceId === "string", `${label}: deviceId must be string or null`);
+      assert(typeof target.deviceName === "string" && target.deviceName.trim(), `${label}: deviceName is required`);
+      assert(target.host === null || typeof target.host === "string", `${label}: host must be string or null`);
+      assert(target.screenId === null || typeof target.screenId === "string", `${label}: screenId must be string or null`);
+      assert(typeof target.message === "string" && target.message.trim(), `${label}: message is required`);
+      assert(typeof target.ok === "boolean", `${label}: ok must be boolean`);
+      assert(typeof target.enabled === "boolean", `${label}: enabled must be boolean`);
+    }
+  }
   assert(isValidDate(status.timestamp), "Publish status: timestamp must be valid");
 }
 

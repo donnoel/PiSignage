@@ -35,6 +35,13 @@ export type PiPublishResult = {
   message: string;
 };
 
+export type PublishStatusTarget = PiPublishResult & {
+  deviceId: string | null;
+  deviceName: string;
+  host: string | null;
+  screenId: string | null;
+};
+
 export function repoRoot(): string {
   return path.resolve(process.cwd(), "..");
 }
@@ -235,7 +242,8 @@ export async function writePlaylist(playlistPath: string, playlist: Playlist): P
 export async function writePublishStatus(
   action: string,
   playlist: Playlist,
-  piPublish: PiPublishResult
+  piPublish: PiPublishResult,
+  targets: PublishStatusTarget[] = []
 ): Promise<void> {
   await writeFileAtomic(
     publishStatusPath(),
@@ -255,6 +263,7 @@ export async function writePublishStatus(
         playlistId: playlist.playlistId,
         playlistName: playlist.name,
         playlistVersion: playlist.version,
+        targets,
         timestamp: isoNow()
       },
       null,

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   ensureLivePlaylistPath,
   type PiPublishResult,
+  type PublishStatusTarget,
   readStoredPlaylist,
   writePlaylist,
   writePublishStatus
@@ -26,6 +27,32 @@ function sumPublishMetric(
   return values.length > 0 ? values.reduce((total, value) => total + value, 0) : undefined;
 }
 
+function publishTargetStatus(
+  result: PiPublishResult,
+  target: {
+    id: string | null;
+    name: string;
+    host: string | null;
+    screenId: string | null;
+  }
+): PublishStatusTarget {
+  return {
+    assetsChecked: result.assetsChecked,
+    assetsCopied: result.assetsCopied,
+    assetsRemoved: result.assetsRemoved,
+    assetsSkipped: result.assetsSkipped,
+    assetsVerifiedByChecksum: result.assetsVerifiedByChecksum,
+    assetsVerifiedBySize: result.assetsVerifiedBySize,
+    deviceId: target.id,
+    deviceName: target.name,
+    enabled: result.enabled,
+    host: target.host,
+    message: result.message,
+    ok: result.ok,
+    screenId: target.screenId
+  };
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as {
@@ -48,10 +75,10 @@ export async function POST(request: Request) {
       playlistId: playlist.playlistId,
       screenId: body.screenId
     });
-    const publishResults = targets.length
+    const publishAttempts = targets.length
       ? await Promise.all(
-          targets.map((device) =>
-            publishPlaylistToPi(
+          targets.map(async (device) => ({
+            result: await publishPlaylistToPi(
               playlistPath,
               playlist,
               {
@@ -60,15 +87,31 @@ export async function POST(request: Request) {
                 success: `Published ${playlist.name} to ${device.name} at ${device.host}.`
               },
               piConfigForDevice(device)
-            )
-          )
+            ),
+            target: {
+              host: device.host,
+              id: device.id,
+              name: device.name,
+              screenId: device.screenId
+            }
+          }))
         )
       : [
-          await publishPlaylistToPi(playlistPath, playlist, {
-            notConfigured: "No assigned Pi was found for this playlist; playlist stayed local.",
-            failure: "Manual publish needs attention."
-          })
+          {
+            result: await publishPlaylistToPi(playlistPath, playlist, {
+              notConfigured: "No assigned Pi was found for this playlist; playlist stayed local.",
+              failure: "Manual publish needs attention."
+            }),
+            target: {
+              host: null,
+              id: null,
+              name: "No assigned Pi",
+              screenId: body.screenId ?? null
+            }
+          }
         ];
+    const publishResults = publishAttempts.map((attempt) => attempt.result);
+    const publishTargets = publishAttempts.map((attempt) => publishTargetStatus(attempt.result, attempt.target));
     const okCount = publishResults.filter((result) => result.ok).length;
     const piPublish = {
       assetsChecked: sumPublishMetric(publishResults, "assetsChecked"),
@@ -86,13 +129,14 @@ export async function POST(request: Request) {
               .map((result) => result.message)
               .join(" ")}`
     };
-    await writePublishStatus("publish", playlist, piPublish);
+    await writePublishStatus("publish", playlist, piPublish, publishTargets);
 
     return NextResponse.json({
       playlistVersion: playlist.version,
       assetCount: playlist.assets.length,
       piPublish,
-      publishResults
+      publishResults,
+      publishTargets
     });
   } catch (error) {
     console.error("manual playlist publish failed", error);
