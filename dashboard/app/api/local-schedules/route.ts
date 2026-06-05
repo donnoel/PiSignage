@@ -11,7 +11,7 @@ import {
   type ScheduleStore,
   writeScheduleStore
 } from "../../lib/local-data-store";
-import { readNormalizedInventory } from "../../lib/local-inventory";
+import { readNormalizedInventory, repairSchedulesForScreens } from "../../lib/local-inventory";
 import { readLivePlaylist, readPlaylistStore } from "../../lib/local-playlist";
 import { publishScheduleStoreToPi, readPiConfig, runSsh } from "../../lib/pi-local";
 import {
@@ -138,10 +138,11 @@ async function checkPiReachable() {
 
 async function scheduleResponse(publish?: Awaited<ReturnType<typeof publishSchedules>>) {
   await ensureLocalDataFoundation();
-  const [scheduleStore, settings, inventory, playlistStore, activityStore, piConfig, piReachable] = await Promise.all([
+  const inventory = await inventoryForSchedules();
+  await repairSchedulesForScreens(inventory.screens.items.map((screen) => screen.id));
+  const [scheduleStore, settings, playlistStore, activityStore, piConfig, piReachable] = await Promise.all([
     readScheduleStore(),
     readSettingsRecord(),
-    inventoryForSchedules(),
     readPlaylistStore(),
     readActivityStore(),
     Promise.resolve(readPiConfig()),

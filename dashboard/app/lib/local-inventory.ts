@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
-import type { DeviceRecord, DeviceStore, ScreenRecord, ScreenStore } from "./local-data-store";
+import type { DeviceRecord, DeviceStore, ScheduleRecord, ScreenRecord, ScreenStore } from "./local-data-store";
 import {
   appendActivityRecord,
   readDeviceStore,
+  readScheduleStore,
   readScreenStore,
   writeDeviceStore,
+  writeScheduleStore,
   writeScreenStore
 } from "./local-data-store";
 
@@ -91,6 +93,84 @@ export async function readNormalizedInventory(fallbackPlaylistId: string): Promi
   }
 
   return { devices, screens };
+}
+
+export function pruneSchedulesForScreens(
+  schedules: ScheduleRecord[],
+  screenIds: Iterable<string>,
+  timestamp: string
+): {
+  items: ScheduleRecord[];
+  removedScheduleCount: number;
+  removedScreenReferenceCount: number;
+} {
+  const validScreenIds = new Set(screenIds);
+  let removedScreenReferenceCount = 0;
+  let removedScheduleCount = 0;
+
+  const items = schedules.flatMap((schedule) => {
+    const nextScreenIds = schedule.screenIds.filter((screenId) => validScreenIds.has(screenId));
+    removedScreenReferenceCount += schedule.screenIds.length - nextScreenIds.length;
+
+    if (nextScreenIds.length === 0) {
+      removedScheduleCount += 1;
+      return [];
+    }
+
+    if (nextScreenIds.length === schedule.screenIds.length) {
+      return [schedule];
+    }
+
+    return [
+      {
+        ...schedule,
+        screenIds: nextScreenIds,
+        updatedAt: timestamp
+      }
+    ];
+  });
+
+  return { items, removedScheduleCount, removedScreenReferenceCount };
+}
+
+export async function repairSchedulesForScreens(screenIds: Iterable<string>): Promise<{
+  removedScheduleCount: number;
+  removedScreenReferenceCount: number;
+}> {
+  const scheduleStore = await readScheduleStore();
+  const timestamp = isoNow();
+  const {
+    items: nextSchedules,
+    removedScheduleCount,
+    removedScreenReferenceCount
+  } = pruneSchedulesForScreens(scheduleStore.items, screenIds, timestamp);
+
+  if (removedScreenReferenceCount === 0 && removedScheduleCount === 0) {
+    return { removedScheduleCount, removedScreenReferenceCount };
+  }
+
+  await writeScheduleStore({
+    ...scheduleStore,
+    items: nextSchedules,
+    updatedAt: timestamp,
+    version: scheduleStore.version + 1
+  });
+
+  await appendActivityRecord({
+    id: randomUUID(),
+    action: "schedule-repair",
+    actor: "local-system",
+    entityId: "schedules",
+    entityType: "schedule",
+    message:
+      removedScheduleCount > 0
+        ? `Repaired schedules by removing ${removedScreenReferenceCount} stale screen assignment(s) and ${removedScheduleCount} empty schedule(s).`
+        : `Repaired schedules by removing ${removedScreenReferenceCount} stale screen assignment(s).`,
+    result: "warning",
+    timestamp
+  });
+
+  return { removedScheduleCount, removedScreenReferenceCount };
 }
 
 export async function createScreen(input: {
@@ -275,6 +355,8 @@ export async function removeScreen(screenId: string): Promise<void> {
     updatedAt: timestamp,
     version: deviceStore.version + 1
   });
+
+  await repairSchedulesForScreens(screenStore.items.filter((item) => item.id !== screenId).map((item) => item.id));
 
   await appendActivityRecord({
     id: randomUUID(),
