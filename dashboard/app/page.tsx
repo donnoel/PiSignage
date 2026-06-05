@@ -657,16 +657,38 @@ function loadCachedPiProbe(config: PiConfig | null): PiProbe {
   return piProbeCache.get(key)?.probe ?? unavailablePiProbe(config, `Beam is checking ${config.host}.`);
 }
 
-function piConfigFromInventory(inventory: { devices: DeviceStore }): PiConfig | null {
+function piConfigFromInventory(inventory: { devices: DeviceStore; screens: ScreenStore }, playlistId?: string | null): PiConfig | null {
   const savedDevices = inventory.devices.items.filter((device) => {
     return Boolean(device.host.trim()) && device.host !== "Not configured";
   });
+  const playlistScreenIds = new Set(
+    playlistId
+      ? inventory.screens.items
+          .filter((screen) => screen.playlistId === playlistId)
+          .map((screen) => screen.id)
+      : []
+  );
+  const playlistDeviceIds = new Set(
+    playlistId
+      ? inventory.screens.items
+          .filter((screen) => screen.playlistId === playlistId && screen.deviceId)
+          .map((screen) => screen.deviceId as string)
+      : []
+  );
+  const playlistDevices = savedDevices.filter((device) => {
+    return (
+      (device.playlistId !== null && device.playlistId === playlistId) ||
+      playlistDeviceIds.has(device.id) ||
+      (device.screenId ? playlistScreenIds.has(device.screenId) : false)
+    );
+  });
+  const candidateDevices = playlistDevices.length > 0 ? playlistDevices : savedDevices;
   const reachableDevice =
-    savedDevices.find((device) => {
+    candidateDevices.find((device) => {
       const probe = piProbeCache.get(piProbeCacheKey(piConfigForDevice(device)))?.probe;
       return probe?.reachable;
     }) ?? null;
-  const savedDevice = reachableDevice ?? savedDevices[0] ?? null;
+  const savedDevice = reachableDevice ?? candidateDevices[0] ?? null;
   const fallbackConfig = readPiConfig();
 
   if (!savedDevice) {
@@ -833,7 +855,7 @@ async function loadDashboardState(selectedPlaylistId?: string | null): Promise<D
     readNormalizedInventory(seedPlaylistId),
     readJsonFile<PublishStatus>(publishStatusPath())
   ]);
-  const primaryPiConfig = piConfigFromInventory(inventory);
+  const primaryPiConfig = piConfigFromInventory(inventory, playlist.playlistId);
   const pi = loadCachedPiProbe(primaryPiConfig);
   const deviceStatuses = await loadDeviceStatuses(inventory);
   const lastKnownPlayback = await resolveLastKnownPlayback(pi);
@@ -1057,6 +1079,7 @@ type FleetCommandRow = {
   name: string;
   needsAttention: boolean;
   playbackLabel: string;
+  reachable: boolean;
   screenId: string;
   screenName: string;
   syncLabel: string;
@@ -1201,6 +1224,7 @@ function fleetCommandRows({
         name: linkedScreen ? `${linkedScreen.name} Pi` : device.name,
         needsAttention,
         playbackLabel: playback,
+        reachable,
         screenId: linkedScreen?.id ?? device.screenId ?? device.id,
         screenName: linkedScreen?.name ?? "No screen linked",
         syncLabel,
@@ -1467,10 +1491,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const systemStatusTone = commandCenterReady ? "good" : commandAttentionCount > 0 ? "warn" : "muted";
   const focusedScreen =
     fleetRows.find((row) => row.screenId === selectedScreenParam || row.id === selectedScreenParam) ??
+    fleetRows.find((row) => row.reachable) ??
     fleetRows.find((row) => row.isLive) ??
     fleetRows[0] ??
     null;
   const focusedScreenIsLive = Boolean(focusedScreen?.isLive);
+  const focusedScreenReachable = Boolean(focusedScreen?.reachable);
   const focusedScreenName = focusedScreen?.screenName ?? localScreenName;
   const focusedScreenLocation = focusedScreen
     ? `${focusedScreen.location} · ${focusedScreen.group}`
@@ -1478,43 +1504,43 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const focusedPlaybackLabel = focusedScreen?.playbackLabel ?? playbackLabel;
   const focusedSyncLabel = focusedScreen?.syncLabel ?? playlistSyncState.label;
   const focusedScreenHost = focusedScreen?.host || pi.host || "No host";
-  const focusedOfflineDuration = focusedScreenIsLive && !pi.reachable ? offlineDurationLabel(lastKnownPlayback) : null;
+  const focusedOfflineDuration = focusedScreenIsLive && !focusedScreenReachable ? offlineDurationLabel(lastKnownPlayback) : null;
   const focusedLastKnownPlayback =
-    focusedScreenIsLive && !pi.reachable ? lastKnownPlaybackLabel(lastKnownPlayback) : null;
+    focusedScreenIsLive && !focusedScreenReachable ? lastKnownPlaybackLabel(lastKnownPlayback) : null;
   const focusedScreenTitle = focusedScreenIsLive
-    ? pi.reachable
+    ? focusedScreenReachable
       ? focusedScreen.assignedPlaylistName
       : "Screen offline"
     : "Waiting for check-in";
   const focusedScreenDetail = focusedScreenIsLive
-    ? pi.reachable
+    ? focusedScreenReachable
       ? focusedScreen.syncTone === "good"
         ? `VLC reports ${focusedScreen.assignedPlaylistName} is in sync. Exact item position is not reported yet across the ${pluralize(focusedScreen.assignedPlaylistAssetCount ?? 0, "item")} loop.`
         : focusedScreen.detail
       : offlinePlaybackDetail(lastKnownPlayback)
     : "This screen is saved in Beam. Once it checks in, its current playback will appear here.";
   const focusedLastReportLabel = focusedScreenIsLive
-    ? pi.reachable
+    ? focusedScreenReachable
       ? formatStatusAge(playerStatus?.updatedAt)
       : "unavailable"
     : "not checking in";
   const focusedLiveSummary = focusedScreenIsLive
-    ? pi.reachable
+    ? focusedScreenReachable
       ? focusedPlaybackLabel === "Playing"
         ? "Playing live"
         : focusedPlaybackLabel
       : "Offline"
     : "Not reporting";
-  const focusedScreenSummary = focusedScreenIsLive && pi.reachable
+  const focusedScreenSummary = focusedScreenIsLive && focusedScreenReachable
     ? `${focusedLiveSummary} · ${focusedSyncLabel} · Last report ${focusedLastReportLabel}`
     : [focusedOfflineDuration ?? focusedLiveSummary, focusedLastKnownPlayback ?? "Playback unknown"].join(" · ");
-  const previewEyebrow = focusedScreenIsLive && pi.reachable ? "Showing now" : "Screen status";
+  const previewEyebrow = focusedScreenIsLive && focusedScreenReachable ? "Showing now" : "Screen status";
   const focusedPlayerUrl =
-    focusedScreenIsLive && piPlayerUrl
-      ? piPlayerUrl
-      : focusedScreen?.host && focusedScreen.host !== "Not configured"
+    focusedScreen?.host && focusedScreen.host !== "Not configured"
         ? `http://${focusedScreen.host}:5173/?playlist=/playlist.local.json`
-        : null;
+        : focusedScreenIsLive && piPlayerUrl
+          ? piPlayerUrl
+          : null;
   const setupLocationName = focusedScreen?.location ?? localLocationName;
   const setupScreenName = focusedScreen?.screenName ?? localScreenName;
   const setupDeviceIdentifier =
