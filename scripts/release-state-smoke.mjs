@@ -92,10 +92,15 @@ function isSafeRelativeUri(value) {
 
 function isPlaybackSafeVideoFileName(fileName) {
   return (
+    /\.signage-1080p(?:-\d+)?\.mp4$/i.test(fileName) ||
     /\.signage-720p(?:-\d+)?\.mp4$/i.test(fileName) ||
     /\.transcoded(?:-\d+)?\.mp4$/i.test(fileName) ||
     /\.still-\d+s(?:-\d+)?\.mp4$/i.test(fileName)
   );
+}
+
+function isSafeColor(value) {
+  return typeof value === "string" && /^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value);
 }
 
 function isSha256(value) {
@@ -215,6 +220,116 @@ async function validateMediaStore(mediaStore) {
       const extension = path.extname(item.playbackFileName).toLowerCase();
       assert(extension === ".mp4" || extension === ".mov", `${label}: ready media must produce MP4 or MOV playback`);
       await requireAssetOnDisk(path.join(sampleAssetsRoot, item.playbackFileName), label);
+    }
+  }
+}
+
+function validateLayerFrame(layer, label) {
+  assert(typeof layer.id === "string" && layer.id.trim(), `${label}: id is required`);
+  assert(Number.isFinite(layer.x) && layer.x >= 0 && layer.x <= 1920, `${label}: x must be within the canvas`);
+  assert(Number.isFinite(layer.y) && layer.y >= 0 && layer.y <= 1080, `${label}: y must be within the canvas`);
+  assert(Number.isFinite(layer.width) && layer.width > 0 && layer.width <= 1920, `${label}: width must fit within the canvas`);
+  assert(Number.isFinite(layer.height) && layer.height > 0 && layer.height <= 1080, `${label}: height must fit within the canvas`);
+  assert(layer.x + layer.width <= 1920, `${label}: x + width must stay inside the canvas`);
+  assert(layer.y + layer.height <= 1080, `${label}: y + height must stay inside the canvas`);
+  assert(Number.isInteger(layer.zIndex) && layer.zIndex >= 0 && layer.zIndex <= 999, `${label}: zIndex is invalid`);
+  assert(layer.opacity === undefined || (Number.isFinite(layer.opacity) && layer.opacity >= 0 && layer.opacity <= 1), `${label}: opacity is invalid`);
+}
+
+function validateLayoutLayer(layer, label, knownMediaIds) {
+  if (!layer || typeof layer !== "object") {
+    assert(false, `${label}: layer must be an object`);
+    return;
+  }
+
+  validateLayerFrame(layer, label);
+
+  if (layer.kind === "media") {
+    assert(typeof layer.mediaId === "string" && layer.mediaId.trim(), `${label}: mediaId is required`);
+    assert(knownMediaIds.has(layer.mediaId), `${label}: mediaId must reference ready local media`);
+    assert(["contain", "cover", "fill"].includes(layer.fit), `${label}: fit is invalid`);
+    assert(typeof layer.muted === "boolean", `${label}: muted must be boolean`);
+  } else if (layer.kind === "text") {
+    assert(typeof layer.text === "string" && layer.text.trim(), `${label}: text is required`);
+    assert(Number.isFinite(layer.fontSize) && layer.fontSize >= 8 && layer.fontSize <= 240, `${label}: fontSize is invalid`);
+    assert(["regular", "medium", "bold"].includes(layer.fontWeight), `${label}: fontWeight is invalid`);
+    assert(["left", "center", "right"].includes(layer.align), `${label}: align is invalid`);
+    assert(["top", "middle", "bottom"].includes(layer.verticalAlign), `${label}: verticalAlign is invalid`);
+    assert(isSafeColor(layer.color), `${label}: color is invalid`);
+    assert(layer.backgroundColor === undefined || isSafeColor(layer.backgroundColor), `${label}: backgroundColor is invalid`);
+  } else if (layer.kind === "shape") {
+    assert(layer.shape === "rectangle", `${label}: shape is invalid`);
+    assert(layer.fillColor === undefined || isSafeColor(layer.fillColor), `${label}: fillColor is invalid`);
+    assert(layer.strokeColor === undefined || isSafeColor(layer.strokeColor), `${label}: strokeColor is invalid`);
+    assert(layer.strokeWidth === undefined || (Number.isFinite(layer.strokeWidth) && layer.strokeWidth >= 0 && layer.strokeWidth <= 80), `${label}: strokeWidth is invalid`);
+  } else {
+    assert(false, `${label}: kind is invalid`);
+  }
+}
+
+function knownLayoutMediaIds(mediaStore, playlistStore) {
+  const ids = new Set();
+  for (const item of mediaStore?.items ?? []) {
+    if (item.status === "ready") {
+      ids.add(item.id);
+    }
+  }
+
+  for (const playlist of playlistStore?.items ?? []) {
+    for (const asset of playlist.assets ?? []) {
+      if (asset.uri?.startsWith("assets/")) {
+        ids.add(`playlist:${asset.assetId}`);
+      }
+    }
+  }
+
+  return ids;
+}
+
+function validateLayouts(layoutStore, mediaStore, playlistStore) {
+  if (!layoutStore || !validateStoreShell(layoutStore, "Layout store")) {
+    return;
+  }
+
+  const ids = new Set();
+  const knownMediaIds = knownLayoutMediaIds(mediaStore, playlistStore);
+  for (const layout of layoutStore.items) {
+    const label = `Layout ${layout?.id ?? "(missing id)"}`;
+    assert(layout.contractVersion === 1, `${label}: contractVersion must be 1`);
+    assert(typeof layout.id === "string" && layout.id.trim(), `${label}: id is required`);
+    assert(!ids.has(layout.id), `${label}: duplicate id`);
+    ids.add(layout.id);
+    assert(typeof layout.name === "string" && layout.name.trim(), `${label}: name is required`);
+    assert(Number.isInteger(layout.version) && layout.version >= 1, `${label}: version must be a positive integer`);
+    assert(isValidDate(layout.updatedAt), `${label}: updatedAt must be valid`);
+    assert(Number.isInteger(layout.durationSeconds) && layout.durationSeconds >= 1 && layout.durationSeconds <= 3600, `${label}: durationSeconds must be between 1 and 3600`);
+    assert(layout.canvas?.width === 1920 && layout.canvas?.height === 1080, `${label}: canvas must be 1920x1080`);
+    assert(isSafeColor(layout.canvas?.backgroundColor), `${label}: canvas backgroundColor is invalid`);
+    assert(Array.isArray(layout.layers) && layout.layers.length > 0 && layout.layers.length <= 24, `${label}: layers must contain 1-24 items`);
+
+    const layerIds = new Set();
+    for (const [index, layer] of (layout.layers ?? []).entries()) {
+      const layerLabel = `${label} layer ${index + 1}`;
+      assert(!layerIds.has(layer?.id), `${layerLabel}: duplicate layer id`);
+      layerIds.add(layer?.id);
+      validateLayoutLayer(layer, layerLabel, knownMediaIds);
+    }
+
+    assert(layout.render && typeof layout.render === "object", `${label}: render is required`);
+    if (layout.render?.status === "not-rendered") {
+      assert(layout.render.reason === undefined || typeof layout.render.reason === "string", `${label}: render reason is invalid`);
+    } else if (layout.render?.status === "failed") {
+      assert(typeof layout.render.message === "string" && layout.render.message.trim(), `${label}: render failure message is required`);
+      assert(isValidDate(layout.render.failedAt), `${label}: render failedAt must be valid`);
+    } else if (layout.render?.status === "ready") {
+      const playbackFileName =
+        typeof layout.render.playbackFileName === "string" ? layout.render.playbackFileName : "";
+      assert(knownMediaIds.has(layout.render.mediaId), `${label}: render mediaId must reference ready local media`);
+      assert(playbackFileName && path.basename(playbackFileName) === playbackFileName, `${label}: render playbackFileName must be a file name`);
+      assert(isPlaybackSafeVideoFileName(playbackFileName), `${label}: render playbackFileName must be Pi-safe`);
+      assert(isValidDate(layout.render.renderedAt), `${label}: render renderedAt must be valid`);
+    } else {
+      assert(false, `${label}: render status is invalid`);
     }
   }
 }
@@ -357,7 +472,7 @@ function validateActivity(activityStore) {
     assert(typeof item.action === "string" && item.action.trim(), `${label}: action is required`);
     assert(typeof item.actor === "string" && item.actor.trim(), `${label}: actor is required`);
     assert(typeof item.entityId === "string" && item.entityId.trim(), `${label}: entityId is required`);
-    assert(["media", "screen", "device", "playlist", "schedule", "system"].includes(item.entityType), `${label}: entityType is invalid`);
+    assert(["media", "screen", "device", "playlist", "layout", "schedule", "system"].includes(item.entityType), `${label}: entityType is invalid`);
     assert(["success", "warning", "error"].includes(item.result), `${label}: result is invalid`);
     assert(typeof item.message === "string" && item.message.trim(), `${label}: message is required`);
     assert(!unsafePattern.test(item.message), `${label}: message appears to contain a secret`);
@@ -429,6 +544,8 @@ const mediaStore = await readOptionalJson("media.local.json", "Media store");
 if (mediaStore) {
   await validateMediaStore(mediaStore);
 }
+
+validateLayouts(await readOptionalJson("layouts.local.json", "Layout store"), mediaStore, playlistStore);
 
 const screensStore = await readOptionalJson("screens.local.json", "Screens store");
 const devicesStore = await readOptionalJson("devices.local.json", "Devices store");

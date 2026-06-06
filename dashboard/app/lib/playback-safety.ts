@@ -4,6 +4,7 @@ export function isStillClipFileName(fileName: string): boolean {
 
 export function isPlaybackSafeVideoFileName(fileName: string): boolean {
   return (
+    /\.signage-1080p(?:-\d+)?\.mp4$/i.test(fileName) ||
     /\.signage-720p(?:-\d+)?\.mp4$/i.test(fileName) ||
     /\.transcoded(?:-\d+)?\.mp4$/i.test(fileName) ||
     isStillClipFileName(fileName)

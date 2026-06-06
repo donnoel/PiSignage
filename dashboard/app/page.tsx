@@ -12,6 +12,7 @@ import { readPiConfig, runSsh } from "./lib/pi-local";
 import type { PiConfig } from "./lib/pi-local";
 import { piConfigForDevice } from "./lib/pi-targets";
 import { isPlaybackSafeVideoFileName } from "./lib/playback-safety";
+import { LayoutsPanel } from "./layouts-panel";
 import { MediaStorePanel } from "./media-store-panel";
 import { LocalPlaylistBuilder, LocalPlaylistScreenAssignment } from "./local-playlist-builder";
 import { LocalPlaylistCreateForm } from "./local-playlist-create-form";
@@ -148,6 +149,7 @@ const piProbeCache = new Map<string, PiProbeCacheEntry>();
 type DashboardView =
   | "dashboard"
   | "media-store"
+  | "layouts"
   | "playlist"
   | "device-health"
   | "screens"
@@ -164,6 +166,7 @@ type DashboardPageProps = {
 const navigationItems: Array<{ label: string; view: DashboardView }> = [
   { label: "Dashboard", view: "dashboard" },
   { label: "Media Store", view: "media-store" },
+  { label: "Layouts", view: "layouts" },
   { label: "Playlists", view: "playlist" },
   { label: "Screen Health", view: "device-health" },
   { label: "Screens", view: "screens" },
@@ -179,6 +182,11 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
     eyebrow: "Library",
     title: "Media Store",
     description: "Upload, find, and organize media for your screens."
+  },
+  layouts: {
+    eyebrow: "Compositions",
+    title: "Layouts",
+    description: "Compose local video layouts with text and regions before rendering."
   },
   playlist: {
     eyebrow: "Loops",
@@ -1978,6 +1986,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           >
             <h2 id="media-store-heading" className="sr-only">Media Store</h2>
             <MediaStorePanel />
+          </section>
+
+          <section
+            id="layouts"
+            aria-labelledby="layouts-heading"
+            className={selectedView === "layouts" ? "mt-6" : "hidden"}
+          >
+            <h2 id="layouts-heading" className="sr-only">Layouts</h2>
+            <LayoutsPanel />
           </section>
 
           <section

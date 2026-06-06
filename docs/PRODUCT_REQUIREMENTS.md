@@ -162,6 +162,26 @@ Acceptance:
 - A failed publish leaves the local playlist intact and clearly reports the failure.
 - Network loss does not stop already-cached playback.
 
+## Layouts And Overlays
+
+Layouts let an operator compose reusable signage frames from media, text, and simple graphic layers while preserving the Pi-safe playback path.
+
+Requirements:
+
+- Keep VLC appliance playback as the field default.
+- Store layout templates in ignored local state until a backend exists.
+- Start with a 1920x1080 canvas and simple layers: media, text, and rectangle shapes.
+- Support common first layouts: fullscreen media with text overlay, inset video with a border and call-to-action, and side-by-side regions.
+- Treat saved layout changes like playlist changes: save locally first and do not automatically publish.
+- For field-ready playback, render a layout to a playback-safe MP4 before it enters a Pi playlist.
+- Do not make live browser layout playback the default field path until it passes recovery and soak validation.
+
+Acceptance:
+
+- A saved layout template can be validated locally without touching the Pi.
+- A layout is not publishable until it has a ready rendered MP4 asset.
+- The Pi playlist continues to receive video assets, preserving cached playback and reboot recovery.
+
 ## Screens
 
 Screens represent TVs or display endpoints that operators care about.

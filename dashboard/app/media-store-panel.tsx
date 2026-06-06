@@ -246,7 +246,7 @@ function playbackSafety(item: MediaItem): PlaybackSafety {
   if (!isPlaybackSafeVideoFileName(item.playbackFileName)) {
     return {
       canUseInPlaylist: false,
-      detail: "This MP4 needs Pi-safe 720p preparation before playlist use.",
+      detail: "This MP4 needs Pi-safe signage preparation before playlist use.",
       label: "Needs prep",
       tone: "warn"
     };

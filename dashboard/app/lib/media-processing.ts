@@ -70,11 +70,11 @@ type FfprobeOutput = {
 export const playbackPrepProfile: PlaybackPrepProfile = {
   audioCodec: "aac",
   fps: 30,
-  height: 720,
-  id: "signage-720p-v3",
+  height: 1080,
+  id: "signage-1080p-v1",
   pixelFormat: "yuv420p",
   videoCodec: "h264",
-  width: 1280
+  width: 1920
 };
 
 const defaultVideoTranscodeTimeoutMs = 30 * 60 * 1000;
@@ -177,7 +177,7 @@ export function stillClipFileName(fileName: string, durationSeconds: number): st
 
 export function transcodedVideoFileName(fileName: string): string {
   const baseName = path.basename(fileName, path.extname(fileName));
-  return `${baseName}.signage-720p.mp4`;
+  return `${baseName}.signage-1080p.mp4`;
 }
 
 function parseNullableNumber(value: string | undefined): number | null {
@@ -204,21 +204,12 @@ function parseFrameRate(value: string | undefined): number | null {
   return numerator / denominator;
 }
 
-function sourceFpsForProbe(probe: MediaProbe): number | null {
-  return probe.averageFps ?? probe.fps;
-}
-
-function shouldMotionInterpolate(probe: MediaProbe): boolean {
-  const fps = sourceFpsForProbe(probe);
-  return fps !== null && fps > 0 && fps < playbackPrepProfile.fps - 0.25;
-}
-
-function playbackSafeVideoFilter(probe: MediaProbe): string {
+function playbackSafeVideoFilter(): string {
+  const targetSize = `${playbackPrepProfile.width}:${playbackPrepProfile.height}`;
   const scaleAndPad =
-    "scale=1280:720:force_original_aspect_ratio=decrease:in_range=full:out_range=tv,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1";
-  const cadence = shouldMotionInterpolate(probe)
-    ? `minterpolate=fps=${playbackPrepProfile.fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1`
-    : `fps=${playbackPrepProfile.fps}`;
+    `scale=${targetSize}:force_original_aspect_ratio=decrease:in_range=full:out_range=tv,` +
+    `pad=${targetSize}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
+  const cadence = `fps=${playbackPrepProfile.fps}`;
 
   return `${scaleAndPad},${cadence},format=yuv420p`;
 }
@@ -326,6 +317,7 @@ export async function createStillVideoClip(
   durationSeconds: number
 ): Promise<void> {
   const temporaryOutputPath = `${outputVideoPath}.${process.pid}.tmp.mp4`;
+  const targetSize = `${playbackPrepProfile.width}:${playbackPrepProfile.height}`;
 
   try {
     await execFileAsync(
@@ -350,9 +342,9 @@ export async function createStillVideoClip(
         "-i",
         "anullsrc=channel_layout=stereo:sample_rate=48000",
         "-vf",
-        "scale=1280:720:force_original_aspect_ratio=decrease:in_range=full:out_range=tv,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,format=yuv420p",
+        `scale=${targetSize}:force_original_aspect_ratio=decrease:in_range=full:out_range=tv,pad=${targetSize}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,format=yuv420p`,
         "-r",
-        "30",
+        String(playbackPrepProfile.fps),
         "-c:v",
         "libx264",
         "-preset",
@@ -360,11 +352,11 @@ export async function createStillVideoClip(
         "-profile:v",
         "baseline",
         "-level:v",
-        "3.1",
+        "4.0",
         "-pix_fmt",
         "yuv420p",
         "-x264-params",
-        "keyint=30:min-keyint=30:scenecut=0:bframes=0",
+        `keyint=${playbackPrepProfile.fps}:min-keyint=${playbackPrepProfile.fps}:scenecut=0:bframes=0`,
         "-color_range",
         "tv",
         "-colorspace",
@@ -424,8 +416,8 @@ export async function createPlaybackSafeVideoClip(
   const temporaryOutputPath = `${outputVideoPath}.${process.pid}.tmp.mp4`;
 
   try {
-    const sourceProbe = await probeMediaFile(sourceVideoPath);
-    const targetVideoFilter = playbackSafeVideoFilter(sourceProbe);
+    await probeMediaFile(sourceVideoPath);
+    const targetVideoFilter = playbackSafeVideoFilter();
 
     await execFileAsync(
       ffmpegBinary,
@@ -444,6 +436,10 @@ export async function createPlaybackSafeVideoClip(
         "medium",
         "-crf",
         "18",
+        "-maxrate",
+        "12M",
+        "-bufsize",
+        "24M",
         "-profile:v",
         "high",
         "-level:v",
