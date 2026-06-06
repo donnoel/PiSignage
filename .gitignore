@@ -17,6 +17,7 @@ npm-debug.log*
 # Build output
 .next/
 .next-dev/
+.next-build/
 dist/
 *.tsbuildinfo
 
