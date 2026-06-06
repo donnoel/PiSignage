@@ -74,10 +74,16 @@ type LayoutApiResponse = {
 type MediaItem = {
   id: string;
   durationSeconds: number | null;
-  origin: "media-store" | "playlist";
+  origin?: "media-store" | "playlist";
   playbackFileName: string;
   status: "ready" | "processing" | "failed";
   title: string;
+};
+
+type PlaylistOption = {
+  assetCount: number;
+  name: string;
+  playlistId: string;
 };
 
 type MediaApiResponse = {
@@ -92,6 +98,17 @@ type SaveResponse = {
 
 type RenderResponse = SaveResponse & {
   media?: MediaItem;
+};
+
+type PlaylistActionResponse = {
+  assetCount?: number;
+  error?: string;
+  message?: string;
+  piPublish?: {
+    message: string;
+    ok: boolean;
+  };
+  playlistVersion?: number;
 };
 
 const canvas = {
@@ -283,11 +300,12 @@ function LayoutPreview({ layers, mediaById }: { layers: LayoutLayer[]; mediaById
   );
 }
 
-export function LayoutsPanel() {
+export function LayoutsPanel({ playlists }: { playlists: PlaylistOption[] }) {
   const importInputRef = useRef<HTMLInputElement>(null);
   const [layouts, setLayouts] = useState<LayoutTemplate[]>([]);
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [selectedLayoutId, setSelectedLayoutId] = useState("");
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState(playlists[0]?.playlistId ?? "");
   const [preset, setPreset] = useState<LayoutPreset>("fullscreen-overlay");
   const [selectedMediaId, setSelectedMediaId] = useState("");
   const [name, setName] = useState("Promo layout");
@@ -295,6 +313,7 @@ export function LayoutsPanel() {
   const [detail, setDetail] = useState("(555) 010-0199");
   const [durationSeconds, setDurationSeconds] = useState(30);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAddingToPlaylist, setIsAddingToPlaylist] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -318,7 +337,9 @@ export function LayoutsPanel() {
     [detail, headline, preset, selectedMediaId]
   );
   const canSave = selectedMediaId && name.trim() && headline.trim() && detail.trim() && durationSeconds > 0;
-  const canRender = Boolean(selectedLayout && !isSaving && !isRendering && !isImporting);
+  const renderedMediaId = selectedLayout?.render.status === "ready" ? selectedLayout.render.mediaId ?? "" : "";
+  const canRender = Boolean(selectedLayout && !isSaving && !isRendering && !isImporting && !isAddingToPlaylist);
+  const canAddToPlaylist = Boolean(renderedMediaId && selectedPlaylistId && !isSaving && !isRendering && !isImporting && !isAddingToPlaylist);
 
   useEffect(() => {
     let cancelled = false;
@@ -567,6 +588,43 @@ export function LayoutsPanel() {
     }
   }
 
+  async function addRenderedLayoutToPlaylist() {
+    if (!renderedMediaId) {
+      setErrorMessage("Render the layout before adding it to a playlist.");
+      return;
+    }
+    if (!selectedPlaylistId) {
+      setErrorMessage("Choose a playlist.");
+      return;
+    }
+
+    const playlist = playlists.find((item) => item.playlistId === selectedPlaylistId);
+    setIsAddingToPlaylist(true);
+    setErrorMessage("");
+    setStatusMessage(`Adding rendered layout to ${playlist?.name ?? "playlist"}.`);
+    try {
+      const response = await fetch("/api/local-playlist/items", {
+        body: JSON.stringify({
+          action: "add-media",
+          mediaId: renderedMediaId,
+          playlistId: selectedPlaylistId
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST"
+      });
+      const data = (await response.json()) as PlaylistActionResponse;
+      if (!response.ok || data.error) {
+        throw new Error(data.error ?? "Rendered layout could not be added to the playlist.");
+      }
+
+      setStatusMessage(data.message ?? "Added to playlist. Publish manually when ready.");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Rendered layout could not be added to the playlist.");
+    } finally {
+      setIsAddingToPlaylist(false);
+    }
+  }
+
   return (
     <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
       <section aria-labelledby="saved-layouts-heading" className="rounded-lg border border-zinc-200 bg-white shadow-sm">
@@ -595,7 +653,7 @@ export function LayoutsPanel() {
           <button
             type="button"
             onClick={() => importInputRef.current?.click()}
-            disabled={isImporting || isSaving || isRendering}
+            disabled={isImporting || isSaving || isRendering || isAddingToPlaylist}
             className="mt-3 inline-flex min-h-10 items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-teal-800 ring-1 ring-teal-200 hover:bg-teal-50 focus:outline-none focus:ring-2 focus:ring-teal-600 disabled:cursor-not-allowed disabled:text-zinc-400 disabled:ring-zinc-200"
           >
             {isImporting ? "Importing" : "Import"}
@@ -636,7 +694,7 @@ export function LayoutsPanel() {
               <button
                 type="button"
                 onClick={saveLayout}
-                disabled={!canSave || isSaving || isRendering || isImporting}
+                disabled={!canSave || isSaving || isRendering || isImporting || isAddingToPlaylist}
                 className="inline-flex min-h-10 items-center justify-center rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-600 disabled:cursor-not-allowed disabled:bg-zinc-300"
               >
                 {isSaving ? "Saving" : selectedLayout ? "Update" : "Save"}
@@ -652,7 +710,7 @@ export function LayoutsPanel() {
               <button
                 type="button"
                 onClick={deleteLayout}
-                disabled={!selectedLayout || isSaving || isRendering || isImporting}
+                disabled={!selectedLayout || isSaving || isRendering || isImporting || isAddingToPlaylist}
                 className="inline-flex min-h-10 items-center justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-rose-700 ring-1 ring-rose-200 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:cursor-not-allowed disabled:text-zinc-400 disabled:ring-zinc-200"
               >
                 Delete
@@ -771,6 +829,37 @@ export function LayoutsPanel() {
                 <dd className="mt-1 font-semibold text-zinc-950">{selectedLayout?.render.status === "ready" ? "Rendered" : selectedLayout?.render.status === "failed" ? "Failed" : "Draft"}</dd>
               </div>
             </dl>
+
+            <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3">
+              <label className="block text-sm font-semibold text-zinc-950" htmlFor="layout-playlist">
+                Playlist
+                <select
+                  id="layout-playlist"
+                  value={selectedPlaylistId}
+                  onChange={(event) => setSelectedPlaylistId(event.target.value)}
+                  className="mt-1 min-h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-950 focus:outline-none focus:ring-2 focus:ring-teal-600"
+                >
+                  {playlists.length === 0 ? (
+                    <option value="">No playlists</option>
+                  ) : (
+                    playlists.map((playlist) => (
+                      <option key={playlist.playlistId} value={playlist.playlistId}>
+                        {playlist.name} ({playlist.assetCount})
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={addRenderedLayoutToPlaylist}
+                disabled={!canAddToPlaylist}
+                className="mt-3 inline-flex min-h-10 w-full items-center justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-teal-800 ring-1 ring-teal-200 hover:bg-teal-50 focus:outline-none focus:ring-2 focus:ring-teal-600 disabled:cursor-not-allowed disabled:text-zinc-400 disabled:ring-zinc-200"
+              >
+                {isAddingToPlaylist ? "Adding" : "Add rendered layout"}
+              </button>
+              <p className="mt-2 text-xs leading-5 text-zinc-600">Publish remains manual from Playlists.</p>
+            </div>
           </div>
         </div>
       </section>

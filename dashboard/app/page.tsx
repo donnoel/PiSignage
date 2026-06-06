@@ -1994,7 +1994,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             className={selectedView === "layouts" ? "mt-6" : "hidden"}
           >
             <h2 id="layouts-heading" className="sr-only">Layouts</h2>
-            <LayoutsPanel />
+            <LayoutsPanel
+              playlists={playlistStore.items.map((item) => ({
+                assetCount: item.assets.length,
+                name: item.name,
+                playlistId: item.playlistId
+              }))}
+            />
           </section>
 
           <section

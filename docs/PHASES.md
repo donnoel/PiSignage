@@ -175,7 +175,7 @@ Five-step implementation plan:
 2. Add a local layouts store/API so the dashboard can create, read, update, and delete saved templates without publishing.
 3. Build a compact dashboard layout editor/preview with MVP presets: fullscreen with overlay, inset video with text, and side-by-side regions.
 4. Add an `ffmpeg` render pipeline that turns a saved layout into a playback-safe MP4 Media Store item.
-5. Wire rendered layout assets into manual publish and validate on the Pi path, including five-device parity checks when hardware is reachable.
+5. Wire rendered layout assets into playlist editing and manual publish, then validate on the Pi path, including five-device parity checks when hardware is reachable.
 
 Acceptance:
 
@@ -183,6 +183,7 @@ Acceptance:
 - A layout can contain media, text, and rectangle layers on a 1920x1080 canvas.
 - Saved layout edits do not automatically publish.
 - A layout is not playlist-playable until it has a ready rendered MP4 asset.
+- Adding a rendered layout to a playlist saves locally and leaves screen publish manual.
 - VLC remains the field playback default; browser layout playback stays fallback/experimental until explicitly approved.
 
 Validation:
@@ -191,6 +192,7 @@ Validation:
 - Local layouts API smoke once routes exist.
 - Dashboard editor responsive smoke once UI exists.
 - Render smoke with a short layout MP4 once `ffmpeg` rendering exists.
+- Rendered layout add-to-playlist smoke once playlist wiring exists.
 - Pi publish/playback/recovery smoke before calling rendered layouts field-ready.
 
 ## Phase 7: Devices

@@ -174,6 +174,7 @@ Requirements:
 - Support common first layouts: fullscreen media with text overlay, inset video with a border and call-to-action, and side-by-side regions.
 - Treat saved layout changes like playlist changes: save locally first and do not automatically publish.
 - For field-ready playback, render a layout to a playback-safe MP4 before it enters a Pi playlist.
+- Adding a rendered layout to a playlist must save locally and require the normal manual publish action before any screen changes.
 - Do not make live browser layout playback the default field path until it passes recovery and soak validation.
 
 Acceptance:
@@ -181,6 +182,7 @@ Acceptance:
 - A saved layout template can be validated locally without touching the Pi.
 - A layout is not publishable until it has a ready rendered MP4 asset.
 - The Pi playlist continues to receive video assets, preserving cached playback and reboot recovery.
+- Rendered layout playlist additions use the same Pi-safe MP4 checks as ordinary Media Store items.
 
 ## Screens
 
