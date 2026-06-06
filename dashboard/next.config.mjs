@@ -1,9 +1,7 @@
-import { PHASE_PRODUCTION_BUILD } from "next/constants.js";
-
-/** @type {(phase: string) => import('next').NextConfig} */
-const nextConfig = (phase) => ({
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   devIndicators: false,
-  distDir: phase === PHASE_PRODUCTION_BUILD ? ".next-build" : ".next"
-});
+  distDir: process.env.PISIGNAGE_NEXT_DIST_DIR ?? ".next"
+};
 
 export default nextConfig;

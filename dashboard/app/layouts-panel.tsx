@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 
 type LayoutPreset = "fullscreen-overlay" | "inset-cta" | "side-by-side";
@@ -57,7 +57,10 @@ type LayoutTemplate = {
   layers: LayoutLayer[];
   name: string;
   render: {
+    mediaId?: string;
+    playbackFileName?: string;
     reason?: string;
+    renderedAt?: string;
     status: "not-rendered" | "failed" | "ready";
   };
   updatedAt: string;
@@ -85,6 +88,10 @@ type SaveResponse = {
   error?: string;
   layout?: LayoutTemplate;
   message?: string;
+};
+
+type RenderResponse = SaveResponse & {
+  media?: MediaItem;
 };
 
 const canvas = {
@@ -149,8 +156,8 @@ function layersForPreset(preset: LayoutPreset, mediaId: string, headline: string
       shapeLayer("background", { height: 1080, width: 1920, x: 0, y: 0, zIndex: 0 }, { fillColor: "#0f172a" }),
       shapeLayer("video-border", { height: 840, width: 1180, x: 90, y: 120, zIndex: 1 }, { fillColor: "#ffffff", strokeColor: "#ccfbf1", strokeWidth: 8 }),
       mediaLayer("main-video", mediaId, { height: 780, width: 1120, x: 120, y: 150, zIndex: 2 }),
-      textLayer("headline", headline, { height: 260, width: 500, x: 1330, y: 170, zIndex: 3 }, { fontSize: 82 }),
-      textLayer("detail", detail, { height: 150, width: 500, x: 1330, y: 470, zIndex: 3 }, { color: "#ccfbf1", fontSize: 54, fontWeight: "medium" })
+      textLayer("headline", headline, { height: 250, width: 470, x: 1330, y: 170, zIndex: 3 }, { fontSize: 58 }),
+      textLayer("detail", detail, { height: 170, width: 470, x: 1330, y: 500, zIndex: 3 }, { color: "#ccfbf1", fontSize: 38, fontWeight: "medium" })
     ];
   }
 
@@ -160,15 +167,15 @@ function layersForPreset(preset: LayoutPreset, mediaId: string, headline: string
       mediaLayer("left-video", mediaId, { height: 760, width: 840, x: 90, y: 150, zIndex: 1 }),
       mediaLayer("right-video", mediaId, { height: 760, width: 840, x: 990, y: 150, zIndex: 1 }),
       shapeLayer("caption-bar", { height: 130, width: 1740, x: 90, y: 910, zIndex: 2 }, { fillColor: "#14b8a6e6" }),
-      textLayer("caption", `${headline}  ${detail}`, { height: 110, width: 1660, x: 130, y: 920, zIndex: 3 }, { align: "center", color: "#082f49", fontSize: 58 })
+      textLayer("caption", `${headline}  ${detail}`, { height: 110, width: 1660, x: 130, y: 920, zIndex: 3 }, { align: "center", color: "#082f49", fontSize: 46 })
     ];
   }
 
   return [
     mediaLayer("fullscreen-video", mediaId, { height: 1080, width: 1920, x: 0, y: 0, zIndex: 0 }),
     shapeLayer("lower-third", { height: 210, opacity: 0.92, width: 1760, x: 80, y: 790, zIndex: 1 }, { fillColor: "#0f172ae6" }),
-    textLayer("headline", headline, { height: 96, width: 1640, x: 140, y: 820, zIndex: 2 }, { fontSize: 70 }),
-    textLayer("detail", detail, { height: 72, width: 1640, x: 140, y: 914, zIndex: 2 }, { color: "#99f6e4", fontSize: 48, fontWeight: "medium" })
+    textLayer("headline", headline, { height: 92, width: 1640, x: 140, y: 820, zIndex: 2 }, { fontSize: 58 }),
+    textLayer("detail", detail, { height: 70, width: 1640, x: 140, y: 912, zIndex: 2 }, { color: "#99f6e4", fontSize: 38, fontWeight: "medium" })
   ];
 }
 
@@ -257,14 +264,14 @@ function LayoutPreview({ layers, mediaById }: { layers: LayoutLayer[]; mediaById
           return (
             <div
               key={layer.id}
-              className={`absolute flex min-w-0 items-center overflow-hidden px-3 leading-tight ${fontWeightClass(layer.fontWeight)} ${
+              className={`absolute flex min-w-0 items-center overflow-hidden px-3 leading-none ${fontWeightClass(layer.fontWeight)} ${
                 layer.align === "center" ? "justify-center text-center" : layer.align === "right" ? "justify-end text-right" : "justify-start text-left"
               }`}
               style={{
                 ...layerStyle(layer),
                 backgroundColor: layer.backgroundColor,
                 color: layer.color,
-                fontSize: `clamp(0.75rem, ${(layer.fontSize / 1920) * 100}vw, ${Math.max(1, layer.fontSize / 18)}rem)`
+                fontSize: `clamp(0.7rem, ${(layer.fontSize / 1920) * 100}vw, ${Math.max(0.95, layer.fontSize / 34)}rem)`
               }}
             >
               <span className="break-words">{layer.text}</span>
@@ -277,6 +284,7 @@ function LayoutPreview({ layers, mediaById }: { layers: LayoutLayer[]; mediaById
 }
 
 export function LayoutsPanel() {
+  const importInputRef = useRef<HTMLInputElement>(null);
   const [layouts, setLayouts] = useState<LayoutTemplate[]>([]);
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [selectedLayoutId, setSelectedLayoutId] = useState("");
@@ -287,6 +295,8 @@ export function LayoutsPanel() {
   const [detail, setDetail] = useState("(555) 010-0199");
   const [durationSeconds, setDurationSeconds] = useState(30);
   const [isLoading, setIsLoading] = useState(true);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isRendering, setIsRendering] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Loading layouts.");
   const [errorMessage, setErrorMessage] = useState("");
@@ -308,6 +318,7 @@ export function LayoutsPanel() {
     [detail, headline, preset, selectedMediaId]
   );
   const canSave = selectedMediaId && name.trim() && headline.trim() && detail.trim() && durationSeconds > 0;
+  const canRender = Boolean(selectedLayout && !isSaving && !isRendering && !isImporting);
 
   useEffect(() => {
     let cancelled = false;
@@ -456,6 +467,106 @@ export function LayoutsPanel() {
     }
   }
 
+  async function importLayouts(file: File | null) {
+    if (!file) {
+      return;
+    }
+
+    setIsImporting(true);
+    setErrorMessage("");
+    try {
+      const parsed = JSON.parse(await file.text()) as unknown;
+      const candidates = Array.isArray(parsed)
+        ? parsed
+        : isImportObject(parsed) && Array.isArray(parsed.layouts)
+          ? parsed.layouts
+          : isImportObject(parsed) && Array.isArray(parsed.items)
+            ? parsed.items
+            : isImportObject(parsed) && isImportObject(parsed.layout)
+              ? [parsed.layout]
+              : [parsed];
+
+      const importedLayouts: LayoutTemplate[] = [];
+      for (const candidate of candidates) {
+        if (!isImportObject(candidate)) {
+          throw new Error("Imported layout file must contain layout objects.");
+        }
+
+        const response = await fetch("/api/local-layouts", {
+          body: JSON.stringify({
+            canvas: candidate.canvas,
+            durationSeconds: candidate.durationSeconds,
+            layers: candidate.layers,
+            name: typeof candidate.name === "string" ? candidate.name : "Imported layout"
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST"
+        });
+        const data = (await response.json()) as SaveResponse;
+        if (!response.ok || !data.layout) {
+          throw new Error(data.error ?? "Layout import failed.");
+        }
+        importedLayouts.push(data.layout);
+      }
+
+      setLayouts((current) => [...current, ...importedLayouts]);
+      const lastLayout = importedLayouts.at(-1);
+      if (lastLayout) {
+        selectLayout(lastLayout);
+      }
+      setStatusMessage(`Imported ${importedLayouts.length} layout${importedLayouts.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Layout import failed.");
+    } finally {
+      setIsImporting(false);
+      if (importInputRef.current) {
+        importInputRef.current.value = "";
+      }
+    }
+  }
+
+  async function renderSelectedLayout() {
+    if (!selectedLayout) {
+      setErrorMessage("Save the layout before rendering.");
+      return;
+    }
+
+    setIsRendering(true);
+    setErrorMessage("");
+    setStatusMessage(`Rendering ${selectedLayout.name}.`);
+    try {
+      const response = await fetch("/api/local-layouts/render", {
+        body: JSON.stringify({ layoutId: selectedLayout.id }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST"
+      });
+      const data = (await response.json()) as RenderResponse;
+      if (!response.ok || !data.layout) {
+        throw new Error(data.error ?? "Layout render failed.");
+      }
+
+      setLayouts((current) => {
+        const next = current.slice();
+        const index = next.findIndex((layout) => layout.id === data.layout!.id);
+        if (index === -1) {
+          next.push(data.layout!);
+        } else {
+          next[index] = data.layout!;
+        }
+        return next;
+      });
+      if (data.media) {
+        setMediaItems((current) => [data.media!, ...current]);
+      }
+      setSelectedLayoutId(data.layout.id);
+      setStatusMessage(data.message ?? "Rendered to Media Store.");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Layout render failed.");
+    } finally {
+      setIsRendering(false);
+    }
+  }
+
   return (
     <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
       <section aria-labelledby="saved-layouts-heading" className="rounded-lg border border-zinc-200 bg-white shadow-sm">
@@ -473,7 +584,22 @@ export function LayoutsPanel() {
             >
               New
             </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="sr-only"
+              onChange={(event) => void importLayouts(event.target.files?.[0] ?? null)}
+            />
           </div>
+          <button
+            type="button"
+            onClick={() => importInputRef.current?.click()}
+            disabled={isImporting || isSaving || isRendering}
+            className="mt-3 inline-flex min-h-10 items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-teal-800 ring-1 ring-teal-200 hover:bg-teal-50 focus:outline-none focus:ring-2 focus:ring-teal-600 disabled:cursor-not-allowed disabled:text-zinc-400 disabled:ring-zinc-200"
+          >
+            {isImporting ? "Importing" : "Import"}
+          </button>
         </div>
         <div className="divide-y divide-zinc-200">
           {layouts.length === 0 ? (
@@ -510,15 +636,23 @@ export function LayoutsPanel() {
               <button
                 type="button"
                 onClick={saveLayout}
-                disabled={!canSave || isSaving}
+                disabled={!canSave || isSaving || isRendering || isImporting}
                 className="inline-flex min-h-10 items-center justify-center rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-600 disabled:cursor-not-allowed disabled:bg-zinc-300"
               >
                 {isSaving ? "Saving" : selectedLayout ? "Update" : "Save"}
               </button>
               <button
                 type="button"
+                onClick={renderSelectedLayout}
+                disabled={!canRender}
+                className="inline-flex min-h-10 items-center justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-teal-800 ring-1 ring-teal-200 hover:bg-teal-50 focus:outline-none focus:ring-2 focus:ring-teal-600 disabled:cursor-not-allowed disabled:text-zinc-400 disabled:ring-zinc-200"
+              >
+                {isRendering ? "Rendering" : "Render MP4"}
+              </button>
+              <button
+                type="button"
                 onClick={deleteLayout}
-                disabled={!selectedLayout || isSaving}
+                disabled={!selectedLayout || isSaving || isRendering || isImporting}
                 className="inline-flex min-h-10 items-center justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-rose-700 ring-1 ring-rose-200 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500 disabled:cursor-not-allowed disabled:text-zinc-400 disabled:ring-zinc-200"
               >
                 Delete
@@ -634,7 +768,7 @@ export function LayoutsPanel() {
               </div>
               <div>
                 <dt className="font-semibold text-zinc-500">Status</dt>
-                <dd className="mt-1 font-semibold text-zinc-950">{selectedLayout?.render.status === "ready" ? "Ready" : "Draft"}</dd>
+                <dd className="mt-1 font-semibold text-zinc-950">{selectedLayout?.render.status === "ready" ? "Rendered" : selectedLayout?.render.status === "failed" ? "Failed" : "Draft"}</dd>
               </div>
             </dl>
           </div>
@@ -642,4 +776,8 @@ export function LayoutsPanel() {
       </section>
     </div>
   );
+}
+
+function isImportObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
