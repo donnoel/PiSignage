@@ -27,7 +27,7 @@ No config file should contain AWS credentials, IoT private keys, signed URLs, or
 - `playlistSourcePath`: local playlist path or future HTTPS playlist endpoint.
 - `cacheDirectory`: local last-known-good playlist and asset cache root.
 - `heartbeatPath`: local heartbeat JSON output path.
-- `pollIntervalSeconds`: future agent loop interval; current command runs once.
+- `pollIntervalSeconds`: device-agent loop interval. The default loop interval is 60 seconds.
 - `appVersion`: agent/player version reported in heartbeat.
 
 ## Current Environment Variable Mapping
@@ -38,6 +38,8 @@ PISIGNAGE_PLAYLIST_PATH
 PISIGNAGE_CACHE_DIR
 PISIGNAGE_HEARTBEAT_PATH
 PISIGNAGE_NETWORK_ONLINE
+PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS
+PISIGNAGE_AGENT_LOOP
 ```
 
 ## Future Rules
@@ -46,3 +48,44 @@ PISIGNAGE_NETWORK_ONLINE
 - Device config should be readable by the agent without involving the dashboard.
 - Local config should remain usable without network access.
 - Runtime state such as heartbeat and cache should remain separate from config.
+
+## Optional Cloud Heartbeat
+
+The device agent can send the same heartbeat payload to the Beam dev API when these environment variables are present:
+
+```sh
+PISIGNAGE_CLOUD_API_URL=https://example.execute-api.us-west-2.amazonaws.com/dev
+PISIGNAGE_CLOUD_API_KEY='<dev-api-key>'
+```
+
+The agent can run once or continuously:
+
+```sh
+npm run agent:heartbeat
+PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS=60 npm run agent:loop
+```
+
+On a Pi, keep cloud settings in an ignored local env file loaded by the user
+service:
+
+```text
+~/.config/pisignage/device-agent.env
+```
+
+On the dashboard server, use dashboard-only environment variables so the API key
+never reaches browser JavaScript:
+
+```sh
+BEAM_CLOUD_API_URL=https://example.execute-api.us-west-2.amazonaws.com/dev
+BEAM_CLOUD_API_KEY='<dev-api-key>'
+BEAM_CLOUD_DEVICE_ID=device-local-demo
+```
+
+Rules:
+
+- Keep `PISIGNAGE_CLOUD_API_KEY` in the shell, systemd environment, or another ignored local secret store.
+- Keep `BEAM_CLOUD_API_KEY` only in ignored dashboard server environment.
+- Do not commit cloud API keys to git.
+- A cloud heartbeat failure must not fail the local heartbeat write.
+- A failed loop cycle should log and retry instead of stopping playback supervision.
+- Local playback and cached playlist behavior must not depend on the cloud heartbeat.

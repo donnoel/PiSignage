@@ -114,6 +114,8 @@ Future endpoint:
 POST /v1/devices/{deviceId}/heartbeat
 ```
 
+The dev AWS alpha currently gates heartbeat write and read routes with an API Gateway API key. That is a temporary alpha control, not the final device identity or dashboard auth model. Production device authentication remains a future pairing/certificate contract, and production dashboard reads still need a real authenticated UI/backend boundary.
+
 Request:
 
 ```json
@@ -142,6 +144,7 @@ Expected failures:
 
 - `400 invalid_heartbeat`
 - `401 device_not_authenticated`
+- `403 forbidden` when the dev API key is missing or invalid
 - `404 device_not_found`
 
 Device behavior:
@@ -149,6 +152,38 @@ Device behavior:
 - Heartbeat failure must not stop playback.
 - Device should log the failure and retry on the next interval.
 - Device should keep writing local heartbeat JSON for local diagnostics.
+- The current device-agent alpha sends cloud heartbeat only when `PISIGNAGE_CLOUD_API_URL` and `PISIGNAGE_CLOUD_API_KEY` are configured.
+
+### Latest Heartbeat Read
+
+The dev AWS alpha also exposes the latest stored heartbeat for status smoke tests:
+
+```http
+GET /v1/devices/{deviceId}/heartbeat
+```
+
+Response:
+
+```json
+{
+  "heartbeat": {
+    "deviceId": "device-local-demo",
+    "accountId": "beam-dev",
+    "timestamp": "2026-05-20T20:17:32.971Z",
+    "appVersion": "0.1.0",
+    "currentPlaylistId": "playlist-local-demo",
+    "currentAssetId": "asset-welcome",
+    "diskFreeBytes": 1234567890,
+    "networkOnline": false,
+    "receivedAt": "2026-05-20T20:17:33.100Z"
+  }
+}
+```
+
+Expected failures:
+
+- `403 forbidden` when the dev API key is missing or invalid
+- `404 heartbeat_not_found`
 
 ## Playlist Fetch
 

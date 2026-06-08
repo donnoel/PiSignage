@@ -116,16 +116,15 @@ PISIGNAGE_NETWORK_ONLINE=false
 Expected status paths:
 
 ```text
-/opt/pisignage/state/heartbeat.json
-/opt/pisignage/logs/agent.log
+~/.local/state/pisignage/heartbeat.json
 ```
 
 When running under `systemd`, prefer `journalctl` first:
 
 ```sh
-journalctl -u pisignage-agent.service -n 100 --no-pager
-journalctl -u pisignage-player.service -n 100 --no-pager
-journalctl -u pisignage-kiosk.service -n 100 --no-pager
+journalctl --user -u pisignage-device-agent.service -n 100 --no-pager
+journalctl --user -u pisignage-player.service -n 100 --no-pager
+journalctl --user -u pisignage-kiosk.service -n 100 --no-pager
 ```
 
 ## Chromium Display Modes
@@ -161,33 +160,48 @@ Display expectations:
 - Fullscreen playback survives page refresh.
 - No dashboard interaction is needed for playback.
 
-## systemd Device-Agent Service Draft
+## systemd Device-Agent Service
 
-Draft only. Do not install until manual playback works.
+The source-controlled user service is:
 
-```ini
-[Unit]
-Description=PiSignage Device Agent
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-WorkingDirectory=/opt/pisignage/app
-Environment=PISIGNAGE_DEVICE_ID=device-local-demo
-Environment=PISIGNAGE_PLAYLIST_PATH=/opt/pisignage/app/sample-content/playlist.local.json
-Environment=PISIGNAGE_CACHE_DIR=/opt/pisignage/cache
-Environment=PISIGNAGE_HEARTBEAT_PATH=/opt/pisignage/state/heartbeat.json
-Environment=PISIGNAGE_NETWORK_ONLINE=false
-ExecStart=/usr/bin/npm run agent:heartbeat
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
+```text
+device/pi/systemd/user/pisignage-device-agent.service
 ```
 
-The current `agent:heartbeat` command runs once and exits. A recurring agent loop is a future implementation task; for tomorrow, use manual runs or a timer if needed.
+It runs the long-lived compiled device-agent heartbeat loop with local
+cache/state paths under the Pi user's home directory. Optional cloud heartbeat
+settings live in an ignored local env file so API keys are never committed:
+
+```sh
+mkdir -p ~/.config/pisignage
+cat > ~/.config/pisignage/device-agent.env <<'EOF'
+PISIGNAGE_CLOUD_API_URL=https://your-api-id.execute-api.us-west-2.amazonaws.com/dev
+PISIGNAGE_CLOUD_API_KEY=replace-with-dev-api-key
+PISIGNAGE_NETWORK_ONLINE=true
+EOF
+chmod 600 ~/.config/pisignage/device-agent.env
+```
+
+Leave `PISIGNAGE_CLOUD_API_URL` and `PISIGNAGE_CLOUD_API_KEY` out of the env
+file for fully local operation. In that mode the agent still writes local
+heartbeat JSON and logs that the cloud heartbeat was skipped.
+
+Install the tracked device-agent service for the current user:
+
+```sh
+npm --workspace device-agent run build
+install -Dm644 device/pi/systemd/user/pisignage-device-agent.service ~/.config/systemd/user/pisignage-device-agent.service
+systemctl --user daemon-reload
+systemctl --user enable --now pisignage-device-agent.service
+systemctl --user status pisignage-device-agent.service --no-pager
+```
+
+Inspect the local heartbeat and service logs:
+
+```sh
+cat ~/.local/state/pisignage/heartbeat.json
+journalctl --user -u pisignage-device-agent.service -n 100 --no-pager
+```
 
 ## systemd Player Service
 
@@ -223,8 +237,9 @@ Install or update the tracked services and launcher for the current user:
 install -Dm755 device/pi/bin/pisignage-start-display.sh ~/.local/bin/pisignage-start-display.sh
 install -Dm644 device/pi/systemd/user/pisignage-player.service ~/.config/systemd/user/pisignage-player.service
 install -Dm644 device/pi/systemd/user/pisignage-kiosk.service ~/.config/systemd/user/pisignage-kiosk.service
+install -Dm644 device/pi/systemd/user/pisignage-device-agent.service ~/.config/systemd/user/pisignage-device-agent.service
 systemctl --user daemon-reload
-systemctl --user enable --now pisignage-player.service pisignage-kiosk.service
+systemctl --user enable --now pisignage-player.service pisignage-kiosk.service pisignage-device-agent.service
 ```
 
 In kiosk mode, Chromium uses an isolated PiSignage profile and avoids desktop
@@ -349,7 +364,7 @@ Manual recovery expectations for tomorrow:
 
 1. Start player and open kiosk manually.
 2. Confirm playlist is visible on TV.
-3. Run `npm run agent:heartbeat`.
+3. Run `npm run agent:heartbeat`, then enable `pisignage-device-agent.service`.
 4. Reboot the Pi.
 5. Confirm services start only if installed.
 6. Confirm kiosk returns to playback.
@@ -369,6 +384,7 @@ Use this tomorrow once the Pi and TV are available:
 - Operator mode can exit fullscreen and minimize Chromium.
 - Kiosk mode hides browser chrome when deliberately enabled.
 - `npm run agent:heartbeat` writes heartbeat JSON.
+- `pisignage-device-agent.service` keeps heartbeat JSON fresh after reboot.
 - Dashboard shows updated heartbeat when viewed locally.
 - Missing network does not stop already-visible playback.
 - Browser refresh returns to the playlist.
@@ -378,7 +394,6 @@ Use this tomorrow once the Pi and TV are available:
 ## Not Implemented Yet
 
 - Production installer.
-- Long-running device-agent loop.
 - Device certificates.
 - AWS IoT pairing.
 - OTA updates.

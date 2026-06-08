@@ -1,0 +1,15 @@
+.git
+.next
+**/.next
+**/.next-build
+**/node_modules
+cdk.out
+dashboard/local-state
+device-agent/local-cache
+device-agent/local-state
+infra/beam/cdk.out
+sample-content/assets
+*.log
+.env
+.env.*
+!.env.example

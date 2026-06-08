@@ -1,0 +1,29 @@
+FROM node:20-bookworm-slim AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY dashboard/package.json dashboard/package.json
+COPY device-agent/package.json device-agent/package.json
+COPY player/package.json player/package.json
+RUN npm ci
+
+FROM node:20-bookworm-slim AS builder
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV BEAM_NEXT_OUTPUT=standalone
+ENV PISIGNAGE_NEXT_DIST_DIR=.next-build
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npm --workspace dashboard run build
+
+FROM node:20-bookworm-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV HOSTNAME=0.0.0.0
+ENV PORT=3000
+COPY --from=builder /app/dashboard/.next-build/standalone ./
+COPY --from=builder /app/dashboard/.next-build/static ./dashboard/.next-build/static
+COPY --from=builder /app/dashboard/public ./dashboard/public
+COPY --from=builder /app/sample-content ./sample-content
+EXPOSE 3000
+CMD ["sh", "-c", "HOSTNAME=0.0.0.0 node dashboard/server.js"]

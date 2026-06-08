@@ -5,6 +5,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "heartbeat": "npm run build && node dist/index.js",
+    "loop": "npm run build && node dist/index.js --loop",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {

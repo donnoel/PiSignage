@@ -27,8 +27,14 @@ type Heartbeat = {
   networkOnline: boolean;
 };
 
+type CloudHeartbeatConfig = {
+  apiKey: string;
+  baseUrl: string;
+};
+
 const appVersion = "0.1.0";
 const currentPlaylistFileName = "current.json";
+let stopping = false;
 
 function repoRoot(): string {
   return path.resolve(__dirname, "..", "..");
@@ -122,7 +128,62 @@ async function loadPlaylistWithCache(
   }
 }
 
-async function main(): Promise<void> {
+function cloudHeartbeatConfig(): CloudHeartbeatConfig | null {
+  const baseUrl = process.env.PISIGNAGE_CLOUD_API_URL?.trim().replace(/\/+$/, "");
+  const apiKey = process.env.PISIGNAGE_CLOUD_API_KEY?.trim();
+
+  if (!baseUrl || !apiKey) {
+    return null;
+  }
+
+  return { apiKey, baseUrl };
+}
+
+async function postCloudHeartbeat(config: CloudHeartbeatConfig, heartbeat: Heartbeat): Promise<void> {
+  const url = `${config.baseUrl}/v1/devices/${encodeURIComponent(heartbeat.deviceId)}/heartbeat`;
+  const response = await fetch(url, {
+    body: JSON.stringify(heartbeat),
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": config.apiKey
+    },
+    method: "POST"
+  });
+
+  if (!response.ok) {
+    throw new Error(`Cloud heartbeat returned ${response.status}.`);
+  }
+}
+
+function heartbeatIntervalMs(): number {
+  const seconds = Number.parseInt(process.env.PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS ?? "60", 10);
+  if (!Number.isFinite(seconds) || seconds < 5) {
+    return 60_000;
+  }
+
+  return seconds * 1_000;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function loopModeEnabled(): boolean {
+  return process.argv.includes("--loop") || process.env.PISIGNAGE_AGENT_LOOP === "true";
+}
+
+function installSignalHandlers(): void {
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.once(signal, () => {
+      stopping = true;
+      log("info", "agent.stop.requested", { signal });
+    });
+  }
+}
+
+async function runHeartbeatOnce(): Promise<void> {
   const root = repoRoot();
   const playlistPath =
     process.env.PISIGNAGE_PLAYLIST_PATH ?? path.join(root, "sample-content", "playlist.local.json");
@@ -160,6 +221,61 @@ async function main(): Promise<void> {
     playlistId: playlist.playlistId,
     currentAssetId: heartbeat.currentAssetId
   });
+
+  const cloudConfig = cloudHeartbeatConfig();
+  if (!cloudConfig) {
+    log("info", "cloud.heartbeat.skipped", {
+      reason: "not_configured"
+    });
+    return;
+  }
+
+  try {
+    await postCloudHeartbeat(cloudConfig, heartbeat);
+    log("info", "cloud.heartbeat.complete", {
+      deviceId,
+      playlistId: playlist.playlistId
+    });
+  } catch (error) {
+    log("error", "cloud.heartbeat.failed", {
+      deviceId,
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
+async function runHeartbeatLoop(): Promise<void> {
+  const intervalMs = heartbeatIntervalMs();
+  log("info", "agent.loop.start", {
+    intervalSeconds: intervalMs / 1_000
+  });
+
+  while (!stopping) {
+    try {
+      await runHeartbeatOnce();
+    } catch (error) {
+      log("error", "agent.loop.cycle.failed", {
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+
+    if (!stopping) {
+      await sleep(intervalMs);
+    }
+  }
+
+  log("info", "agent.loop.stop");
+}
+
+async function main(): Promise<void> {
+  installSignalHandlers();
+
+  if (loopModeEnabled()) {
+    await runHeartbeatLoop();
+    return;
+  }
+
+  await runHeartbeatOnce();
 }
 
 main().catch((error: unknown) => {

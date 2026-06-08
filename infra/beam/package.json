@@ -1,0 +1,23 @@
+{
+  "name": "@beam/infra",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc --noEmit",
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "deploy": "cdk deploy",
+    "destroy": "cdk destroy"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.950.0",
+    "aws-cdk-lib": "^2.258.0",
+    "constructs": "^10.6.0"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.1126.0",
+    "esbuild": "^0.27.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.0"
+  }
+}

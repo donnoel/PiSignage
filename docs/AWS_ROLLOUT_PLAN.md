@@ -1,0 +1,132 @@
+# AWS Rollout Plan
+
+Goal: run Beam in AWS instead of relying on the laptop-hosted dashboard, while preserving local-first playback and recovery.
+
+## Phase 1: Foundation
+
+Create a repeatable Beam `dev` stack beside the existing app showcase resources.
+
+Deliverables:
+
+- `infra/beam` CDK app.
+- Private S3 buckets for source media, playback media, thumbnails, and logs.
+- DynamoDB tables for accounts, devices, screens, playlists, assets, heartbeats, and activity.
+- CloudWatch log groups for future API, device, media, and dashboard services.
+- Documentation for the first deploy and destroy flow.
+
+Validation:
+
+- `npm run synth` from `infra/beam`.
+- Human review of the generated CloudFormation template before deploy.
+- No AWS credentials or account IDs committed.
+
+## Phase 2: Minimal Backend API
+
+Create real backend endpoints before moving dashboard behavior.
+
+Deliverables:
+
+- `POST /v1/devices/pair`
+- `POST /v1/devices/{deviceId}/heartbeat`
+- `GET /v1/devices/{deviceId}/playlist`
+- Structured API errors with request IDs.
+- Least-privilege Lambda roles.
+
+Validation:
+
+- Local unit tests for request validation.
+- API smoke against the deployed `dev` environment.
+- Heartbeat writes the latest device status without affecting playback.
+
+## Phase 3: Device Agent Cloud Mode
+
+Make the Pi phone home to AWS while keeping local mode as the default.
+
+Deliverables:
+
+- Long-running agent loop.
+- Explicit `local` and `cloud` modes.
+- Pairing configuration stored outside git.
+- Heartbeat interval with retry/backoff.
+- Playlist polling with version checks.
+- Local status JSON continues to be written atomically.
+
+Validation:
+
+- Agent runs locally without AWS in `local` mode.
+- Agent sends heartbeat to AWS in `cloud` mode.
+- AWS outage does not delete or corrupt the last known good local cache.
+
+## Phase 4: Media Storage And Processing
+
+Move media storage out of the laptop runtime.
+
+Deliverables:
+
+- Signed upload URL endpoint.
+- S3 original upload path.
+- Async processing job that creates playback-safe MP4 renditions for JPEG and PNG uploads.
+- Asset readiness state in DynamoDB.
+- CloudFront signed playback URLs.
+
+Validation:
+
+- Upload PNG or JPEG.
+- Confirm MP4 playback rendition exists.
+- Confirm playlist fetch only returns ready playback renditions.
+- Confirm signed URLs are not stored in DynamoDB or logged.
+
+## Phase 5: Cloud Dashboard Mode
+
+Move the operator dashboard to AWS-backed data.
+
+Deliverables:
+
+- Simple Cognito sign-in.
+- Cloud dashboard data client.
+- Screens, devices, media, playlists, and heartbeat status backed by API data.
+- Local-only SSH recovery controls hidden or marked unavailable in cloud mode.
+
+Validation:
+
+- Dashboard can run without `dashboard/local-state`.
+- Dashboard shows stale/offline status honestly.
+- Dashboard does not expose signed URLs, secrets, or raw device credentials.
+
+## Phase 6: One Real Pi End-To-End
+
+Prove the full cloud loop with one screen.
+
+Deliverables:
+
+- Pair one Pi to the `dev` environment.
+- Upload image media.
+- Assign playlist to the Pi's screen.
+- Pi downloads and verifies playback media.
+- Pi swaps local cache atomically.
+- TV continues playback through network loss.
+
+Validation:
+
+- Upload to AWS -> process -> assign -> device fetch -> TV playback.
+- Pull network after sync; TV keeps playing.
+- Expire signed URL; cached playback continues.
+- Bad media does not replace the last known good playlist.
+
+## Phase 7: Expand To Five Pis
+
+Move from one-device proof to the real pilot shape.
+
+Deliverables:
+
+- Pair all five Pis.
+- Verify per-device heartbeat and playlist version.
+- Verify media cache parity for assigned content.
+- Document accepted pilot gaps before production planning.
+
+Validation:
+
+- Five-device cloud smoke.
+- Per-screen playlist assignment smoke.
+- Network outage and recovery drills.
+- No unexplained appliance drift across C1-C5.
