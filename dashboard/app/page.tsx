@@ -7,9 +7,10 @@ import { readCloudHeartbeat } from "./lib/cloud-heartbeat";
 import type { CloudHeartbeatState } from "./lib/cloud-heartbeat";
 import { ensureLocalDataFoundation } from "./lib/local-data-store";
 import type { DeviceRecord, DeviceStore, ScreenRecord, ScreenStore } from "./lib/local-data-store";
-import { readNormalizedInventory } from "./lib/local-inventory";
-import { localStateDirectory, publishStatusPath, readPlaylistStore, repoRoot, selectPlaylist, writeFileAtomic } from "./lib/local-playlist";
+import { readInventory } from "./lib/inventory-store";
+import { localStateDirectory, publishStatusPath, repoRoot, writeFileAtomic } from "./lib/local-playlist";
 import type { Playlist, PlaylistAsset, PlaylistStore } from "./lib/local-playlist";
+import { readPlaylistStore, selectPlaylist } from "./lib/playlist-store";
 import { readPiConfig, runSsh } from "./lib/pi-local";
 import type { PiConfig } from "./lib/pi-local";
 import { piConfigForDevice } from "./lib/pi-targets";
@@ -807,9 +808,45 @@ async function loadPiProbe(config: PiConfig | null): Promise<PiProbe> {
   }
 }
 
-async function loadDeviceStatuses(inventory: DashboardState["inventory"]): Promise<Record<string, DeviceLiveStatus>> {
+function cloudDeviceStatus(device: DeviceRecord, cloudHeartbeat: CloudHeartbeatState): DeviceLiveStatus | null {
+  const heartbeat = cloudHeartbeat.heartbeat;
+  if (!cloudHeartbeat.ok || !heartbeat || heartbeat.deviceId !== device.id) {
+    return null;
+  }
+
+  const timestamp = heartbeat.receivedAt ?? heartbeat.timestamp ?? undefined;
+  const ageMs = statusAgeMs(timestamp);
+  const fresh = ageMs !== null && ageMs <= staleHeartbeatThresholdMs;
+  const state = heartbeat.currentAssetId ? "playing" : "unknown";
+  const playbackHealthy = fresh && state === "playing";
+
+  return {
+    ageLabel: formatStatusAge(timestamp),
+    host: device.host,
+    playbackHealthy,
+    playbackLabel: playbackHealthy ? "Playing" : fresh ? "Cloud heartbeat" : "Stale",
+    playerStatus: {
+      playlistId: heartbeat.currentPlaylistId ?? undefined,
+      state,
+      updatedAt: timestamp
+    },
+    reachable: fresh && heartbeat.networkOnline,
+    stale: !fresh,
+    timestampLabel: formatTimestamp(timestamp)
+  };
+}
+
+async function loadDeviceStatuses(
+  inventory: DashboardState["inventory"],
+  cloudHeartbeat: CloudHeartbeatState
+): Promise<Record<string, DeviceLiveStatus>> {
   const entries = await Promise.all(
     inventory.devices.items.map(async (device) => {
+      const cloudStatus = cloudDeviceStatus(device, cloudHeartbeat);
+      if (cloudStatus) {
+        return [device.id, cloudStatus] as const;
+      }
+
       const hostConfigured = Boolean(device.host.trim()) && device.host !== "Not configured";
       if (!hostConfigured) {
         return [device.id, null] as const;
@@ -863,13 +900,13 @@ async function loadDashboardState(selectedPlaylistId?: string | null): Promise<D
   const seedPlaylistId = playlistStore.items[0]?.playlistId ?? playlist.playlistId;
   const [heartbeat, inventory, publishStatus] = await Promise.all([
     readJsonFile<Heartbeat>(heartbeatPath),
-    readNormalizedInventory(seedPlaylistId),
+    readInventory(seedPlaylistId),
     readJsonFile<PublishStatus>(publishStatusPath())
   ]);
   const cloudHeartbeat = await readCloudHeartbeat();
   const primaryPiConfig = piConfigFromInventory(inventory, playlist.playlistId);
   const pi = loadCachedPiProbe(primaryPiConfig);
-  const deviceStatuses = await loadDeviceStatuses(inventory);
+  const deviceStatuses = await loadDeviceStatuses(inventory, cloudHeartbeat);
   const lastKnownPlayback = await resolveLastKnownPlayback(pi);
 
   return { cloudHeartbeat, deviceStatuses, heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi };
@@ -1165,7 +1202,7 @@ function fleetCommandRows({
       let syncTone: "good" | "warn" | "muted" = "warn";
 
       if (assignedPlaylistId && !assignedPlaylist) {
-        syncDetail = "This screen points to a playlist Beam cannot find locally.";
+        syncDetail = "This screen points to a playlist Beam cannot find in the saved catalog.";
         syncLabel = "Review";
       } else if (assignedPlaylist && !isLive) {
         syncDetail = "No live playlist report has been received for this saved screen.";

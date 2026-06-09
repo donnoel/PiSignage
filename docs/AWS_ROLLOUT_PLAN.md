@@ -26,6 +26,8 @@ Create real backend endpoints before moving dashboard behavior.
 
 Deliverables:
 
+- DynamoDB-backed dashboard Screens and Devices inventory.
+- DynamoDB-backed dashboard playlist catalog, starting with the dev main playlist record.
 - `POST /v1/devices/pair`
 - `POST /v1/devices/{deviceId}/heartbeat`
 - `GET /v1/devices/{deviceId}/playlist`
@@ -37,6 +39,8 @@ Validation:
 - Local unit tests for request validation.
 - API smoke against the deployed `dev` environment.
 - Heartbeat writes the latest device status without affecting playback.
+- Adding a screen from the AWS-hosted dashboard persists in DynamoDB and survives App Runner restarts.
+- The AWS-hosted dashboard resolves the C5 screen's assigned playlist from DynamoDB instead of local JSON.
 
 ## Phase 3: Device Agent Cloud Mode
 

@@ -49,7 +49,10 @@ export class BeamFoundationStack extends Stack {
       tableDefinitions.map((definition) => [definition.id, this.createTable(definition, namePrefix)])
     );
     const tables = Object.values(tablesById);
+    const devicesTable = tableById(tablesById, "Devices");
     const heartbeatsTable = tableById(tablesById, "Heartbeats");
+    const playlistsTable = tableById(tablesById, "Playlists");
+    const screensTable = tableById(tablesById, "Screens");
     const heartbeatFunctionName = `${namePrefix}-heartbeat`;
     const logGroups = ["api", "device", "media", "dashboard"].map((serviceName) =>
       new logs.LogGroup(this, `${serviceName}LogGroup`, {
@@ -155,6 +158,24 @@ export class BeamFoundationStack extends Stack {
       actions: ["dynamodb:DescribeTable", "dynamodb:GetItem"],
       resources: [heartbeatsTable.tableArn]
     }));
+    dashboardInstanceRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:PutItem",
+        "dynamodb:Scan",
+        "dynamodb:TransactWriteItems"
+      ],
+      resources: [devicesTable.tableArn, screensTable.tableArn]
+    }));
+    dashboardInstanceRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        "dynamodb:DescribeTable",
+        "dynamodb:PutItem",
+        "dynamodb:Scan"
+      ],
+      resources: [playlistsTable.tableArn]
+    }));
     const dashboardService = new apprunner.CfnService(this, "DashboardService", {
       serviceName: `${namePrefix}-dashboard`,
       sourceConfiguration: {
@@ -175,8 +196,20 @@ export class BeamFoundationStack extends Stack {
                 value: "cloud"
               },
               {
+                name: "BEAM_DEVICES_TABLE_NAME",
+                value: devicesTable.tableName
+              },
+              {
                 name: "BEAM_HEARTBEATS_TABLE_NAME",
                 value: heartbeatsTable.tableName
+              },
+              {
+                name: "BEAM_PLAYLISTS_TABLE_NAME",
+                value: playlistsTable.tableName
+              },
+              {
+                name: "BEAM_SCREENS_TABLE_NAME",
+                value: screensTable.tableName
               }
             ]
           },

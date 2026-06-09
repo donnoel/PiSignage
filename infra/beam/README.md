@@ -52,9 +52,17 @@ The stack is named `BeamDevFoundationStack` by default.
 ## Dashboard Hosting
 
 The dashboard container is defined by `Dockerfile.dashboard` at the repo root.
-App Runner runs the Next.js server and reads the heartbeat table through its
-instance IAM role using `BEAM_HEARTBEATS_TABLE_NAME`; it does not need the dev
-API key for cloud heartbeat reads.
+App Runner runs the Next.js server. It reads the heartbeat table through its
+instance IAM role using `BEAM_HEARTBEATS_TABLE_NAME`, and it reads/writes the
+cloud Screens and Devices tables through `BEAM_SCREENS_TABLE_NAME` and
+`BEAM_DEVICES_TABLE_NAME`. It also reads the cloud playlist catalog through
+`BEAM_PLAYLISTS_TABLE_NAME` and seeds the dev `Main Playlist` record when that
+catalog is empty. It does not need the dev API key for cloud heartbeat reads or
+dashboard inventory writes.
+
+Screens, Devices, and the playlist catalog are the first cloud-backed dashboard
+workflows. Playlist media items, publishing, schedules, and recovery still use
+the local POC paths until their cloud contracts are implemented.
 
 Deploying the dashboard image requires Docker to be running locally because CDK
 builds and publishes the image asset during deployment.

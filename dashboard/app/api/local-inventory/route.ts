@@ -1,20 +1,12 @@
-import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
-  appendActivityRecord,
-  readDeviceStore,
-  readScreenStore,
-  writeDeviceStore,
-  writeScreenStore
-} from "../../lib/local-data-store";
-import {
-  createDevice,
-  createScreen,
-  createScreenWithDevice,
-  readNormalizedInventory,
-  removeDevice,
-  removeScreen
-} from "../../lib/local-inventory";
+  createInventoryDevice,
+  createInventoryScreen,
+  readInventory,
+  removeInventoryDevice,
+  removeInventoryScreen,
+  updateInventory
+} from "../../lib/inventory-store";
 import { readLivePlaylist } from "../../lib/local-playlist";
 
 export const runtime = "nodejs";
@@ -22,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 async function getInventoryResponse() {
   const playlist = await readLivePlaylist();
-  const inventory = await readNormalizedInventory(playlist.playlistId);
+  const inventory = await readInventory(playlist.playlistId);
 
   return NextResponse.json({
     devices: inventory.devices.items,
@@ -64,23 +56,14 @@ export async function POST(request: Request) {
       if (!body.name || !body.name.trim()) {
         return NextResponse.json({ error: "Screen name is required." }, { status: 400 });
       }
-      if (body.host?.trim()) {
-        await createScreenWithDevice({
-          group: body.group,
-          host: body.host,
-          location: body.location,
-          name: body.name,
-          playlistId: body.playlistId ?? null,
-          sshUser: body.sshUser
-        });
-        return getInventoryResponse();
-      }
-      await createScreen({
+      await createInventoryScreen({
         deviceId: body.deviceId ?? null,
         group: body.group,
+        host: body.host,
         location: body.location,
         name: body.name,
-        playlistId: body.playlistId ?? null
+        playlistId: body.playlistId ?? null,
+        sshUser: body.sshUser
       });
       return getInventoryResponse();
     }
@@ -92,7 +75,7 @@ export async function POST(request: Request) {
       if (!body.host || !body.host.trim()) {
         return NextResponse.json({ error: "Device host is required." }, { status: 400 });
       }
-      await createDevice({
+      await createInventoryDevice({
         group: body.group,
         host: body.host,
         location: body.location,
@@ -125,12 +108,12 @@ export async function DELETE(request: Request) {
     }
 
     if (body.targetType === "screen") {
-      await removeScreen(body.id);
+      await removeInventoryScreen(body.id);
       return getInventoryResponse();
     }
 
     if (body.targetType === "device") {
-      await removeDevice(body.id);
+      await removeInventoryDevice(body.id);
       return getInventoryResponse();
     }
 
@@ -157,62 +140,11 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Missing update target." }, { status: 400 });
     }
 
-    const timestamp = new Date().toISOString();
-    if (body.targetType === "screen") {
-      const store = await readScreenStore();
-      const index = store.items.findIndex((item) => item.id === body.id);
-      if (index === -1) {
-        return NextResponse.json({ error: "Screen was not found." }, { status: 404 });
-      }
-      const nextName = typeof body.name === "string" ? body.name.trim() : undefined;
-      if (body.name !== undefined && !nextName) {
-        return NextResponse.json({ error: "Screen name is required." }, { status: 400 });
-      }
-      const nextItems = [...store.items];
-      const previous = nextItems[index];
-      nextItems[index] = {
-        ...previous,
-        name: nextName ?? previous.name,
-        playlistId: body.playlistId === undefined ? previous.playlistId : body.playlistId,
-        updatedAt: timestamp
-      };
-      await writeScreenStore({
-        ...store,
-        items: nextItems,
-        updatedAt: timestamp,
-        version: store.version + 1
-      });
-      if (nextName && nextName !== previous.name) {
-        await appendActivityRecord({
-          id: randomUUID(),
-          action: "screen-rename",
-          actor: "local-operator",
-          entityId: previous.id,
-          entityType: "screen",
-          message: `Renamed screen ${previous.name} to ${nextName}.`,
-          result: "success",
-          timestamp
-        });
-      }
-      return getInventoryResponse();
-    }
-
-    const store = await readDeviceStore();
-    const index = store.items.findIndex((item) => item.id === body.id);
-    if (index === -1) {
-      return NextResponse.json({ error: "Device was not found." }, { status: 404 });
-    }
-    const nextItems = [...store.items];
-    nextItems[index] = {
-      ...nextItems[index],
-      playlistId: body.playlistId === undefined ? nextItems[index].playlistId : body.playlistId,
-      updatedAt: timestamp
-    };
-    await writeDeviceStore({
-      ...store,
-      items: nextItems,
-      updatedAt: timestamp,
-      version: store.version + 1
+    await updateInventory({
+      id: body.id,
+      name: body.name,
+      playlistId: body.playlistId,
+      targetType: body.targetType
     });
     return getInventoryResponse();
   } catch (error) {
