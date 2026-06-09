@@ -169,32 +169,46 @@ device/pi/systemd/user/pisignage-device-agent.service
 ```
 
 It runs the long-lived compiled device-agent heartbeat loop with local
-cache/state paths under the Pi user's home directory. Optional cloud heartbeat
-settings live in an ignored local env file so API keys are never committed:
+cache/state paths under the Pi user's home directory. Device identity and
+optional cloud heartbeat settings live in an ignored local env file so API keys
+are never committed.
 
-```sh
-mkdir -p ~/.config/pisignage
-cat > ~/.config/pisignage/device-agent.env <<'EOF'
-PISIGNAGE_CLOUD_PLAYLIST_URL=https://your-dashboard.awsapprunner.com/api/cloud/devices/device-local-demo/playlist
-PISIGNAGE_CLOUD_API_URL=https://your-api-id.execute-api.us-west-2.amazonaws.com/dev
-PISIGNAGE_CLOUD_API_KEY=replace-with-dev-api-key
-PISIGNAGE_NETWORK_ONLINE=true
-EOF
-chmod 600 ~/.config/pisignage/device-agent.env
-```
-
-Leave `PISIGNAGE_CLOUD_PLAYLIST_URL`, `PISIGNAGE_CLOUD_API_URL`, and
-`PISIGNAGE_CLOUD_API_KEY` out of the env file for fully local operation. In
-that mode the agent still reads the local playlist, writes local heartbeat JSON,
-and logs that cloud work was skipped.
-
-Install the tracked device-agent service for the current user:
+Build the agent, then provision the Pi identity before enabling the service:
 
 ```sh
 npm --workspace device-agent run build
-install -Dm644 device/pi/systemd/user/pisignage-device-agent.service ~/.config/systemd/user/pisignage-device-agent.service
-systemctl --user daemon-reload
-systemctl --user enable --now pisignage-device-agent.service
+
+device/pi/bin/pisignage-provision-device.sh \
+  --device-id device-c5-aws-pilot \
+  --dashboard-url https://your-dashboard.awsapprunner.com \
+  --api-url https://your-api-id.execute-api.us-west-2.amazonaws.com/dev \
+  --api-key 'replace-with-dev-api-key' \
+  --environment dev \
+  --install-service \
+  --enable-service
+```
+
+The script writes:
+
+```text
+~/.config/pisignage/device-agent.env
+~/.config/pisignage/device.json
+```
+
+`device-agent.env` is mode `600` and may contain the dev API key. `device.json`
+is a non-secret identity summary for troubleshooting. For fully local operation,
+run the same script with only `--device-id`. In that mode the agent still reads
+the local playlist, writes local heartbeat JSON, and logs that cloud work was
+skipped.
+
+For cloud mode, the provisioned `--device-id` must match the saved device record
+in Beam inventory. The cloud playlist route and heartbeat route both use that
+same ID, so migrate the dashboard inventory and Pi env together when renaming a
+device away from `device-local-demo`.
+
+Inspect the installed user service:
+
+```sh
 systemctl --user status pisignage-device-agent.service --no-pager
 ```
 

@@ -6,11 +6,12 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/home/donnoel/PiSignage
-Environment=PISIGNAGE_DEVICE_ID=device-local-demo
 Environment=PISIGNAGE_PLAYLIST_PATH=/home/donnoel/PiSignage/sample-content/playlist.local.json
 Environment=PISIGNAGE_CACHE_DIR=%h/.local/cache/pisignage/device-agent
 Environment=PISIGNAGE_HEARTBEAT_PATH=%h/.local/state/pisignage/heartbeat.json
 Environment=PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS=60
+# Device identity and optional cloud settings are generated on each Pi by
+# device/pi/bin/pisignage-provision-device.sh.
 EnvironmentFile=-%h/.config/pisignage/device-agent.env
 ExecStart=/usr/bin/node /home/donnoel/PiSignage/device-agent/dist/index.js --loop
 Restart=always

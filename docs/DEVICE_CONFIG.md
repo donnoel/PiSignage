@@ -8,7 +8,7 @@ No config file should contain AWS credentials, IoT private keys, signed URLs, or
 
 ```json
 {
-  "deviceId": "device-local-demo",
+  "deviceId": "device-c5-aws-pilot",
   "screenId": "screen-lobby",
   "environment": "local",
   "playlistSourcePath": "sample-content/playlist.local.json",
@@ -21,7 +21,8 @@ No config file should contain AWS credentials, IoT private keys, signed URLs, or
 
 ## Field Notes
 
-- `deviceId`: stable local device ID. Future pairing will provision this.
+- `deviceId`: stable local device ID. Cloud-connected Pis must be provisioned
+  with a unique value before the device-agent service starts.
 - `screenId`: assigned screen ID. Initial POC uses one screen.
 - `environment`: `local` for the current repo; future values may include `dev` or `alpha`.
 - `playlistSourcePath`: local playlist path or future HTTPS playlist endpoint.
@@ -40,11 +41,19 @@ PISIGNAGE_HEARTBEAT_PATH
 PISIGNAGE_NETWORK_ONLINE
 PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS
 PISIGNAGE_AGENT_LOOP
+PISIGNAGE_CLOUD_PLAYLIST_URL
+PISIGNAGE_CLOUD_API_URL
+PISIGNAGE_CLOUD_API_KEY
 ```
 
-## Future Rules
+## Provisioning Rules
 
-- Pairing may write a generated device config later, but not until AWS/device identity work is approved.
+- Run `device/pi/bin/pisignage-provision-device.sh` on each Pi to generate
+  `~/.config/pisignage/device-agent.env` and `~/.config/pisignage/device.json`.
+- Keep `PISIGNAGE_DEVICE_ID` unique per Pi. The five appliances should share the
+  same scripts/services/packages and differ only in identity/network fields.
+- Keep `PISIGNAGE_CLOUD_API_KEY` only in the private env file or another ignored
+  local secret store.
 - Device config should be readable by the agent without involving the dashboard.
 - Local config should remain usable without network access.
 - Runtime state such as heartbeat and cache should remain separate from config.
@@ -54,7 +63,7 @@ PISIGNAGE_AGENT_LOOP
 The device agent can fetch an assigned cloud playlist and send the same heartbeat payload to the Beam dev API when these environment variables are present:
 
 ```sh
-PISIGNAGE_CLOUD_PLAYLIST_URL=https://example.awsapprunner.com/api/cloud/devices/device-local-demo/playlist
+PISIGNAGE_CLOUD_PLAYLIST_URL=https://example.awsapprunner.com/api/cloud/devices/device-c5-aws-pilot/playlist
 PISIGNAGE_CLOUD_API_URL=https://example.execute-api.us-west-2.amazonaws.com/dev
 PISIGNAGE_CLOUD_API_KEY='<dev-api-key>'
 ```
@@ -79,7 +88,7 @@ never reaches browser JavaScript:
 ```sh
 BEAM_CLOUD_API_URL=https://example.execute-api.us-west-2.amazonaws.com/dev
 BEAM_CLOUD_API_KEY='<dev-api-key>'
-BEAM_CLOUD_DEVICE_ID=device-local-demo
+BEAM_CLOUD_DEVICE_ID=device-c5-aws-pilot
 ```
 
 Rules:
@@ -87,6 +96,7 @@ Rules:
 - Keep `PISIGNAGE_CLOUD_API_KEY` in the shell, systemd environment, or another ignored local secret store.
 - Keep `BEAM_CLOUD_API_KEY` only in ignored dashboard server environment.
 - Do not commit cloud API keys to git.
+- `PISIGNAGE_DEVICE_ID` is required when cloud playlist or heartbeat settings are configured.
 - A cloud playlist fetch failure must fall back to the local playlist or last cached playlist.
 - A cloud heartbeat failure must not fail the local heartbeat write.
 - A failed loop cycle should log and retry instead of stopping playback supervision.

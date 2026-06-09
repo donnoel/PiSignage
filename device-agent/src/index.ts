@@ -152,6 +152,39 @@ function cloudPlaylistUrl(): string | null {
   return url ? url : null;
 }
 
+function cloudHeartbeatConfigured(): boolean {
+  const baseUrl = process.env.PISIGNAGE_CLOUD_API_URL?.trim();
+  const apiKey = process.env.PISIGNAGE_CLOUD_API_KEY?.trim();
+  return Boolean(baseUrl || apiKey);
+}
+
+function cloudModeConfigured(): boolean {
+  return Boolean(cloudPlaylistUrl() || cloudHeartbeatConfigured());
+}
+
+function configuredDeviceId(): string {
+  const deviceId = process.env.PISIGNAGE_DEVICE_ID?.trim();
+
+  if (deviceId) {
+    if (deviceId === "device-local-demo" && cloudModeConfigured()) {
+      log("error", "device.identity.demo_id_in_cloud", {
+        message:
+          "Cloud mode is using device-local-demo. Provision this Pi with a unique PISIGNAGE_DEVICE_ID before adding more devices."
+      });
+    }
+
+    return deviceId;
+  }
+
+  if (cloudModeConfigured()) {
+    throw new Error(
+      "PISIGNAGE_DEVICE_ID is required when cloud playlist or cloud heartbeat is configured. Run device/pi/bin/pisignage-provision-device.sh on this Pi."
+    );
+  }
+
+  return "device-local-demo";
+}
+
 function assetFileName(asset: PlaylistAsset): string {
   const candidate = asset.fileName ?? path.basename(asset.uri);
   return path.basename(candidate);
@@ -293,7 +326,7 @@ async function runHeartbeatOnce(): Promise<void> {
   const heartbeatPath =
     process.env.PISIGNAGE_HEARTBEAT_PATH ??
     path.join(root, "device-agent", "local-state", "heartbeat.json");
-  const deviceId = process.env.PISIGNAGE_DEVICE_ID ?? "device-local-demo";
+  const deviceId = configuredDeviceId();
   const networkOnline = process.env.PISIGNAGE_NETWORK_ONLINE === "true";
 
   log("info", "playlist.read.start", { playlistPath });
