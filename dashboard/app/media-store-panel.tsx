@@ -241,7 +241,7 @@ function playbackSafety(item: MediaItem): PlaybackSafety {
 
   if (item.playbackProfile === "uploaded-mp4-v1" && /\.mp4$/i.test(item.playbackFileName)) {
     return {
-      canUseInPlaylist: false,
+      canUseInPlaylist: true,
       detail: item.cloudStatusDetail ?? "Uploaded MP4 is stored in AWS.",
       label: "Stored",
       tone: "good"

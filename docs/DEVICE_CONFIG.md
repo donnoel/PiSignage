@@ -51,9 +51,10 @@ PISIGNAGE_AGENT_LOOP
 
 ## Optional Cloud Heartbeat
 
-The device agent can send the same heartbeat payload to the Beam dev API when these environment variables are present:
+The device agent can fetch an assigned cloud playlist and send the same heartbeat payload to the Beam dev API when these environment variables are present:
 
 ```sh
+PISIGNAGE_CLOUD_PLAYLIST_URL=https://example.awsapprunner.com/api/cloud/devices/device-local-demo/playlist
 PISIGNAGE_CLOUD_API_URL=https://example.execute-api.us-west-2.amazonaws.com/dev
 PISIGNAGE_CLOUD_API_KEY='<dev-api-key>'
 ```
@@ -86,6 +87,7 @@ Rules:
 - Keep `PISIGNAGE_CLOUD_API_KEY` in the shell, systemd environment, or another ignored local secret store.
 - Keep `BEAM_CLOUD_API_KEY` only in ignored dashboard server environment.
 - Do not commit cloud API keys to git.
+- A cloud playlist fetch failure must fall back to the local playlist or last cached playlist.
 - A cloud heartbeat failure must not fail the local heartbeat write.
 - A failed loop cycle should log and retry instead of stopping playback supervision.
 - Local playback and cached playlist behavior must not depend on the cloud heartbeat.

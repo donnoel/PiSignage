@@ -189,6 +189,7 @@ export class BeamFoundationStack extends Stack {
     dashboardInstanceRole.addToPolicy(new iam.PolicyStatement({
       actions: [
         "s3:DeleteObject",
+        "s3:GetObject",
         "s3:PutObject"
       ],
       resources: [`${sourceMediaBucket.bucketArn}/*`]

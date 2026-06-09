@@ -3,10 +3,12 @@ import path from "node:path";
 
 type PlaylistAsset = {
   assetId: string;
-  type: "image";
+  type: "image" | "video";
   uri: string;
   durationSeconds: number;
   altText?: string;
+  downloadUrl?: string;
+  fileName?: string;
 };
 
 type Playlist = {
@@ -30,6 +32,10 @@ type Heartbeat = {
 type CloudHeartbeatConfig = {
   apiKey: string;
   baseUrl: string;
+};
+
+type CloudPlaylistResponse = {
+  playlist?: Playlist;
 };
 
 const appVersion = "0.1.0";
@@ -95,6 +101,19 @@ async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> 
   }
 }
 
+async function writeBufferAtomic(filePath: string, value: Buffer): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+
+  const temporaryPath = `${filePath}.${process.pid}.tmp`;
+  try {
+    await fs.writeFile(temporaryPath, value);
+    await fs.rename(temporaryPath, filePath);
+  } catch (error) {
+    await fs.rm(temporaryPath, { force: true });
+    throw error;
+  }
+}
+
 function playlistCachePath(cacheDirectory: string, playlistId: string): string {
   return path.join(cacheDirectory, "playlists", `${playlistId}.json`);
 }
@@ -126,6 +145,88 @@ async function loadPlaylistWithCache(
     const playlist = await readPlaylist(cachedPath);
     return { playlist, source: "cache" };
   }
+}
+
+function cloudPlaylistUrl(): string | null {
+  const url = process.env.PISIGNAGE_CLOUD_PLAYLIST_URL?.trim();
+  return url ? url : null;
+}
+
+function assetFileName(asset: PlaylistAsset): string {
+  const candidate = asset.fileName ?? path.basename(asset.uri);
+  return path.basename(candidate);
+}
+
+async function downloadCloudAsset(cacheDirectory: string, asset: PlaylistAsset): Promise<PlaylistAsset> {
+  if (!asset.downloadUrl) {
+    return asset;
+  }
+
+  const fileName = assetFileName(asset);
+  const response = await fetch(asset.downloadUrl);
+  if (!response.ok) {
+    throw new Error(`Asset ${asset.assetId} returned ${response.status}.`);
+  }
+
+  const bytes = Buffer.from(await response.arrayBuffer());
+  await writeBufferAtomic(path.join(cacheDirectory, "assets", fileName), bytes);
+
+  return {
+    ...asset,
+    downloadUrl: undefined,
+    fileName,
+    uri: `assets/${fileName}`
+  };
+}
+
+async function fetchCloudPlaylist(cacheDirectory: string): Promise<{
+  playlist: Playlist;
+  source: "cloud";
+}> {
+  const url = cloudPlaylistUrl();
+  if (!url) {
+    throw new Error("Cloud playlist URL is not configured.");
+  }
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Cloud playlist returned ${response.status}.`);
+  }
+
+  const body = (await response.json()) as CloudPlaylistResponse;
+  if (!body.playlist) {
+    throw new Error("Cloud playlist response did not include a playlist.");
+  }
+
+  const playlist = parsePlaylist(JSON.stringify(body.playlist), url);
+  const assets = await Promise.all(playlist.assets.map((asset) => downloadCloudAsset(cacheDirectory, asset)));
+  const cachedPlaylist = {
+    ...playlist,
+    assets
+  };
+  await cachePlaylist(cacheDirectory, cachedPlaylist);
+
+  return {
+    playlist: cachedPlaylist,
+    source: "cloud"
+  };
+}
+
+async function loadPlaylist(
+  playlistPath: string,
+  cacheDirectory: string
+): Promise<{ playlist: Playlist; source: "playlist" | "cache" | "cloud" }> {
+  if (cloudPlaylistUrl()) {
+    try {
+      return await fetchCloudPlaylist(cacheDirectory);
+    } catch (error) {
+      log("error", "cloud.playlist.failed", {
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  return loadPlaylistWithCache(playlistPath, cacheDirectory);
 }
 
 function cloudHeartbeatConfig(): CloudHeartbeatConfig | null {
@@ -196,7 +297,7 @@ async function runHeartbeatOnce(): Promise<void> {
   const networkOnline = process.env.PISIGNAGE_NETWORK_ONLINE === "true";
 
   log("info", "playlist.read.start", { playlistPath });
-  const { playlist, source } = await loadPlaylistWithCache(playlistPath, cacheDirectory);
+  const { playlist, source } = await loadPlaylist(playlistPath, cacheDirectory);
   log("info", "playlist.ready", {
     playlistId: playlist.playlistId,
     source,

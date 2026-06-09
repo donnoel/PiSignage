@@ -3,6 +3,7 @@
   "screenId": "screen-lobby",
   "environment": "local",
   "playlistSourcePath": "sample-content/playlist.local.json",
+  "cloudPlaylistUrl": "https://your-dashboard.awsapprunner.com/api/cloud/devices/device-local-demo/playlist",
   "cacheDirectory": "device-agent/local-cache",
   "heartbeatPath": "device-agent/local-state/heartbeat.json",
   "pollIntervalSeconds": 60,

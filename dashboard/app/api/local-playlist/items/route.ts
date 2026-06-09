@@ -2,17 +2,16 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
+import { cloudMediaConfig, readCloudMediaStore } from "../../../lib/cloud-media-store";
 import { appendActivityRecord, readMediaStore } from "../../../lib/local-data-store";
 import {
   ensureLivePlaylistPath,
-  readPlaylistStore,
   sampleAssetsDirectory,
-  readStoredPlaylist,
   writePlaylist,
   writePublishStatus,
-  writeStoredPlaylist
 } from "../../../lib/local-playlist";
 import type { PiPublishResult, Playlist, PlaylistAsset } from "../../../lib/local-playlist";
+import { readPlaylistStore, readStoredPlaylist, writeStoredPlaylist } from "../../../lib/playlist-store";
 import { defaultDurationSeconds, slugify } from "../../../lib/media-processing";
 import { isPlaybackSafeVideoFileName } from "../../../lib/playback-safety";
 
@@ -21,6 +20,11 @@ type PlaylistEditAction = "move-up" | "move-down" | "remove" | "update-item" | "
 type PlaylistAppendSource = {
   durationSeconds: number | null;
   playbackFileName: string;
+  playbackObjectKey?: string;
+  playbackProfile?: string;
+  sourceObjectKey?: string;
+  storageBucket?: string;
+  storageProvider?: "local" | "s3";
   title: string;
 };
 
@@ -158,7 +162,8 @@ function updatePlaylistItemDetails(
 }
 
 async function appendMediaStoreItemToPlaylist(playlist: Playlist, mediaId: string): Promise<Playlist> {
-  const mediaStore = await readMediaStore();
+  const cloudConfig = cloudMediaConfig();
+  const mediaStore = cloudConfig ? await readCloudMediaStore(cloudConfig) : await readMediaStore();
   const media = mediaStore.items.find((item) => item.id === mediaId);
   let source: PlaylistAppendSource | null = null;
 
@@ -166,6 +171,11 @@ async function appendMediaStoreItemToPlaylist(playlist: Playlist, mediaId: strin
     source = {
       durationSeconds: media.durationSeconds,
       playbackFileName: media.playbackFileName,
+      playbackObjectKey: media.playbackObjectKey,
+      playbackProfile: media.playbackProfile,
+      sourceObjectKey: media.sourceObjectKey,
+      storageBucket: media.storageBucket,
+      storageProvider: media.storageProvider,
       title: media.title
     };
   } else if (mediaId.startsWith("playlist:")) {
@@ -199,7 +209,8 @@ async function appendMediaStoreItemToPlaylist(playlist: Playlist, mediaId: strin
     throw new Error("Only ready media can be added to the playlist.");
   }
 
-  if (!isPlaybackSafeVideoFileName(source.playbackFileName)) {
+  const cloudUploadedMp4 = source.storageProvider === "s3" && source.playbackProfile === "uploaded-mp4-v1";
+  if (!cloudUploadedMp4 && !isPlaybackSafeVideoFileName(source.playbackFileName)) {
     throw new Error("Only Pi-safe MP4 playback files can be added to the playlist. Convert this media before using it.");
   }
 
@@ -207,11 +218,13 @@ async function appendMediaStoreItemToPlaylist(playlist: Playlist, mediaId: strin
     throw new Error("That media is already in this playlist.");
   }
 
-  const playbackPath = path.join(sampleAssetsDirectory(), source.playbackFileName);
-  try {
-    await fs.access(playbackPath);
-  } catch {
-    throw new Error(`Media file ${source.playbackFileName} is unavailable on disk.`);
+  if (!cloudUploadedMp4) {
+    const playbackPath = path.join(sampleAssetsDirectory(), source.playbackFileName);
+    try {
+      await fs.access(playbackPath);
+    } catch {
+      throw new Error(`Media file ${source.playbackFileName} is unavailable on disk.`);
+    }
   }
 
   const assetId = nextAssetId(playlist, source.playbackFileName);
@@ -224,15 +237,29 @@ async function appendMediaStoreItemToPlaylist(playlist: Playlist, mediaId: strin
       {
         assetId,
         type: "video",
-        uri: `assets/${source.playbackFileName}`,
+        uri: source.storageProvider === "s3"
+          ? `s3://${source.storageBucket}/${source.playbackObjectKey ?? source.sourceObjectKey}`
+          : `assets/${source.playbackFileName}`,
         durationSeconds: source.durationSeconds ?? defaultDurationSeconds,
-        altText: source.title
+        altText: source.title,
+        playbackObjectKey: source.playbackObjectKey,
+        sourceObjectKey: source.sourceObjectKey,
+        storageBucket: source.storageBucket,
+        storageProvider: source.storageProvider
       }
     ]
   };
 }
 
 async function markPlaylistEditPendingPublish(playlist: Playlist): Promise<PiPublishResult> {
+  if (cloudMediaConfig()) {
+    return {
+      enabled: false,
+      ok: false,
+      message: "Saved to AWS. The Pi can fetch this playlist in cloud mode."
+    };
+  }
+
   const playlistPath = await ensureLivePlaylistPath();
   await writePlaylist(playlistPath, playlist);
   return {
@@ -290,7 +317,9 @@ export async function POST(request: Request) {
 
     await writeStoredPlaylist(nextPlaylist);
     const piPublish = await markPlaylistEditPendingPublish(nextPlaylist);
-    await writePublishStatus(`playlist-${body.action}`, nextPlaylist, piPublish);
+    if (!cloudMediaConfig()) {
+      await writePublishStatus(`playlist-${body.action}`, nextPlaylist, piPublish);
+    }
     await appendActivityRecord({
       id: randomUUID(),
       action: `playlist-${body.action}`,

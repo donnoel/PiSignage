@@ -7,6 +7,10 @@ export type PlaylistAsset = {
   uri: string;
   durationSeconds?: number;
   altText?: string;
+  playbackObjectKey?: string;
+  sourceObjectKey?: string;
+  storageBucket?: string;
+  storageProvider?: "local" | "s3";
 };
 
 export type Playlist = {

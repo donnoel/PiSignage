@@ -62,6 +62,12 @@ catalog is empty. Media uploads in cloud mode write source objects to
 It does not need the dev API key for cloud heartbeat reads or dashboard
 inventory writes.
 
+The dashboard also exposes a dev device playlist endpoint at
+`/api/cloud/devices/{deviceId}/playlist`. It reads the device assignment,
+returns the assigned cloud playlist, and includes short-lived signed S3 download
+URLs for cloud media objects. This is the first one-screen pilot bridge; it is
+not a production device-auth boundary yet.
+
 Screens, Devices, the playlist catalog, and source media cataloging are the
 first cloud-backed dashboard workflows. MP4 uploads are accepted into the cloud
 media catalog. JPEG, PNG, and MOV uploads are stored as source media and marked

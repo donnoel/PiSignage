@@ -175,6 +175,7 @@ settings live in an ignored local env file so API keys are never committed:
 ```sh
 mkdir -p ~/.config/pisignage
 cat > ~/.config/pisignage/device-agent.env <<'EOF'
+PISIGNAGE_CLOUD_PLAYLIST_URL=https://your-dashboard.awsapprunner.com/api/cloud/devices/device-local-demo/playlist
 PISIGNAGE_CLOUD_API_URL=https://your-api-id.execute-api.us-west-2.amazonaws.com/dev
 PISIGNAGE_CLOUD_API_KEY=replace-with-dev-api-key
 PISIGNAGE_NETWORK_ONLINE=true
@@ -182,9 +183,10 @@ EOF
 chmod 600 ~/.config/pisignage/device-agent.env
 ```
 
-Leave `PISIGNAGE_CLOUD_API_URL` and `PISIGNAGE_CLOUD_API_KEY` out of the env
-file for fully local operation. In that mode the agent still writes local
-heartbeat JSON and logs that the cloud heartbeat was skipped.
+Leave `PISIGNAGE_CLOUD_PLAYLIST_URL`, `PISIGNAGE_CLOUD_API_URL`, and
+`PISIGNAGE_CLOUD_API_KEY` out of the env file for fully local operation. In
+that mode the agent still reads the local playlist, writes local heartbeat JSON,
+and logs that cloud work was skipped.
 
 Install the tracked device-agent service for the current user:
 

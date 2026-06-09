@@ -181,3 +181,51 @@ export function selectPlaylist(store: PlaylistStore, playlistId?: string | null)
 
   return selectLocalPlaylist(store, playlistId);
 }
+
+export async function writePlaylistStore(store: PlaylistStore): Promise<void> {
+  const config = cloudPlaylistConfig();
+  if (!config) {
+    const { writePlaylistStore: writeLocalPlaylistStore } = await import("./local-playlist");
+    await writeLocalPlaylistStore(store);
+    return;
+  }
+
+  await Promise.all(
+    store.items.map((playlist) =>
+      dynamoDb.send(new PutItemCommand({
+        Item: playlistToItem(playlist),
+        TableName: config.playlistsTableName
+      }))
+    )
+  );
+}
+
+export async function readStoredPlaylist(playlistId?: string | null): Promise<{
+  playlist: Playlist;
+  store: PlaylistStore;
+}> {
+  const store = await readPlaylistStore();
+  return {
+    playlist: selectPlaylist(store, playlistId),
+    store
+  };
+}
+
+export async function writeStoredPlaylist(playlist: Playlist): Promise<PlaylistStore> {
+  const store = await readPlaylistStore();
+  const index = store.items.findIndex((candidate) => candidate.playlistId === playlist.playlistId);
+  if (index === -1) {
+    throw new Error("Playlist was not found.");
+  }
+
+  const items = [...store.items];
+  items[index] = playlist;
+  const nextStore = {
+    ...store,
+    items,
+    updatedAt: new Date().toISOString(),
+    version: store.version + 1
+  };
+  await writePlaylistStore(nextStore);
+  return nextStore;
+}
