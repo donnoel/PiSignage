@@ -49,6 +49,7 @@ export class BeamFoundationStack extends Stack {
       tableDefinitions.map((definition) => [definition.id, this.createTable(definition, namePrefix)])
     );
     const tables = Object.values(tablesById);
+    const assetsTable = tableById(tablesById, "Assets");
     const devicesTable = tableById(tablesById, "Devices");
     const heartbeatsTable = tableById(tablesById, "Heartbeats");
     const playlistsTable = tableById(tablesById, "Playlists");
@@ -176,6 +177,22 @@ export class BeamFoundationStack extends Stack {
       ],
       resources: [playlistsTable.tableArn]
     }));
+    dashboardInstanceRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:PutItem",
+        "dynamodb:Scan"
+      ],
+      resources: [assetsTable.tableArn]
+    }));
+    dashboardInstanceRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        "s3:DeleteObject",
+        "s3:PutObject"
+      ],
+      resources: [`${sourceMediaBucket.bucketArn}/*`]
+    }));
     const dashboardService = new apprunner.CfnService(this, "DashboardService", {
       serviceName: `${namePrefix}-dashboard`,
       sourceConfiguration: {
@@ -190,6 +207,10 @@ export class BeamFoundationStack extends Stack {
               {
                 name: "BEAM_CLOUD_DEVICE_ID",
                 value: "device-local-demo"
+              },
+              {
+                name: "BEAM_ASSETS_TABLE_NAME",
+                value: assetsTable.tableName
               },
               {
                 name: "BEAM_DASHBOARD_MODE",
@@ -210,6 +231,10 @@ export class BeamFoundationStack extends Stack {
               {
                 name: "BEAM_SCREENS_TABLE_NAME",
                 value: screensTable.tableName
+              },
+              {
+                name: "BEAM_SOURCE_MEDIA_BUCKET_NAME",
+                value: sourceMediaBucket.bucketName
               }
             ]
           },

@@ -57,12 +57,17 @@ instance IAM role using `BEAM_HEARTBEATS_TABLE_NAME`, and it reads/writes the
 cloud Screens and Devices tables through `BEAM_SCREENS_TABLE_NAME` and
 `BEAM_DEVICES_TABLE_NAME`. It also reads the cloud playlist catalog through
 `BEAM_PLAYLISTS_TABLE_NAME` and seeds the dev `Main Playlist` record when that
-catalog is empty. It does not need the dev API key for cloud heartbeat reads or
-dashboard inventory writes.
+catalog is empty. Media uploads in cloud mode write source objects to
+`BEAM_SOURCE_MEDIA_BUCKET_NAME` and catalog records to `BEAM_ASSETS_TABLE_NAME`.
+It does not need the dev API key for cloud heartbeat reads or dashboard
+inventory writes.
 
-Screens, Devices, and the playlist catalog are the first cloud-backed dashboard
-workflows. Playlist media items, publishing, schedules, and recovery still use
-the local POC paths until their cloud contracts are implemented.
+Screens, Devices, the playlist catalog, and source media cataloging are the
+first cloud-backed dashboard workflows. MP4 uploads are accepted into the cloud
+media catalog. JPEG, PNG, and MOV uploads are stored as source media and marked
+processing until the playback-safe MP4 processing job exists. Playlist media
+items, publishing, schedules, and recovery still use the local POC paths until
+their cloud contracts are implemented.
 
 Deploying the dashboard image requires Docker to be running locally because CDK
 builds and publishes the image asset during deployment.

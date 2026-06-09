@@ -16,8 +16,13 @@ export type MediaRecord = {
   sourceSizeBytes?: number;
   durationSeconds: number | null;
   checksumSha256?: string;
+  cloudStatusDetail?: string;
   playbackProfile?: string;
+  playbackObjectKey?: string;
   preparedAt?: string;
+  sourceObjectKey?: string;
+  storageBucket?: string;
+  storageProvider?: "local" | "s3";
   width?: number | null;
   height?: number | null;
   fps?: number | null;

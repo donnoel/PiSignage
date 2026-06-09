@@ -141,6 +141,7 @@ const sshReachabilityTimeoutMs = 750;
 const probeCacheTtlMs = 10_000;
 const staleStatusThresholdMs = 45_000;
 const staleHeartbeatThresholdMs = 120_000;
+const dashboardMode = process.env.BEAM_DASHBOARD_MODE === "cloud" ? "cloud" : "local";
 
 type PiProbeCacheEntry = {
   pending: Promise<void> | null;
@@ -2052,7 +2053,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             className={selectedView === "media-store" ? "mt-6" : "hidden"}
           >
             <h2 id="media-store-heading" className="sr-only">Media Store</h2>
-            <MediaStorePanel />
+            <MediaStorePanel mode={dashboardMode} />
           </section>
 
           <section

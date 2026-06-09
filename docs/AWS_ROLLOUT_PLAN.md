@@ -28,6 +28,7 @@ Deliverables:
 
 - DynamoDB-backed dashboard Screens and Devices inventory.
 - DynamoDB-backed dashboard playlist catalog, starting with the dev main playlist record.
+- Cloud media source upload and asset cataloging for MP4, JPEG, PNG, and MOV.
 - `POST /v1/devices/pair`
 - `POST /v1/devices/{deviceId}/heartbeat`
 - `GET /v1/devices/{deviceId}/playlist`
@@ -41,6 +42,7 @@ Validation:
 - Heartbeat writes the latest device status without affecting playback.
 - Adding a screen from the AWS-hosted dashboard persists in DynamoDB and survives App Runner restarts.
 - The AWS-hosted dashboard resolves the C5 screen's assigned playlist from DynamoDB instead of local JSON.
+- Uploading an MP4 from the AWS-hosted dashboard creates a private S3 source object and DynamoDB asset record.
 
 ## Phase 3: Device Agent Cloud Mode
 

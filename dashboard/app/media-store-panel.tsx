@@ -26,6 +26,7 @@ type MediaItem = {
   sourceSizeBytes?: number;
   durationSeconds: number | null;
   checksumSha256?: string;
+  cloudStatusDetail?: string;
   playbackProfile?: string;
   preparedAt?: string;
   width?: number | null;
@@ -112,6 +113,10 @@ type StatusTone = "good" | "warn" | "muted";
 type SafetyFilter = "all" | "ready" | "review";
 type TypeFilter = "all" | "video" | "still" | "mov";
 type UploadSource = "file" | "directory";
+
+type MediaStorePanelProps = {
+  mode?: "cloud" | "local";
+};
 
 type PlaybackSafety = {
   canUseInPlaylist: boolean;
@@ -228,9 +233,18 @@ function playbackSafety(item: MediaItem): PlaybackSafety {
   if (item.status === "processing") {
     return {
       canUseInPlaylist: false,
-      detail: "This media is still being prepared.",
+      detail: item.cloudStatusDetail ?? "This media is still being prepared.",
       label: "Processing",
       tone: "muted"
+    };
+  }
+
+  if (item.playbackProfile === "uploaded-mp4-v1" && /\.mp4$/i.test(item.playbackFileName)) {
+    return {
+      canUseInPlaylist: false,
+      detail: item.cloudStatusDetail ?? "Uploaded MP4 is stored in AWS.",
+      label: "Stored",
+      tone: "good"
     };
   }
 
@@ -365,7 +379,7 @@ function sidebarButtonClass(selected: boolean): string {
     : "bg-white text-zinc-700 ring-zinc-200 hover:bg-zinc-50";
 }
 
-export function MediaStorePanel() {
+export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const directoryInputRef = useRef<HTMLInputElement>(null);
@@ -1354,7 +1368,13 @@ export function MediaStorePanel() {
                   </div>
 
                   <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm text-zinc-600" aria-live="polite">{isUploading ? message : "Upload saves locally. Publish sends media to screens later."}</p>
+                    <p className="text-sm text-zinc-600" aria-live="polite">
+                      {isUploading
+                        ? message
+                        : mode === "cloud"
+                          ? "Upload saves to AWS. Playlist playback processing comes next."
+                          : "Upload saves locally. Publish sends media to screens later."}
+                    </p>
                     <button
                       type="submit"
                       disabled={isBusy}

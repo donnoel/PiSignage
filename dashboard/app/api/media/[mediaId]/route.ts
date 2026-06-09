@@ -3,6 +3,12 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
+  cloudMediaConfig,
+  deleteCloudMediaRecords,
+  readCloudMediaStore,
+  updateCloudMediaMetadata
+} from "../../../lib/cloud-media-store";
+import {
   appendActivityRecord,
   ensureLocalDataFoundation,
   readMediaFolderStore,
@@ -92,6 +98,19 @@ async function playlistAssetForMediaId(mediaId: string): Promise<PlaylistAsset |
 }
 
 export async function GET(_request: Request, context: RouteContext) {
+  const cloudConfig = cloudMediaConfig();
+  if (cloudConfig) {
+    const { mediaId } = await context.params;
+    const mediaStore = await readCloudMediaStore(cloudConfig);
+    const item = mediaStore.items.find((candidate) => candidate.id === mediaId);
+
+    if (!item) {
+      return NextResponse.json({ error: "Media item not found." }, { status: 404 });
+    }
+
+    return NextResponse.json({ item });
+  }
+
   await ensureLocalDataFoundation();
   const { mediaId } = await context.params;
   const mediaStore = await readMediaStore();
@@ -105,7 +124,6 @@ export async function GET(_request: Request, context: RouteContext) {
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
-  await ensureLocalDataFoundation();
   const { mediaId } = await context.params;
 
   try {
@@ -115,6 +133,22 @@ export async function PATCH(request: Request, context: RouteContext) {
       title?: string;
     };
 
+    const cloudConfig = cloudMediaConfig();
+    if (cloudConfig) {
+      const updated = await updateCloudMediaMetadata(cloudConfig, mediaId, {
+        description: body.description,
+        tags: Object.prototype.hasOwnProperty.call(body, "tags") ? parseTags(body.tags) : undefined,
+        title: body.title
+      });
+
+      if (!updated) {
+        return NextResponse.json({ error: "Media item not found." }, { status: 404 });
+      }
+
+      return NextResponse.json({ item: updated });
+    }
+
+    await ensureLocalDataFoundation();
     const mediaStore = await readMediaStore();
     const index = mediaStore.items.findIndex((candidate) => candidate.id === mediaId);
 
@@ -194,7 +228,6 @@ export async function PATCH(request: Request, context: RouteContext) {
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {
-  await ensureLocalDataFoundation();
   const { mediaId } = await context.params;
 
   if (mediaId.startsWith("playlist:")) {
@@ -205,6 +238,17 @@ export async function DELETE(_request: Request, context: RouteContext) {
   }
 
   try {
+    const cloudConfig = cloudMediaConfig();
+    if (cloudConfig) {
+      const result = await deleteCloudMediaRecords(cloudConfig, [mediaId]);
+      if (result.deletedIds.length === 0) {
+        return NextResponse.json({ error: "Media item not found." }, { status: 404 });
+      }
+
+      return NextResponse.json({ deleted: true, item: { id: mediaId } });
+    }
+
+    await ensureLocalDataFoundation();
     const mediaStore = await readMediaStore();
     const index = mediaStore.items.findIndex((candidate) => candidate.id === mediaId);
 

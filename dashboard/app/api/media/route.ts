@@ -4,6 +4,13 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
+  cloudMediaConfig,
+  cloudUploadInputFromForm,
+  createCloudMediaUpload,
+  deleteCloudMediaRecords,
+  readCloudMediaStore
+} from "../../lib/cloud-media-store";
+import {
   appendActivityRecord,
   ensureLocalDataFoundation,
   type MediaFolderStore,
@@ -50,6 +57,18 @@ type BulkDeleteMediaResult = {
   deletedIds: string[];
   missingIds: string[];
 };
+
+function mediaApiItemFromCloudRecord(item: MediaRecord): MediaApiItem {
+  return {
+    ...item,
+    folderId: null,
+    folderName: null,
+    missingFile: false,
+    origin: "media-store",
+    playlistAssetIds: [],
+    playlistUseCount: 0
+  };
+}
 
 function parseTags(value: FormDataEntryValue | null): string[] {
   if (typeof value !== "string") {
@@ -364,6 +383,51 @@ async function mediaItemsWithPlaylistAssets(
 }
 
 export async function GET(request: Request) {
+  const cloudConfig = cloudMediaConfig();
+  if (cloudConfig) {
+    const mediaStore = await readCloudMediaStore(cloudConfig);
+    const mediaItems = mediaStore.items.map(mediaApiItemFromCloudRecord);
+    const { searchParams } = new URL(request.url);
+    const cursor = parsePositiveInt(searchParams.get("cursor"), 0, Number.MAX_SAFE_INTEGER);
+    const limit = parsePositiveInt(searchParams.get("limit"), 50, 200);
+    const query = normalize(searchParams.get("q") ?? "");
+    const requiredTag = normalize(searchParams.get("tag") ?? "");
+
+    const filteredItems = mediaItems.filter((item) => {
+      if (requiredTag && !item.tags.some((tag) => normalize(tag) === requiredTag)) {
+        return false;
+      }
+
+      if (!query) {
+        return true;
+      }
+
+      const haystack = normalize(
+        `${item.title}\n${item.description}\n${item.tags.join(" ")}\n${item.playbackFileName}\n${item.sourceFileName}\n${item.origin}`
+      );
+      return haystack.includes(query);
+    });
+    const sortedItems = filteredItems
+      .slice()
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const nextCursorValue = cursor + limit;
+    const items = sortedItems.slice(cursor, nextCursorValue);
+
+    return NextResponse.json({
+      folders: [],
+      items,
+      version: mediaStore.version,
+      updatedAt: mediaStore.updatedAt,
+      pagination: {
+        cursor,
+        hasMore: nextCursorValue < sortedItems.length,
+        limit,
+        nextCursor: nextCursorValue < sortedItems.length ? String(nextCursorValue) : null,
+        total: sortedItems.length
+      }
+    });
+  }
+
   await ensureLocalDataFoundation();
   const [mediaStore, folderStore] = await Promise.all([readMediaStore(), readMediaFolderStore()]);
   const mediaItems = await mediaItemsWithPlaylistAssets(mediaStore.items, folderStore);
@@ -414,8 +478,6 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  await ensureLocalDataFoundation();
-
   try {
     let formData: FormData;
     try {
@@ -440,6 +502,14 @@ export async function POST(request: Request) {
       );
     }
 
+    const cloudConfig = cloudMediaConfig();
+    if (cloudConfig) {
+      const input = await cloudUploadInputFromForm(file, formData, parseTags(formData.get("tags")));
+      const item = await createCloudMediaUpload(cloudConfig, input);
+      return NextResponse.json({ item: mediaApiItemFromCloudRecord(item) }, { status: 201 });
+    }
+
+    await ensureLocalDataFoundation();
     const safeFileName = sanitizeMediaFileName(file.name);
     const folderStore = await readMediaFolderStore();
     const folderId = normalizeFolderId(formData.get("folderId"), folderStore);
@@ -564,8 +634,6 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  await ensureLocalDataFoundation();
-
   try {
     const body = (await request.json().catch(() => ({}))) as {
       mediaIds?: unknown;
@@ -575,6 +643,27 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "Choose media to delete." }, { status: 400 });
     }
 
+    const cloudConfig = cloudMediaConfig();
+    if (cloudConfig) {
+      const result = await deleteCloudMediaRecords(cloudConfig, mediaIds);
+      if (result.deletedIds.length === 0 && result.blockedIds.length > 0) {
+        return NextResponse.json(
+          {
+            ...result,
+            deleted: 0,
+            error: "Selected media is still used by a playlist. Remove it from playlists before deleting it."
+          },
+          { status: 409 }
+        );
+      }
+
+      return NextResponse.json({
+        ...result,
+        deleted: result.deletedIds.length
+      });
+    }
+
+    await ensureLocalDataFoundation();
     const result = await deleteMediaRecords(mediaIds);
     if (result.deletedIds.length === 0 && result.blockedIds.length > 0) {
       return NextResponse.json(
