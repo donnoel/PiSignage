@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   DeleteItemCommand,
@@ -15,9 +17,13 @@ import {
 import type { MediaRecord, MediaStore } from "./local-data-store";
 import {
   defaultDurationSeconds,
+  assertPlaybackSafeVideoFile,
+  createPlaybackSafeVideoClip,
   imageDurationFromForm,
   mediaSourceTypeFromFileName,
+  playbackPrepProfile,
   sanitizeMediaFileName,
+  sha256ForFile,
   stillClipFileName,
   transcodedVideoFileName
 } from "./media-processing";
@@ -242,16 +248,28 @@ export async function createCloudMediaUpload(config: CloudMediaConfig, input: Cl
   const now = isoNow();
   const id = `asset-${randomUUID()}`;
   const sourceObjectKey = `uploads/${now.slice(0, 10)}/${id}/${safeFileName}`;
-  const isMp4 = path.extname(safeFileName).toLowerCase() === ".mp4";
+  const isVideo = sourceType === "video";
   const playbackFileName = sourceType === "image"
     ? stillClipFileName(safeFileName, input.durationSeconds)
-    : isMp4
-      ? safeFileName
-      : transcodedVideoFileName(safeFileName);
-  const status: MediaRecord["status"] = isMp4 ? "ready" : "processing";
-  const cloudStatusDetail = isMp4
-    ? "Uploaded MP4 is stored in AWS. Pi-safe validation is pending."
-    : "Uploaded source is stored in AWS. Playback-safe MP4 processing is pending.";
+    : transcodedVideoFileName(safeFileName);
+  const playbackObjectKey = isVideo
+    ? `playback/${now.slice(0, 10)}/${id}/${playbackFileName}`
+    : undefined;
+  let preparedVideo:
+    | {
+        audioCodec: string | null;
+        bitRate: number | null;
+        checksumSha256: string;
+        durationSeconds: number | null;
+        fps: number | null;
+        height: number | null;
+        pixelFormat: string | null;
+        sizeBytes: number;
+        videoCodec: string | null;
+        videoProfile: string | null;
+        width: number | null;
+      }
+    | null = null;
 
   await s3.send(new PutObjectCommand({
     Body: input.uploadedBytes,
@@ -262,27 +280,77 @@ export async function createCloudMediaUpload(config: CloudMediaConfig, input: Cl
     ServerSideEncryption: "AES256"
   }));
 
+  if (isVideo && playbackObjectKey) {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "beam-cloud-media-"));
+    const sourcePath = path.join(temporaryDirectory, safeFileName);
+    const playbackPath = path.join(temporaryDirectory, playbackFileName);
+
+    try {
+      await fs.writeFile(sourcePath, input.uploadedBytes);
+      await createPlaybackSafeVideoClip(sourcePath, playbackPath);
+      const probe = await assertPlaybackSafeVideoFile(playbackPath);
+      const [stat, checksumSha256] = await Promise.all([fs.stat(playbackPath), sha256ForFile(playbackPath)]);
+      const playbackBytes = await fs.readFile(playbackPath);
+
+      await s3.send(new PutObjectCommand({
+        Body: playbackBytes,
+        Bucket: config.sourceMediaBucketName,
+        ContentLength: playbackBytes.byteLength,
+        ContentType: "video/mp4",
+        Key: playbackObjectKey,
+        ServerSideEncryption: "AES256"
+      }));
+
+      preparedVideo = {
+        audioCodec: probe.audioCodec,
+        bitRate: probe.bitRate,
+        checksumSha256,
+        durationSeconds: probe.durationSeconds,
+        fps: probe.averageFps ?? probe.fps,
+        height: probe.height,
+        pixelFormat: probe.pixelFormat,
+        sizeBytes: stat.size,
+        videoCodec: probe.videoCodec,
+        videoProfile: probe.videoProfile,
+        width: probe.width
+      };
+    } finally {
+      await fs.rm(temporaryDirectory, { force: true, recursive: true });
+    }
+  }
+
   const media: MediaRecord = {
-    cloudStatusDetail,
+    audioCodec: preparedVideo?.audioCodec,
+    bitRate: preparedVideo?.bitRate,
+    checksumSha256: preparedVideo?.checksumSha256,
+    cloudStatusDetail: preparedVideo
+      ? `Prepared ${playbackPrepProfile.width}x${playbackPrepProfile.height} H.264 playback copy for Pi/VLC.`
+      : "Uploaded source is stored in AWS. Playback-safe MP4 processing is pending.",
     createdAt: now,
     description: input.description?.trim().slice(0, 5000) ?? "",
-    durationSeconds: isMp4 ? defaultDurationSeconds : input.durationSeconds,
+    durationSeconds: preparedVideo?.durationSeconds ?? (isVideo ? defaultDurationSeconds : input.durationSeconds),
+    fps: preparedVideo?.fps,
+    height: preparedVideo?.height,
     id,
     mimeType: input.mimeType,
+    pixelFormat: preparedVideo?.pixelFormat,
     playbackFileName,
-    playbackObjectKey: isMp4 ? sourceObjectKey : undefined,
-    playbackProfile: isMp4 ? "uploaded-mp4-v1" : "pending-playback-mp4-v1",
-    preparedAt: isMp4 ? now : undefined,
-    sizeBytes: input.sizeBytes,
+    playbackObjectKey,
+    playbackProfile: preparedVideo ? playbackPrepProfile.id : "pending-playback-mp4-v1",
+    preparedAt: preparedVideo ? now : undefined,
+    sizeBytes: preparedVideo?.sizeBytes ?? input.sizeBytes,
     sourceFileName: safeFileName,
     sourceObjectKey,
     sourceSizeBytes: input.sizeBytes,
-    status,
+    status: preparedVideo ? "ready" : "processing",
     storageBucket: config.sourceMediaBucketName,
     storageProvider: "s3",
     tags: input.tags,
     title: input.title?.trim().slice(0, 120) || baseTitleFromFileName(safeFileName),
-    updatedAt: now
+    updatedAt: now,
+    videoCodec: preparedVideo?.videoCodec,
+    videoProfile: preparedVideo?.videoProfile,
+    width: preparedVideo?.width
   };
 
   await dynamoDb.send(new PutItemCommand({

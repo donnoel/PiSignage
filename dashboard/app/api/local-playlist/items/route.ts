@@ -12,7 +12,7 @@ import {
 } from "../../../lib/local-playlist";
 import type { PiPublishResult, Playlist, PlaylistAsset } from "../../../lib/local-playlist";
 import { readPlaylistStore, readStoredPlaylist, writeStoredPlaylist } from "../../../lib/playlist-store";
-import { defaultDurationSeconds, slugify } from "../../../lib/media-processing";
+import { defaultDurationSeconds, playbackPrepProfile, slugify } from "../../../lib/media-processing";
 import { isPlaybackSafeVideoFileName } from "../../../lib/playback-safety";
 
 type PlaylistEditAction = "move-up" | "move-down" | "remove" | "update-item" | "add-media" | "reorder";
@@ -209,8 +209,13 @@ async function appendMediaStoreItemToPlaylist(playlist: Playlist, mediaId: strin
     throw new Error("Only ready media can be added to the playlist.");
   }
 
-  const cloudUploadedMp4 = source.storageProvider === "s3" && source.playbackProfile === "uploaded-mp4-v1";
-  if (!cloudUploadedMp4 && !isPlaybackSafeVideoFileName(source.playbackFileName)) {
+  const isCloudMedia = source.storageProvider === "s3";
+  const isPreparedCloudMedia = isCloudMedia && source.playbackProfile === playbackPrepProfile.id;
+  if (isCloudMedia && !isPreparedCloudMedia) {
+    throw new Error("Only prepared cloud media can be added to the playlist. Wait for processing to finish, then try again.");
+  }
+
+  if (!isPlaybackSafeVideoFileName(source.playbackFileName)) {
     throw new Error("Only Pi-safe MP4 playback files can be added to the playlist. Convert this media before using it.");
   }
 
@@ -218,7 +223,7 @@ async function appendMediaStoreItemToPlaylist(playlist: Playlist, mediaId: strin
     throw new Error("That media is already in this playlist.");
   }
 
-  if (!cloudUploadedMp4) {
+  if (!isPreparedCloudMedia) {
     const playbackPath = path.join(sampleAssetsDirectory(), source.playbackFileName);
     try {
       await fs.access(playbackPath);

@@ -239,15 +239,6 @@ function playbackSafety(item: MediaItem): PlaybackSafety {
     };
   }
 
-  if (item.playbackProfile === "uploaded-mp4-v1" && /\.mp4$/i.test(item.playbackFileName)) {
-    return {
-      canUseInPlaylist: true,
-      detail: item.cloudStatusDetail ?? "Uploaded MP4 is stored in AWS.",
-      label: "Stored",
-      tone: "good"
-    };
-  }
-
   if (!isMp4FileName(item.playbackFileName)) {
     return {
       canUseInPlaylist: false,
@@ -268,7 +259,7 @@ function playbackSafety(item: MediaItem): PlaybackSafety {
 
   return {
     canUseInPlaylist: true,
-    detail: "Ready for the Pi playlist.",
+    detail: item.cloudStatusDetail ?? "Ready for the Pi playlist.",
     label: "Ready",
     tone: "good"
   };

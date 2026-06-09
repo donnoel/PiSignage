@@ -21,6 +21,9 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ffmpeg \
+  && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/dashboard/.next-build/standalone ./
 COPY --from=builder /app/dashboard/.next-build/static ./dashboard/.next-build/static
 COPY --from=builder /app/dashboard/public ./dashboard/public
