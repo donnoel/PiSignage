@@ -7,8 +7,8 @@ import {
   writeDeviceStore,
   writeScreenStore
 } from "../../../lib/local-data-store";
-import { readNormalizedInventory } from "../../../lib/local-inventory";
-import { readPlaylistStore, readStoredPlaylist, selectPlaylist } from "../../../lib/local-playlist";
+import { readInventory, updateInventory } from "../../../lib/inventory-store";
+import { readPlaylistStore, readStoredPlaylist, selectPlaylist } from "../../../lib/playlist-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,10 +19,14 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+function isCloudMode(): boolean {
+  return process.env.BEAM_DASHBOARD_MODE === "cloud";
+}
+
 async function assignmentResponse(playlistId?: string | null) {
   const store = await readPlaylistStore();
   const playlist = selectPlaylist(store, playlistId);
-  const inventory = await readNormalizedInventory(playlist.playlistId);
+  const inventory = await readInventory(playlist.playlistId);
 
   return NextResponse.json({
     devices: inventory.devices.items,
@@ -69,7 +73,13 @@ export async function POST(request: Request) {
     }
 
     const timestamp = nowIso();
-    if (body.targetType === "screen") {
+    if (isCloudMode()) {
+      await updateInventory({
+        id: body.targetId,
+        playlistId: assignmentPlaylistId,
+        targetType: body.targetType
+      });
+    } else if (body.targetType === "screen") {
       const [screenStore, deviceStore] = await Promise.all([readScreenStore(), readDeviceStore()]);
       const index = screenStore.items.findIndex((item) => item.id === body.targetId);
       if (index === -1) {
