@@ -207,7 +207,7 @@ export class BeamFoundationStack extends Stack {
             runtimeEnvironmentVariables: [
               {
                 name: "BEAM_CLOUD_DEVICE_ID",
-                value: "device-local-demo"
+                value: "device-c5-aws-pilot"
               },
               {
                 name: "BEAM_ASSETS_TABLE_NAME",
