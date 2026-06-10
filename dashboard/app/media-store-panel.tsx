@@ -322,7 +322,7 @@ function playbackSafety(item: MediaItem): PlaybackSafety {
     return {
       canUseInPlaylist: false,
       detail: item.cloudStatusDetail ?? "AWS has the source file, but a Pi-safe playback copy has not been prepared yet.",
-      label: "Needs processing",
+      label: isPendingPreparation(item) ? "Queued" : "Processing underway",
       tone: "muted"
     };
   }

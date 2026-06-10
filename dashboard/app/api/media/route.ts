@@ -21,8 +21,15 @@ import {
   writeMediaFolderStore,
   writeMediaStore
 } from "../../lib/local-data-store";
-import { readPlaylistStore, sampleAssetsDirectory, writeFileAtomic } from "../../lib/local-playlist";
+import { sampleAssetsDirectory, writeFileAtomic } from "../../lib/local-playlist";
 import type { PlaylistAsset } from "../../lib/local-playlist";
+import { readPlaylistStore } from "../../lib/playlist-store";
+import {
+  playlistAssetFileName,
+  playlistAssetsForMediaRecord,
+  playlistFileNamesInUse,
+  playlistUsesMediaRecord
+} from "../../lib/media-playlist-usage";
 import {
   assertPlaybackSafeVideoFile,
   createPlaybackSafeVideoClip,
@@ -59,15 +66,15 @@ type BulkDeleteMediaResult = {
   missingIds: string[];
 };
 
-function mediaApiItemFromCloudRecord(item: MediaRecord): MediaApiItem {
+function mediaApiItemFromCloudRecord(item: MediaRecord, playlistAssets: PlaylistAsset[] = []): MediaApiItem {
   return {
     ...item,
     folderId: null,
     folderName: null,
     missingFile: false,
     origin: "media-store",
-    playlistAssetIds: [],
-    playlistUseCount: 0
+    playlistAssetIds: playlistAssets.map((asset) => asset.assetId),
+    playlistUseCount: playlistAssets.length
   };
 }
 
@@ -156,14 +163,6 @@ function assignedFolderId(
   return folderId && folderById.has(folderId) ? folderId : null;
 }
 
-function playlistAssetFileName(asset: PlaylistAsset): string | null {
-  if (!asset.uri.startsWith("assets/")) {
-    return null;
-  }
-
-  return path.basename(asset.uri);
-}
-
 function requestedMediaIds(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -178,22 +177,6 @@ function requestedMediaIds(value: unknown): string[] {
         .slice(0, 500)
     )
   );
-}
-
-async function playlistFileNamesInUse(): Promise<Set<string>> {
-  const playlistStore = await readPlaylistStore();
-  const fileNames = new Set<string>();
-
-  for (const playlist of playlistStore.items) {
-    for (const asset of playlist.assets) {
-      const fileName = playlistAssetFileName(asset);
-      if (fileName) {
-        fileNames.add(fileName);
-      }
-    }
-  }
-
-  return fileNames;
 }
 
 async function deleteMediaRecords(mediaIds: string[]): Promise<BulkDeleteMediaResult> {
@@ -383,11 +366,25 @@ async function mediaItemsWithPlaylistAssets(
   return [...storeItems, ...playlistOnlyItems];
 }
 
+async function cloudMediaItemsWithPlaylistAssets(mediaStoreItems: MediaRecord[]): Promise<MediaApiItem[]> {
+  return Promise.all(
+    mediaStoreItems.map(async (item) => mediaApiItemFromCloudRecord(item, await playlistAssetsForMediaRecord(item)))
+  );
+}
+
+async function cloudPlaylistBlockedMediaIds(mediaStoreItems: MediaRecord[]): Promise<Set<string>> {
+  const blockedEntries = await Promise.all(
+    mediaStoreItems.map(async (item) => [item.id, await playlistUsesMediaRecord(item)] as const)
+  );
+
+  return new Set(blockedEntries.filter(([, isBlocked]) => isBlocked).map(([id]) => id));
+}
+
 export async function GET(request: Request) {
   const cloudConfig = cloudMediaConfig();
   if (cloudConfig) {
     const mediaStore = await readCloudMediaStore(cloudConfig);
-    const mediaItems = mediaStore.items.map(mediaApiItemFromCloudRecord);
+    const mediaItems = await cloudMediaItemsWithPlaylistAssets(mediaStore.items);
     const { searchParams } = new URL(request.url);
     const cursor = parsePositiveInt(searchParams.get("cursor"), 0, Number.MAX_SAFE_INTEGER);
     const limit = parsePositiveInt(searchParams.get("limit"), 50, 200);
@@ -651,7 +648,12 @@ export async function DELETE(request: Request) {
 
     const cloudConfig = cloudMediaConfig();
     if (cloudConfig) {
-      const result = await deleteCloudMediaRecords(cloudConfig, mediaIds);
+      const mediaStore = await readCloudMediaStore(cloudConfig);
+      const result = await deleteCloudMediaRecords(
+        cloudConfig,
+        mediaIds,
+        await cloudPlaylistBlockedMediaIds(mediaStore.items)
+      );
       if (result.deletedIds.length === 0 && result.blockedIds.length > 0) {
         return NextResponse.json(
           {

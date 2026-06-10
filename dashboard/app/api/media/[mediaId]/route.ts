@@ -16,8 +16,14 @@ import {
   writeMediaFolderStore,
   writeMediaStore
 } from "../../../lib/local-data-store";
-import { readPlaylistStore, sampleAssetsDirectory } from "../../../lib/local-playlist";
+import { sampleAssetsDirectory } from "../../../lib/local-playlist";
 import type { PlaylistAsset } from "../../../lib/local-playlist";
+import {
+  playlistAssetFileName,
+  playlistUsesFile,
+  playlistUsesMediaRecord
+} from "../../../lib/media-playlist-usage";
+import { readPlaylistStore } from "../../../lib/playlist-store";
 
 type RouteContext = {
   params: Promise<{
@@ -63,21 +69,6 @@ function mimeTypeFromExtension(fileName: string): string {
     return "image/png";
   }
   return "application/octet-stream";
-}
-
-function playlistAssetFileName(asset: PlaylistAsset): string | null {
-  if (!asset.uri.startsWith("assets/")) {
-    return null;
-  }
-
-  return path.basename(asset.uri);
-}
-
-async function playlistUsesFile(fileName: string): Promise<boolean> {
-  const playlistStore = await readPlaylistStore();
-  return playlistStore.items.some((playlist) =>
-    playlist.assets.some((asset) => playlistAssetFileName(asset) === fileName)
-  );
 }
 
 async function playlistAssetForMediaId(mediaId: string): Promise<PlaylistAsset | null> {
@@ -240,12 +231,26 @@ export async function DELETE(_request: Request, context: RouteContext) {
   try {
     const cloudConfig = cloudMediaConfig();
     if (cloudConfig) {
+      const mediaStore = await readCloudMediaStore(cloudConfig);
+      const current = mediaStore.items.find((candidate) => candidate.id === mediaId);
+
+      if (!current) {
+        return NextResponse.json({ error: "Media item not found." }, { status: 404 });
+      }
+
+      if (await playlistUsesMediaRecord(current)) {
+        return NextResponse.json(
+          { error: "This media is in the playlist. Remove it from the playlist before deleting it." },
+          { status: 409 }
+        );
+      }
+
       const result = await deleteCloudMediaRecords(cloudConfig, [mediaId]);
       if (result.deletedIds.length === 0) {
         return NextResponse.json({ error: "Media item not found." }, { status: 404 });
       }
 
-      return NextResponse.json({ deleted: true, item: { id: mediaId } });
+      return NextResponse.json({ deleted: true, item: current });
     }
 
     await ensureLocalDataFoundation();
