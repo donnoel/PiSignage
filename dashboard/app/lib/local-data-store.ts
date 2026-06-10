@@ -64,6 +64,9 @@ export type ScreenRecord = {
   name: string;
   notes: string;
   playlistId: string | null;
+  publishedAt?: string | null;
+  publishedPlaylistId?: string | null;
+  publishedPlaylistVersion?: number | null;
   updatedAt: string;
 };
 
@@ -85,6 +88,9 @@ export type DeviceRecord = {
   rootPath: string;
   screenId: string | null;
   sshUser: string;
+  publishedAt?: string | null;
+  publishedPlaylistId?: string | null;
+  publishedPlaylistVersion?: number | null;
   updatedAt: string;
 };
 

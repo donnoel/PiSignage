@@ -1,4 +1,5 @@
 import {
+  DeleteItemCommand,
   DynamoDBClient,
   PutItemCommand,
   ScanCommand
@@ -166,6 +167,10 @@ export async function readPlaylistStore(): Promise<PlaylistStore> {
   return readLocalPlaylistStore();
 }
 
+export function isCloudPlaylistStoreConfigured(): boolean {
+  return cloudPlaylistConfig() !== null;
+}
+
 export function selectPlaylist(store: PlaylistStore, playlistId?: string | null): Playlist {
   if (cloudPlaylistConfig()) {
     const requested = playlistId
@@ -190,14 +195,25 @@ export async function writePlaylistStore(store: PlaylistStore): Promise<void> {
     return;
   }
 
-  await Promise.all(
-    store.items.map((playlist) =>
+  const nextIds = new Set(store.items.map((playlist) => playlist.playlistId));
+  const existingItems = await scanAllItems(config.playlistsTableName);
+  await Promise.all([
+    ...existingItems
+      .map(playlistFromItem)
+      .filter((playlist) => !nextIds.has(playlist.playlistId))
+      .map((playlist) =>
+        dynamoDb.send(new DeleteItemCommand({
+          Key: { playlistId: stringAttribute(playlist.playlistId) },
+          TableName: config.playlistsTableName
+        }))
+      ),
+    ...store.items.map((playlist) =>
       dynamoDb.send(new PutItemCommand({
         Item: playlistToItem(playlist),
         TableName: config.playlistsTableName
       }))
     )
-  );
+  ]);
 }
 
 export async function readStoredPlaylist(playlistId?: string | null): Promise<{

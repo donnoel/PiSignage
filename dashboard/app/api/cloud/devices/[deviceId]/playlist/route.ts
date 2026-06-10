@@ -70,12 +70,25 @@ export async function GET(_request: Request, context: RouteContext) {
   const screen = inventory.screens.items.find((candidate) =>
     candidate.deviceId === device.id || candidate.id === device.screenId
   );
-  const playlistId = screen?.playlistId ?? device.playlistId;
+  const publishedPlaylistId = screen?.publishedPlaylistId ?? device.publishedPlaylistId ?? null;
+  const publishedPlaylistVersion = screen?.publishedPlaylistVersion ?? device.publishedPlaylistVersion ?? null;
+  const playlistId = publishedPlaylistId;
   if (!playlistId) {
-    return NextResponse.json({ error: "Device does not have an assigned playlist." }, { status: 404 });
+    return NextResponse.json({ error: "No playlist has been manually published to this device." }, { status: 404 });
   }
 
   const playlist = selectPlaylist(playlistStore, playlistId);
+  if (typeof publishedPlaylistVersion === "number" && playlist.version !== publishedPlaylistVersion) {
+    return NextResponse.json(
+      {
+        error: "A newer playlist draft exists, but it has not been manually published to this device.",
+        publishedPlaylistId: playlistId,
+        publishedPlaylistVersion,
+        savedPlaylistVersion: playlist.version
+      },
+      { status: 409 }
+    );
+  }
   const assets = await Promise.all(playlist.assets.map(signedAsset));
 
   return NextResponse.json({
@@ -84,6 +97,7 @@ export async function GET(_request: Request, context: RouteContext) {
       ...playlist,
       assets
     },
+    publishedAt: screen?.publishedAt ?? device.publishedAt ?? null,
     serverTime: new Date().toISOString()
   });
 }

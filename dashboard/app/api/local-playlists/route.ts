@@ -10,11 +10,11 @@ import {
 import {
   livePlaylistPath,
   readLivePlaylist,
-  readPlaylistStore,
   writePlaylist,
-  writePlaylistStore
 } from "../../lib/local-playlist";
 import type { Playlist } from "../../lib/local-playlist";
+import { isCloudInventoryConfigured, readInventory, updateInventory } from "../../lib/inventory-store";
+import { readPlaylistStore, writePlaylistStore } from "../../lib/playlist-store";
 import { slugify } from "../../lib/media-processing";
 
 export const runtime = "nodejs";
@@ -38,6 +38,19 @@ function uniquePlaylistId(name: string, existingIds: Set<string>): string {
 }
 
 async function clearPlaylistAssignments(playlistIds: Set<string>, timestamp: string): Promise<void> {
+  if (isCloudInventoryConfigured()) {
+    const inventory = await readInventory("");
+    await Promise.all([
+      ...inventory.screens.items
+        .filter((screen) => screen.playlistId && playlistIds.has(screen.playlistId))
+        .map((screen) => updateInventory({ id: screen.id, playlistId: null, targetType: "screen" })),
+      ...inventory.devices.items
+        .filter((device) => device.playlistId && playlistIds.has(device.playlistId))
+        .map((device) => updateInventory({ id: device.id, playlistId: null, targetType: "device" }))
+    ]);
+    return;
+  }
+
   const [screenStore, deviceStore] = await Promise.all([readScreenStore(), readDeviceStore()]);
   const nextScreens = screenStore.items.map((screen) =>
     screen.playlistId && playlistIds.has(screen.playlistId) ? { ...screen, playlistId: null, updatedAt: timestamp } : screen
@@ -209,7 +222,9 @@ export async function DELETE(request: Request) {
         updatedAt: timestamp,
         version: store.version + 1
       });
-      await writePlaylist(livePlaylistPath(), resetPlaylist);
+      if (!isCloudInventoryConfigured()) {
+        await writePlaylist(livePlaylistPath(), resetPlaylist);
+      }
       await clearPlaylistAssignments(removedPlaylistIds, timestamp);
 
       await appendActivityRecord({
@@ -259,9 +274,11 @@ export async function DELETE(request: Request) {
       version: store.version + 1
     });
 
-    const livePlaylist = await readLivePlaylist();
-    if (livePlaylist.playlistId === playlistId) {
-      await writePlaylist(livePlaylistPath(), fallbackPlaylist);
+    if (!isCloudInventoryConfigured()) {
+      const livePlaylist = await readLivePlaylist();
+      if (livePlaylist.playlistId === playlistId) {
+        await writePlaylist(livePlaylistPath(), fallbackPlaylist);
+      }
     }
 
     await clearPlaylistAssignments(new Set([playlistId]), timestamp);

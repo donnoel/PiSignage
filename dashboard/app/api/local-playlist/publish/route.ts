@@ -7,6 +7,7 @@ import {
   writePlaylist,
   writePublishStatus
 } from "../../../lib/local-playlist";
+import { isCloudInventoryConfigured, markCloudPlaylistPublished } from "../../../lib/inventory-store";
 import { publishPlaylistToPi } from "../../../lib/pi-local";
 import { piConfigForDevice, targetDevicesForRequest } from "../../../lib/pi-targets";
 
@@ -66,6 +67,47 @@ export async function POST(request: Request) {
         { error: "Add media before publishing this playlist." },
         { status: 400 }
       );
+    }
+
+    if (isCloudInventoryConfigured()) {
+      const targets = await markCloudPlaylistPublished({
+        deviceId: body.deviceId,
+        playlistId: playlist.playlistId,
+        playlistVersion: playlist.version,
+        screenId: body.screenId
+      });
+      const publishTargets = targets.map((target): PublishStatusTarget => ({
+        deviceId: target.device?.id ?? null,
+        deviceName: target.device?.name ?? target.screen?.name ?? "No assigned Pi",
+        enabled: true,
+        host: target.device?.host ?? null,
+        message: target.device
+          ? `Published ${playlist.name} v${playlist.version} to ${target.device.name}.`
+          : `Published ${playlist.name} v${playlist.version} to assigned screen.`,
+        ok: Boolean(target.device),
+        screenId: target.screen?.id ?? null
+      }));
+      const okCount = publishTargets.filter((target) => target.ok).length;
+      const piPublish: PiPublishResult = {
+        enabled: true,
+        ok: publishTargets.length > 0 && publishTargets.every((target) => target.ok),
+        message:
+          publishTargets.length === 0
+            ? "No assigned AWS device was found for this playlist; publish did not change any screen."
+            : publishTargets.length === 1
+              ? publishTargets[0].message
+              : `Published ${okCount}/${publishTargets.length} assigned AWS device(s).`
+      };
+
+      await writePublishStatus("publish", playlist, piPublish, publishTargets);
+
+      return NextResponse.json({
+        playlistVersion: playlist.version,
+        assetCount: playlist.assets.length,
+        piPublish,
+        publishResults: publishTargets,
+        publishTargets
+      });
     }
 
     const playlistPath = await ensureLivePlaylistPath();

@@ -11,7 +11,7 @@ import {
   writePublishStatus,
 } from "../../../lib/local-playlist";
 import type { PiPublishResult, Playlist, PlaylistAsset } from "../../../lib/local-playlist";
-import { readPlaylistStore, readStoredPlaylist, writeStoredPlaylist } from "../../../lib/playlist-store";
+import { isCloudPlaylistStoreConfigured, readPlaylistStore, readStoredPlaylist, writeStoredPlaylist } from "../../../lib/playlist-store";
 import { defaultDurationSeconds, playbackPrepProfile, slugify } from "../../../lib/media-processing";
 import { isPlaybackSafeVideoFileName } from "../../../lib/playback-safety";
 
@@ -257,11 +257,11 @@ async function appendMediaStoreItemToPlaylist(playlist: Playlist, mediaId: strin
 }
 
 async function markPlaylistEditPendingPublish(playlist: Playlist): Promise<PiPublishResult> {
-  if (cloudMediaConfig()) {
+  if (isCloudPlaylistStoreConfigured()) {
     return {
       enabled: false,
       ok: false,
-      message: "Saved to AWS. The Pi can fetch this playlist in cloud mode."
+      message: "Saved to AWS as a draft. Publish manually when this playlist is ready for assigned screens."
     };
   }
 
@@ -322,9 +322,7 @@ export async function POST(request: Request) {
 
     await writeStoredPlaylist(nextPlaylist);
     const piPublish = await markPlaylistEditPendingPublish(nextPlaylist);
-    if (!cloudMediaConfig()) {
-      await writePublishStatus(`playlist-${body.action}`, nextPlaylist, piPublish);
-    }
+    await writePublishStatus(`playlist-${body.action}`, nextPlaylist, piPublish);
     await appendActivityRecord({
       id: randomUUID(),
       action: `playlist-${body.action}`,

@@ -171,6 +171,7 @@ export class BeamFoundationStack extends Stack {
     }));
     dashboardInstanceRole.addToPolicy(new iam.PolicyStatement({
       actions: [
+        "dynamodb:DeleteItem",
         "dynamodb:DescribeTable",
         "dynamodb:PutItem",
         "dynamodb:Scan"

@@ -23,7 +23,6 @@ type LocalPublishFormProps = {
   assetCount: number;
   assignedScreenCount: number;
   assignmentTargetId: string;
-  deliveryMode?: "cloud" | "local";
   playlistId: string;
 };
 
@@ -31,7 +30,6 @@ export function LocalPublishForm({
   assetCount,
   assignedScreenCount,
   assignmentTargetId,
-  deliveryMode = "local",
   playlistId
 }: LocalPublishFormProps) {
   const router = useRouter();
@@ -113,19 +111,6 @@ export function LocalPublishForm({
           ? "mt-2 text-xs font-medium text-emerald-700"
           : "mt-2 text-xs font-medium text-zinc-600";
 
-  if (deliveryMode === "cloud") {
-    return (
-      <div className="mt-4 border-t border-zinc-200 pt-4">
-        <div className="rounded-md border border-teal-200 bg-teal-50 p-3 text-sm text-teal-950">
-          <p className="font-semibold">Cloud delivery is active.</p>
-          <p className="mt-1">
-            Assigned screens poll AWS for this playlist and cache media locally. No manual local publish is needed.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="mt-4 border-t border-zinc-200 pt-4">
       <button
@@ -134,7 +119,7 @@ export function LocalPublishForm({
         onClick={publishNow}
         className="min-h-11 w-full rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
       >
-        {isBusy ? "Publishing..." : "Publish"}
+        {isBusy ? "Publishing..." : "Publish to assigned screens"}
       </button>
       {message ? (
         <p className={messageClassName} role="status" aria-live="polite">

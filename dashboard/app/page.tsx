@@ -959,7 +959,13 @@ function actionLabel(action: string | undefined): string {
     "move-down": "Move down",
     "move-up": "Move up",
     publish: "Publish now",
+    "playlist-add-media": "Add media",
     "playlist-create": "Create playlist",
+    "playlist-move-down": "Move down",
+    "playlist-move-up": "Move up",
+    "playlist-remove": "Remove",
+    "playlist-reorder": "Reorder",
+    "playlist-update-item": "Edit item",
     reorder: "Reorder",
     remove: "Remove",
     "restore-baseline": "Restore baseline",
@@ -1058,9 +1064,11 @@ function playlistLiveStatus(
     };
   }
 
-  if (publishStatus && !publishStatus.ok && !publishStatus.piPublishEnabled && deliveryMode !== "cloud") {
+  if (publishStatus && !publishStatus.ok && !publishStatus.piPublishEnabled) {
     return {
-      detail: "Saved locally. Publish manually when this playlist is ready for the screen.",
+      detail: deliveryMode === "cloud"
+        ? "Saved in AWS as a draft. Publish manually when this playlist is ready for assigned screens."
+        : "Saved locally. Publish manually when this playlist is ready for the screen.",
       label: "Pending publish",
       tone: "warn"
     };
@@ -1359,6 +1367,28 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         label: "Not live",
         tone: "muted"
       };
+    }
+
+    if (dashboardMode === "cloud") {
+      const unpublished = screensForPlaylist.find((screen) => {
+        const device = linkedDeviceForScreen(screen);
+        const publishedPlaylistId = screen.publishedPlaylistId ?? device?.publishedPlaylistId ?? null;
+        const publishedPlaylistVersion = screen.publishedPlaylistVersion ?? device?.publishedPlaylistVersion ?? null;
+        return publishedPlaylistId !== option.playlistId || publishedPlaylistVersion !== option.version;
+      });
+
+      if (unpublished) {
+        const device = linkedDeviceForScreen(unpublished);
+        const publishedPlaylistVersion = unpublished.publishedPlaylistVersion ?? device?.publishedPlaylistVersion ?? null;
+        return {
+          detail:
+            typeof publishedPlaylistVersion === "number"
+              ? `${unpublished.name} is still on published v${publishedPlaylistVersion}; saved draft is v${option.version}.`
+              : `${unpublished.name} has not received a manual publish for this playlist yet.`,
+          label: "Needs publish",
+          tone: "warn"
+        };
+      }
     }
 
     const screenStates = screensForPlaylist.map((screen) => {
@@ -2146,9 +2176,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   <p className="mt-1 font-semibold text-zinc-950">{selectedPlaylistLiveState.label}</p>
                 </div>
                 <div className="p-3">
-                  <p className="font-semibold text-zinc-500">{isCloudDashboard ? "Cloud delivery" : "Last publish"}</p>
+                  <p className="font-semibold text-zinc-500">Last publish</p>
                   <p className="mt-1 font-semibold text-zinc-950">
-                    {isCloudDashboard ? (selectedPlaylistLiveState.tone === "good" ? "Screen current" : selectedPlaylistLiveState.label) : publishStateLabel(publishStatusForSelected)}
+                    {publishStateLabel(publishStatusForSelected)}
                   </p>
                 </div>
               </div>
@@ -2157,10 +2187,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
               <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <h3 className="text-xl font-semibold">{isCloudDashboard ? "Build and deliver" : "Build and publish"}</h3>
+                  <h3 className="text-xl font-semibold">Build and publish</h3>
                   <p className="mt-1 text-sm text-zinc-600">
                     {isCloudDashboard
-                      ? "Add media, tune the sequence, and Beam delivers the active playlist through AWS."
+                      ? "Add media, tune the sequence, assign screens, then publish the active playlist through AWS."
                       : "Add media, tune the sequence, assign screens, then publish the active playlist."}
                   </p>
                 </div>
@@ -2206,25 +2236,25 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 <aside className="p-5 xl:sticky xl:top-5">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h4 className="text-lg font-semibold">{isCloudDashboard ? "Cloud delivery" : "Publish active playlist"}</h4>
+                      <h4 className="text-lg font-semibold">Publish active playlist</h4>
                       <p className="mt-1 text-sm text-zinc-600">{playlist.name} · {shortScreenDetail(selectedPlaylistLiveState)}</p>
                     </div>
                     <StatusPill label={selectedPlaylistLiveState.label} tone={selectedPlaylistLiveState.tone} />
                   </div>
                   <dl className="mt-4 grid gap-2 text-sm">
                     <div className="rounded-md bg-zinc-50 p-3">
-                      <dt className="font-semibold text-zinc-500">{isCloudDashboard ? "Cloud state" : "Last sent"}</dt>
+                      <dt className="font-semibold text-zinc-500">Last sent</dt>
                       <dd className="mt-1 font-semibold text-zinc-950">
-                        {isCloudDashboard ? (selectedPlaylistLiveState.tone === "good" ? "Screen current" : selectedPlaylistLiveState.label) : publishStateLabel(publishStatusForSelected)}
+                        {publishStateLabel(publishStatusForSelected)}
                       </dd>
                       <dd className="mt-1 text-zinc-600">
-                        {isCloudDashboard ? "Assigned devices poll AWS and cache the media locally." : shortPublishDetail(publishStatusForSelected)}
+                        {isCloudDashboard ? "Manual publish marks the saved AWS playlist version for assigned devices." : shortPublishDetail(publishStatusForSelected)}
                       </dd>
                     </div>
                     <div className="rounded-md bg-zinc-50 p-3">
-                      <dt className="font-semibold text-zinc-500">{isCloudDashboard ? "Device cache" : "Asset sync"}</dt>
+                      <dt className="font-semibold text-zinc-500">{isCloudDashboard ? "AWS cache" : "Asset sync"}</dt>
                       <dd className="mt-1 text-zinc-700">
-                        {isCloudDashboard ? "The Pi downloads playlist media from signed AWS URLs, then VLC plays the cached files." : publishAssetSyncDetail(publishStatusForSelected)}
+                        {isCloudDashboard ? "Devices poll the manually published version, download signed media, and keep cached playback local." : publishAssetSyncDetail(publishStatusForSelected)}
                       </dd>
                     </div>
                     <div className="rounded-md bg-zinc-50 p-3">
@@ -2241,7 +2271,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     assetCount={playlist.assets.length}
                     assignedScreenCount={assignedScreens.length}
                     assignmentTargetId="playlist-screen-assignment"
-                    deliveryMode={dashboardMode}
                     playlistId={playlist.playlistId}
                   />
                 </aside>

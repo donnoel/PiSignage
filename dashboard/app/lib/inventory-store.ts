@@ -56,6 +56,11 @@ type InventoryUpdateInput = {
   targetType: "screen" | "device";
 };
 
+export type InventoryPublishTarget = {
+  device: DeviceRecord | null;
+  screen: ScreenRecord | null;
+};
+
 const dynamoDb = new DynamoDBClient({});
 
 function trimmedEnv(name: string): string | null {
@@ -95,6 +100,10 @@ function stringAttribute(value: string): AttributeValue {
   return { S: value };
 }
 
+function numberAttribute(value: number): AttributeValue {
+  return { N: String(value) };
+}
+
 function stringOrNullAttribute(value: AttributeValue | undefined): string | null {
   if (!value || value.NULL) {
     return null;
@@ -108,6 +117,15 @@ function stringAttributeOrDefault(value: AttributeValue | undefined, fallback: s
   return candidate && candidate.trim() ? candidate : fallback;
 }
 
+function numberOrNullAttribute(value: AttributeValue | undefined): number | null {
+  const parsed = value?.N ? Number(value.N) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function nullableNumber(value: number | undefined | null): AttributeValue {
+  return typeof value === "number" && Number.isFinite(value) ? numberAttribute(value) : { NULL: true };
+}
+
 function screenToItem(screen: ScreenRecord): Record<string, AttributeValue> {
   return {
     deviceId: nullableString(screen.deviceId),
@@ -117,6 +135,9 @@ function screenToItem(screen: ScreenRecord): Record<string, AttributeValue> {
     name: stringAttribute(screen.name),
     notes: stringAttribute(screen.notes),
     playlistId: nullableString(screen.playlistId),
+    publishedAt: nullableString(screen.publishedAt),
+    publishedPlaylistId: nullableString(screen.publishedPlaylistId),
+    publishedPlaylistVersion: nullableNumber(screen.publishedPlaylistVersion),
     screenId: stringAttribute(screen.id),
     updatedAt: stringAttribute(screen.updatedAt)
   };
@@ -133,6 +154,9 @@ function deviceToItem(device: DeviceRecord): Record<string, AttributeValue> {
     notes: stringAttribute(device.notes),
     playerType: stringAttribute(device.playerType),
     playlistId: nullableString(device.playlistId),
+    publishedAt: nullableString(device.publishedAt),
+    publishedPlaylistId: nullableString(device.publishedPlaylistId),
+    publishedPlaylistVersion: nullableNumber(device.publishedPlaylistVersion),
     rootPath: stringAttribute(device.rootPath),
     screenId: nullableString(device.screenId),
     sshUser: stringAttribute(device.sshUser),
@@ -150,6 +174,9 @@ function screenFromItem(item: Record<string, AttributeValue>): ScreenRecord {
     name: stringAttributeOrDefault(item.name, "Unnamed Screen"),
     notes: stringAttributeOrDefault(item.notes, ""),
     playlistId: stringOrNullAttribute(item.playlistId),
+    publishedAt: stringOrNullAttribute(item.publishedAt),
+    publishedPlaylistId: stringOrNullAttribute(item.publishedPlaylistId),
+    publishedPlaylistVersion: numberOrNullAttribute(item.publishedPlaylistVersion),
     updatedAt: stringAttributeOrDefault(item.updatedAt, isoNow())
   };
 }
@@ -165,6 +192,9 @@ function deviceFromItem(item: Record<string, AttributeValue>): DeviceRecord {
     notes: stringAttributeOrDefault(item.notes, ""),
     playlistId: stringOrNullAttribute(item.playlistId),
     playerType: "vlc",
+    publishedAt: stringOrNullAttribute(item.publishedAt),
+    publishedPlaylistId: stringOrNullAttribute(item.publishedPlaylistId),
+    publishedPlaylistVersion: numberOrNullAttribute(item.publishedPlaylistVersion),
     rootPath: stringAttributeOrDefault(item.rootPath, "~"),
     screenId: stringOrNullAttribute(item.screenId),
     sshUser: stringAttributeOrDefault(item.sshUser, "donnoel"),
@@ -259,6 +289,9 @@ async function createCloudScreen(config: { devicesTableName: string; screensTabl
       name: screenName,
       notes: "",
       playlistId: input.playlistId ?? null,
+      publishedAt: null,
+      publishedPlaylistId: null,
+      publishedPlaylistVersion: null,
       updatedAt: timestamp
     };
     const device: DeviceRecord = {
@@ -270,6 +303,9 @@ async function createCloudScreen(config: { devicesTableName: string; screensTabl
       notes: "",
       playlistId: input.playlistId ?? null,
       playerType: "vlc",
+      publishedAt: null,
+      publishedPlaylistId: null,
+      publishedPlaylistVersion: null,
       rootPath: "~",
       screenId,
       sshUser: stringOrDefault(input.sshUser, "donnoel"),
@@ -416,6 +452,114 @@ async function updateCloudInventory(config: { devicesTableName: string; screensT
 export async function readInventory(fallbackPlaylistId: string): Promise<InventoryStore> {
   const config = cloudInventoryConfig();
   return config ? readCloudInventory(config) : readNormalizedInventory(fallbackPlaylistId);
+}
+
+export function isCloudInventoryConfigured(): boolean {
+  return cloudInventoryConfig() !== null;
+}
+
+function configuredDevice(device: DeviceRecord): boolean {
+  return Boolean(device.host.trim()) && device.host !== "Not configured";
+}
+
+function publishTargetsForInventory(
+  inventory: InventoryStore,
+  input: {
+    deviceId?: string | null;
+    playlistId?: string | null;
+    screenId?: string | null;
+  }
+): InventoryPublishTarget[] {
+  if (input.deviceId) {
+    const device = inventory.devices.items.find((item) => item.id === input.deviceId);
+    const screen = device
+      ? inventory.screens.items.find((item) => item.id === device.screenId || item.deviceId === device.id) ?? null
+      : null;
+    return device && configuredDevice(device) ? [{ device, screen }] : [];
+  }
+
+  if (input.screenId) {
+    const screen = inventory.screens.items.find((item) => item.id === input.screenId);
+    const device = screen
+      ? inventory.devices.items.find((item) => item.id === screen.deviceId || item.screenId === screen.id) ?? null
+      : null;
+    return device && configuredDevice(device) ? [{ device, screen: screen ?? null }] : [];
+  }
+
+  if (!input.playlistId) {
+    return [];
+  }
+
+  const screens = inventory.screens.items.filter((screen) => screen.playlistId === input.playlistId);
+  const screenIds = new Set(screens.map((screen) => screen.id));
+  const deviceIds = new Set(screens.map((screen) => screen.deviceId).filter((id): id is string => Boolean(id)));
+  const screenById = new Map(screens.map((screen) => [screen.id, screen]));
+  const screenByDeviceId = new Map(screens.filter((screen) => screen.deviceId).map((screen) => [screen.deviceId as string, screen]));
+
+  return inventory.devices.items
+    .filter((device) =>
+      configuredDevice(device) &&
+      (device.playlistId === input.playlistId ||
+        deviceIds.has(device.id) ||
+        (device.screenId ? screenIds.has(device.screenId) : false))
+    )
+    .map((device) => ({
+      device,
+      screen: screenByDeviceId.get(device.id) ?? (device.screenId ? screenById.get(device.screenId) ?? null : null)
+    }));
+}
+
+export async function markCloudPlaylistPublished(input: {
+  deviceId?: string | null;
+  playlistId: string;
+  playlistVersion: number;
+  screenId?: string | null;
+}): Promise<InventoryPublishTarget[]> {
+  const config = cloudInventoryConfig();
+  if (!config) {
+    return [];
+  }
+
+  const inventory = await readCloudInventory(config);
+  const targets = publishTargetsForInventory(inventory, input);
+  const timestamp = isoNow();
+
+  await Promise.all(
+    targets.flatMap((target) => {
+      const writes: Promise<unknown>[] = [];
+      if (target.screen) {
+        writes.push(
+          dynamoDb.send(new PutItemCommand({
+            Item: screenToItem({
+              ...target.screen,
+              publishedAt: timestamp,
+              publishedPlaylistId: input.playlistId,
+              publishedPlaylistVersion: input.playlistVersion,
+              updatedAt: timestamp
+            }),
+            TableName: config.screensTableName
+          }))
+        );
+      }
+      if (target.device) {
+        writes.push(
+          dynamoDb.send(new PutItemCommand({
+            Item: deviceToItem({
+              ...target.device,
+              publishedAt: timestamp,
+              publishedPlaylistId: input.playlistId,
+              publishedPlaylistVersion: input.playlistVersion,
+              updatedAt: timestamp
+            }),
+            TableName: config.devicesTableName
+          }))
+        );
+      }
+      return writes;
+    })
+  );
+
+  return targets;
 }
 
 export async function createInventoryScreen(input: CreateScreenInput): Promise<void> {

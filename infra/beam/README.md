@@ -63,16 +63,18 @@ It does not need the dev API key for cloud heartbeat reads or dashboard
 inventory writes.
 
 The dashboard also exposes a dev device playlist endpoint at
-`/api/cloud/devices/{deviceId}/playlist`. It reads the device assignment,
-returns the assigned cloud playlist, and includes short-lived signed S3 download
-URLs for cloud media objects. This is the first one-screen pilot bridge; it is
-not a production device-auth boundary yet.
+`/api/cloud/devices/{deviceId}/playlist`. It reads the device's manually
+published playlist/version marker, returns that cloud playlist, and includes
+short-lived signed S3 download URLs for cloud media objects. Saved playlist edits
+remain AWS-backed drafts until an operator publishes them to assigned screens.
+This is the first one-screen pilot bridge; it is not a production device-auth
+boundary yet.
 
-Screens, Devices, the playlist catalog, and source media cataloging are the
-first cloud-backed dashboard workflows. MP4 uploads are accepted into the cloud
-media catalog. JPEG, PNG, and MOV uploads are stored as source media and marked
-processing until the playback-safe MP4 processing job exists. Playlist media
-items, publishing, schedules, and recovery still use the local POC paths until
+Screens, Devices, the playlist catalog, manual playlist publish markers, and
+source media cataloging are the first cloud-backed dashboard workflows. MP4
+uploads are accepted into the cloud media catalog. JPEG, PNG, and MOV uploads are
+stored as source media and marked processing until the playback-safe MP4
+processing job exists. Schedules and recovery still use the local POC paths until
 their cloud contracts are implemented.
 
 Deploying the dashboard image requires Docker to be running locally because CDK
