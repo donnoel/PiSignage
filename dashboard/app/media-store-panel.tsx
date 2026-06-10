@@ -24,6 +24,8 @@ type MediaItem = {
   mimeType: string;
   sizeBytes: number;
   sourceSizeBytes?: number;
+  sourceObjectKey?: string;
+  playbackObjectKey?: string;
   durationSeconds: number | null;
   checksumSha256?: string;
   cloudStatusDetail?: string;
@@ -93,6 +95,12 @@ type MediaUpdateResponse = {
   item?: MediaItem;
 };
 
+type MediaPrepareResponse = {
+  error?: string;
+  item?: MediaItem;
+  preparing?: boolean;
+};
+
 type FolderCreateResponse = {
   error?: string;
   folder?: MediaFolder;
@@ -113,9 +121,10 @@ type StatusTone = "good" | "warn" | "muted";
 type SafetyFilter = "all" | "ready" | "review";
 type TypeFilter = "all" | "video" | "still" | "mov";
 type UploadSource = "file" | "directory";
+type MediaStoreMode = "cloud" | "local";
 
 type MediaStorePanelProps = {
-  mode?: "cloud" | "local";
+  mode?: MediaStoreMode;
 };
 
 type PlaybackSafety = {
@@ -277,6 +286,14 @@ function mediaSecondaryFileName(item: MediaItem): string | null {
   return null;
 }
 
+function canPrepareMedia(item: MediaItem, mode: MediaStoreMode): boolean {
+  return mode === "cloud" && item.status !== "ready" && item.origin !== "playlist";
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function messageClass(tone: "idle" | "success" | "warning" | "error"): string {
   if (tone === "error") {
     return "text-rose-700";
@@ -416,6 +433,7 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
   const [addingMediaId, setAddingMediaId] = useState<string | null>(null);
+  const [preparingMediaId, setPreparingMediaId] = useState<string | null>(null);
   const [deletingMediaId, setDeletingMediaId] = useState<string | null>(null);
   const [editingTagMediaId, setEditingTagMediaId] = useState<string | null>(null);
   const [editingTags, setEditingTags] = useState("");
@@ -479,6 +497,7 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
     isCreatingFolder ||
     deletingFolderId !== null ||
     addingMediaId !== null ||
+    preparingMediaId !== null ||
     deletingMediaId !== null ||
     updatingTagMediaId !== null;
 
@@ -793,6 +812,74 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
       setMessageTone("error");
     } finally {
       setAddingMediaId(null);
+    }
+  }
+
+  async function pollPreparedMedia(mediaId: string): Promise<MediaItem> {
+    const startedAt = Date.now();
+    const timeoutMs = 45 * 60 * 1000;
+
+    while (Date.now() - startedAt < timeoutMs) {
+      await sleep(5000);
+      const response = await fetch(`/api/media/${encodeURIComponent(mediaId)}`, {
+        method: "GET",
+        cache: "no-store"
+      });
+      const result = (await response.json()) as MediaUpdateResponse;
+      if (!response.ok || result.error || !result.item) {
+        throw new Error(result.error ?? "Could not refresh media preparation status.");
+      }
+
+      setItems((current) => current.map((candidate) => (candidate.id === mediaId ? result.item! : candidate)));
+
+      if (result.item.status === "ready") {
+        return result.item;
+      }
+      if (result.item.status === "failed") {
+        throw new Error(result.item.cloudStatusDetail ?? "Media preparation failed.");
+      }
+
+      setMessage(result.item.cloudStatusDetail ?? `Preparing playback copy for ${result.item.title}...`);
+    }
+
+    throw new Error("Media preparation is still running. Refresh the Media Store to check the latest status.");
+  }
+
+  async function handlePrepareMedia(item: MediaItem) {
+    if (isBusy) {
+      return;
+    }
+
+    if (!canPrepareMedia(item, mode)) {
+      setMessage(`${item.title} is already ready for playlist use.`);
+      setMessageTone("idle");
+      return;
+    }
+
+    setPreparingMediaId(item.id);
+    setMessage(`Preparing playback copy for ${item.title}. This can take a minute or two...`);
+    setMessageTone("idle");
+    try {
+      const response = await fetch(`/api/media/${encodeURIComponent(item.id)}/prepare`, {
+        method: "POST",
+        cache: "no-store"
+      });
+      const result = (await response.json()) as MediaPrepareResponse;
+      if (!response.ok || result.error || !result.item) {
+        throw new Error(result.error ?? "Could not prepare media.");
+      }
+
+      setItems((current) => current.map((candidate) => (candidate.id === item.id ? result.item! : candidate)));
+      const preparedItem = result.item.status === "ready" ? result.item : await pollPreparedMedia(item.id);
+      await loadMedia(true);
+      setMessage(`${preparedItem.title} is ready for playlists.`);
+      setMessageTone("success");
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not prepare media.");
+      setMessageTone("error");
+    } finally {
+      setPreparingMediaId(null);
     }
   }
 
@@ -1424,7 +1511,9 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
               {visibleItems.map((item) => {
                 const safety = playbackSafety(item);
                 const canAdd = canAddMediaToPlaylist(item);
+                const canPrepare = canPrepareMedia(item, mode);
                 const deleting = deletingMediaId === item.id;
+                const preparing = preparingMediaId === item.id;
                 const primaryFileName = mediaPrimaryFileName(item);
                 const secondaryFileName = mediaSecondaryFileName(item);
                 return (
@@ -1528,6 +1617,16 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
                     {hasVisibleActions ? (
                       <td className="px-4 py-3">
                         <div className="flex min-w-[124px] flex-nowrap gap-2">
+                          {canPrepare ? (
+                            <button
+                              type="button"
+                              onClick={() => void handlePrepareMedia(item)}
+                              disabled={isBusy}
+                              className="min-h-9 shrink-0 rounded-md border border-teal-200 bg-white px-3 py-1.5 text-sm font-semibold text-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
+                            >
+                              {preparing ? "Preparing" : "Prepare"}
+                            </button>
+                          ) : null}
                           {canAdd ? (
                             <button
                               type="button"

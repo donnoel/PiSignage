@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   DeleteItemCommand,
@@ -9,16 +11,23 @@ import {
 import type { AttributeValue } from "@aws-sdk/client-dynamodb";
 import {
   DeleteObjectCommand,
+  GetObjectCommand,
   PutObjectCommand,
   S3Client
 } from "@aws-sdk/client-s3";
 import type { MediaRecord, MediaStore } from "./local-data-store";
 import {
+  assertPlaybackSafeVideoFile,
+  createPlaybackSafeVideoClip,
+  createStillVideoClip,
   defaultDurationSeconds,
   imageDurationFromForm,
+  MediaUploadError,
   mediaSourceTypeFromFileName,
   playbackPrepProfile,
+  probeMediaFile,
   sanitizeMediaFileName,
+  sha256ForFile,
   stillClipFileName,
   transcodedVideoFileName
 } from "./media-processing";
@@ -293,6 +302,132 @@ export async function createCloudMediaUpload(config: CloudMediaConfig, input: Cl
   }));
 
   return media;
+}
+
+async function s3BodyToBuffer(body: unknown): Promise<Buffer> {
+  if (!body || typeof body !== "object" || !("transformToByteArray" in body)) {
+    throw new MediaUploadError("AWS returned an unreadable source media object.", 502);
+  }
+
+  const bytes = await (body as { transformToByteArray: () => Promise<Uint8Array> }).transformToByteArray();
+  return Buffer.from(bytes);
+}
+
+export async function prepareCloudMediaForPlayback(config: CloudMediaConfig, mediaId: string): Promise<MediaRecord | null> {
+  const mediaStore = await readCloudMediaStore(config);
+  const current = mediaStore.items.find((item) => item.id === mediaId);
+  if (!current) {
+    return null;
+  }
+
+  if (current.status === "ready" && current.playbackObjectKey) {
+    return current;
+  }
+
+  if (!current.sourceObjectKey) {
+    throw new MediaUploadError("This media item does not have a source object in AWS.", 409);
+  }
+
+  const sourceType = mediaSourceTypeFromFileName(current.sourceFileName);
+  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "beam-media-"));
+  const sourcePath = path.join(tempDirectory, current.sourceFileName);
+  const playbackPath = path.join(tempDirectory, current.playbackFileName);
+
+  try {
+    const sourceObject = await s3.send(new GetObjectCommand({
+      Bucket: config.sourceMediaBucketName,
+      Key: current.sourceObjectKey
+    }));
+    await fs.writeFile(sourcePath, await s3BodyToBuffer(sourceObject.Body));
+
+    if (sourceType === "image") {
+      await createStillVideoClip(sourcePath, playbackPath, current.durationSeconds ?? defaultDurationSeconds);
+    } else if (isPlaybackSafeVideoFileName(current.sourceFileName)) {
+      await fs.copyFile(sourcePath, playbackPath);
+      await assertPlaybackSafeVideoFile(playbackPath);
+    } else {
+      await createPlaybackSafeVideoClip(sourcePath, playbackPath);
+    }
+
+    const [probe, checksumSha256, outputStat] = await Promise.all([
+      probeMediaFile(playbackPath),
+      sha256ForFile(playbackPath),
+      fs.stat(playbackPath)
+    ]);
+    const now = isoNow();
+    const playbackObjectKey = `playback/${now.slice(0, 10)}/${current.id}/${current.playbackFileName}`;
+
+    await s3.send(new PutObjectCommand({
+      Body: await fs.readFile(playbackPath),
+      Bucket: config.sourceMediaBucketName,
+      ContentLength: outputStat.size,
+      ContentType: "video/mp4",
+      Key: playbackObjectKey,
+      ServerSideEncryption: "AES256"
+    }));
+
+    const updated: MediaRecord = {
+      ...current,
+      audioCodec: probe.audioCodec,
+      bitRate: probe.bitRate,
+      checksumSha256,
+      cloudStatusDetail: `Prepared ${playbackPrepProfile.width}x${playbackPrepProfile.height} H.264 playback copy for Pi/VLC.`,
+      durationSeconds: probe.durationSeconds ?? current.durationSeconds ?? defaultDurationSeconds,
+      fps: probe.averageFps ?? probe.fps,
+      height: probe.height,
+      mimeType: "video/mp4",
+      pixelFormat: probe.pixelFormat,
+      playbackObjectKey,
+      playbackProfile: playbackPrepProfile.id,
+      preparedAt: now,
+      sizeBytes: outputStat.size,
+      status: "ready",
+      updatedAt: now,
+      videoCodec: probe.videoCodec,
+      videoProfile: probe.videoProfile,
+      width: probe.width
+    };
+
+    await dynamoDb.send(new PutItemCommand({
+      Item: mediaToItem(updated),
+      TableName: config.assetsTableName
+    }));
+
+    return updated;
+  } finally {
+    await fs.rm(tempDirectory, { force: true, recursive: true });
+  }
+}
+
+export async function updateCloudMediaPreparationStatus(
+  config: CloudMediaConfig,
+  mediaId: string,
+  input: {
+    cloudStatusDetail: string;
+    playbackProfile?: string;
+    status: MediaRecord["status"];
+  }
+): Promise<MediaRecord | null> {
+  const mediaStore = await readCloudMediaStore(config);
+  const current = mediaStore.items.find((item) => item.id === mediaId);
+  if (!current) {
+    return null;
+  }
+
+  const updated: MediaRecord = {
+    ...current,
+    cloudStatusDetail: input.cloudStatusDetail,
+    playbackProfile: input.playbackProfile ?? current.playbackProfile,
+    status: input.status,
+    updatedAt: isoNow()
+  };
+
+  await dynamoDb.send(new PutItemCommand({
+    Item: mediaToItem(updated),
+    TableName: config.assetsTableName
+  }));
+
+  return updated;
 }
 
 export async function deleteCloudMediaRecords(

@@ -27,6 +27,7 @@ RUN apt-get update \
 COPY --from=builder /app/dashboard/.next-build/standalone ./
 COPY --from=builder /app/dashboard/.next-build/static ./dashboard/.next-build/static
 COPY --from=builder /app/dashboard/public ./dashboard/public
+COPY --from=builder /app/dashboard/scripts ./dashboard/scripts
 COPY --from=builder /app/sample-content ./sample-content
 EXPOSE 3000
 CMD ["sh", "-c", "HOSTNAME=0.0.0.0 node dashboard/server.js"]
