@@ -101,6 +101,45 @@ function playbackFilter() {
   return `scale=${size}:force_original_aspect_ratio=decrease:in_range=full:out_range=tv,pad=${size}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=${profile.fps},format=yuv420p`;
 }
 
+function mediaSourceType(fileName) {
+  const extension = path.extname(fileName).toLowerCase();
+  if (extension === ".jpg" || extension === ".jpeg" || extension === ".png") {
+    return "image";
+  }
+  return "video";
+}
+
+async function createStillVideo(sourcePath, outputPath, durationSeconds) {
+  const size = `${profile.width}:${profile.height}`;
+  await execFileAsync("ffmpeg", [
+    "-hide_banner", "-loglevel", "error", "-y",
+    "-loop", "1",
+    "-framerate", String(profile.fps),
+    "-t", String(durationSeconds),
+    "-i", sourcePath,
+    "-f", "lavfi",
+    "-t", String(durationSeconds),
+    "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+    "-vf", `scale=${size}:force_original_aspect_ratio=decrease:in_range=full:out_range=tv,pad=${size}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,format=yuv420p`,
+    "-r", String(profile.fps),
+    "-c:v", "libx264",
+    "-preset", "slow",
+    "-profile:v", "baseline",
+    "-level:v", "4.0",
+    "-pix_fmt", "yuv420p",
+    "-x264-params", `keyint=${profile.fps}:min-keyint=${profile.fps}:scenecut=0:bframes=0`,
+    "-color_range", "tv",
+    "-colorspace", "bt709",
+    "-color_primaries", "bt709",
+    "-color_trc", "bt709",
+    "-c:a", "aac",
+    "-b:a", "96k",
+    "-shortest",
+    "-movflags", "+faststart",
+    outputPath
+  ], { timeout: 120_000, maxBuffer: 1024 * 1024 * 4 });
+}
+
 async function transcodeVideo(sourcePath, outputPath) {
   await execFileAsync("ffmpeg", [
     "-hide_banner", "-loglevel", "error", "-y",
@@ -139,14 +178,43 @@ async function main() {
   const sourceFileName = text(item, "sourceFileName");
   const playbackFileName = text(item, "playbackFileName");
   const sourceObjectKey = text(item, "sourceObjectKey");
+  const durationSeconds = Number.parseFloat(item.durationSeconds?.N ?? "30");
   const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "beam-worker-"));
   const sourcePath = path.join(tempDirectory, sourceFileName);
   const playbackPath = path.join(tempDirectory, playbackFileName);
 
   try {
+    console.log(`Preparing ${assetId}: downloading ${sourceFileName}`);
+    await updateItem(item, {
+      cloudStatusDetail: { S: "Downloading source media from AWS." },
+      playbackProfile: { S: "preparing-playback-mp4-v1" },
+      status: { S: "processing" }
+    });
     const sourceObject = await s3.send(new GetObjectCommand({ Bucket: bucketName, Key: sourceObjectKey }));
     await fs.writeFile(sourcePath, await bodyToBuffer(sourceObject.Body));
-    await transcodeVideo(sourcePath, playbackPath);
+
+    const sourceType = mediaSourceType(sourceFileName);
+    const stage = sourceType === "image"
+      ? "Converting image into a timed Pi-safe MP4 clip."
+      : "Transcoding video into a Pi-safe MP4.";
+    console.log(`Preparing ${assetId}: ${stage}`);
+    await updateItem(item, {
+      cloudStatusDetail: { S: stage },
+      playbackProfile: { S: "preparing-playback-mp4-v1" },
+      status: { S: "processing" }
+    });
+    if (sourceType === "image") {
+      await createStillVideo(sourcePath, playbackPath, Number.isFinite(durationSeconds) ? durationSeconds : 10);
+    } else {
+      await transcodeVideo(sourcePath, playbackPath);
+    }
+
+    console.log(`Preparing ${assetId}: uploading ${playbackFileName}`);
+    await updateItem(item, {
+      cloudStatusDetail: { S: "Uploading prepared playback copy to AWS." },
+      playbackProfile: { S: "preparing-playback-mp4-v1" },
+      status: { S: "processing" }
+    });
     const [metadata, checksum, stat] = await Promise.all([probe(playbackPath), sha256(playbackPath), fs.stat(playbackPath)]);
     const now = new Date().toISOString();
     const playbackObjectKey = `playback/${now.slice(0, 10)}/${assetId}/${playbackFileName}`;
@@ -179,7 +247,9 @@ async function main() {
       videoProfile: metadata.videoProfile ? { S: metadata.videoProfile } : { NULL: true },
       width: numberAttr(metadata.width)
     });
+    console.log(`Preparing ${assetId}: ready`);
   } catch (error) {
+    console.error(`Preparing ${assetId} failed`, error);
     await updateItem(item, {
       cloudStatusDetail: { S: error instanceof Error ? error.message : "Media preparation failed." },
       status: { S: "failed" }

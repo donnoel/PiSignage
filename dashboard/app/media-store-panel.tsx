@@ -173,6 +173,20 @@ function formatBytes(value: number): string {
   }).format(value / 1_000_000);
 }
 
+function formatSeconds(value: number): string {
+  if (!Number.isFinite(value) || value < 1) {
+    return "less than 1s";
+  }
+
+  if (value < 60) {
+    return `${Math.ceil(value)}s`;
+  }
+
+  const minutes = Math.floor(value / 60);
+  const seconds = Math.ceil(value % 60);
+  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+}
+
 function formatDuration(value: number | null): string {
   return typeof value === "number" && Number.isFinite(value) ? `${value}s` : "-";
 }
@@ -188,6 +202,33 @@ function isSupportedUploadFile(fileName: string): boolean {
 function uploadRelativePath(file: File): string {
   const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
   return relativePath?.trim() || file.name;
+}
+
+function uploadMediaForm(
+  formData: FormData,
+  onProgress: (progress: { loaded: number; total: number }) => void
+): Promise<UploadResponse> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", "/api/media");
+    request.responseType = "json";
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        onProgress({ loaded: event.loaded, total: event.total });
+      }
+    };
+    request.onload = () => {
+      const result = (request.response ?? JSON.parse(request.responseText || "{}")) as UploadResponse;
+      if (request.status < 200 || request.status >= 300 || result.error) {
+        reject(new Error(result.error ?? "Upload failed."));
+        return;
+      }
+      resolve(result);
+    };
+    request.onerror = () => reject(new Error("Upload failed before the server responded."));
+    request.ontimeout = () => reject(new Error("Upload timed out before the server responded."));
+    request.send(formData);
+  });
 }
 
 function isSkippedDirectoryEntry(file: File): boolean {
@@ -713,13 +754,18 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
           setMessage(`Uploading ${index + 1} of ${files.length}: ${uploadRelativePath(file)}...`);
         }
 
-        const response = await fetch("/api/media", {
-          method: "POST",
-          body: formData,
-          cache: "no-store"
+        const uploadStartedAt = Date.now();
+        const result = await uploadMediaForm(formData, ({ loaded, total }) => {
+          const elapsedSeconds = Math.max((Date.now() - uploadStartedAt) / 1000, 0.1);
+          const bytesPerSecond = loaded / elapsedSeconds;
+          const remainingSeconds = bytesPerSecond > 0 ? (total - loaded) / bytesPerSecond : Number.NaN;
+          const percent = total > 0 ? Math.round((loaded / total) * 100) : 0;
+          const prefix = files.length > 1 ? `Uploading ${index + 1} of ${files.length}: ` : "Uploading ";
+          setMessage(
+            `${prefix}${uploadRelativePath(file)} ${percent}% (${formatBytes(loaded)} of ${formatBytes(total)}, about ${formatSeconds(remainingSeconds)} left).`
+          );
         });
-        const result = (await response.json()) as UploadResponse;
-        if (!response.ok || result.error || !result.item) {
+        if (result.error || !result.item) {
           throw new Error(result.error ?? `Upload failed for ${file.name}.`);
         }
 

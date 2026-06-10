@@ -52,7 +52,7 @@ export async function POST(_request: Request, context: RouteContext) {
     const child = spawn(process.execPath, [workerPath, mediaId], {
       detached: true,
       env: process.env,
-      stdio: "ignore"
+      stdio: "inherit"
     });
     child.unref();
 
