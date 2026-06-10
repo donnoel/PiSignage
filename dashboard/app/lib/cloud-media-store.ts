@@ -33,7 +33,7 @@ import {
 } from "./media-processing";
 import { isPlaybackSafeVideoFileName } from "./playback-safety";
 
-type CloudMediaConfig = {
+export type CloudMediaConfig = {
   assetsTableName: string;
   sourceMediaBucketName: string;
 };

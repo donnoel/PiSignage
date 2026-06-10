@@ -10,6 +10,7 @@ import {
   deleteCloudMediaRecords,
   readCloudMediaStore
 } from "../../lib/cloud-media-store";
+import { startCloudMediaPreparationWorker } from "../../lib/cloud-media-preparation-worker";
 import {
   appendActivityRecord,
   ensureLocalDataFoundation,
@@ -506,7 +507,12 @@ export async function POST(request: Request) {
     if (cloudConfig) {
       const input = await cloudUploadInputFromForm(file, formData, parseTags(formData.get("tags")));
       const item = await createCloudMediaUpload(cloudConfig, input);
-      return NextResponse.json({ item: mediaApiItemFromCloudRecord(item) }, { status: 201 });
+      if (item.status === "ready") {
+        return NextResponse.json({ item: mediaApiItemFromCloudRecord(item) }, { status: 201 });
+      }
+
+      const { item: preparingItem } = await startCloudMediaPreparationWorker(cloudConfig, item.id);
+      return NextResponse.json({ item: mediaApiItemFromCloudRecord(preparingItem ?? item) }, { status: 201 });
     }
 
     await ensureLocalDataFoundation();

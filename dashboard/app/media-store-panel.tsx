@@ -365,8 +365,12 @@ function mediaSecondaryFileName(item: MediaItem): string | null {
   return null;
 }
 
-function canPrepareMedia(item: MediaItem, mode: MediaStoreMode): boolean {
-  return mode === "cloud" && item.status !== "ready" && item.origin !== "playlist";
+function isPendingPreparation(item: MediaItem): boolean {
+  return item.status === "processing" && (item.cloudStatusDetail ?? "").toLowerCase().includes("pending");
+}
+
+function canRetryPreparation(item: MediaItem, mode: MediaStoreMode): boolean {
+  return mode === "cloud" && item.origin !== "playlist" && (item.status === "failed" || isPendingPreparation(item));
 }
 
 function messageClass(tone: "idle" | "success" | "warning" | "error"): string {
@@ -882,10 +886,11 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
         const uploadedItem = uploadedItems[0];
         const reviewSuffix = playbackSafety(uploadedItem).canUseInPlaylist
           ? ""
-          : " Needs playback processing before it can be added to a playlist.";
+          : " Playback preparation started automatically.";
         setMessage(`${mediaPrimaryFileName(uploadedItem)} saved.${reviewSuffix}${skippedSuffix}`);
       } else {
-        setMessage(`${uploadedItems.length} files saved.${skippedSuffix}`);
+        const reviewSuffix = needsReviewCount > 0 ? " Playback preparation started automatically." : "";
+        setMessage(`${uploadedItems.length} files saved.${reviewSuffix}${skippedSuffix}`);
       }
       setMessageTone(needsReviewCount > 0 ? "warning" : "success");
       setShowUpload(false);
@@ -958,7 +963,7 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
       return;
     }
 
-    if (!canPrepareMedia(item, mode)) {
+    if (!canRetryPreparation(item, mode)) {
       setMessage(`${item.title} is already ready for playlist use.`);
       setMessageTone("idle");
       return;
@@ -983,7 +988,7 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
         setMessage(`${result.item.title} is ready for playlists.`);
         setMessageTone("success");
       } else {
-        setMessage(`${result.item.title} is preparing in AWS. This page will refresh the status every few seconds.`);
+        setMessage(`${result.item.title} preparation restarted in AWS. This page will refresh the status every few seconds.`);
         setMessageTone("idle");
       }
       startTransition(() => router.refresh());
@@ -1578,7 +1583,7 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
                       {isUploading
                         ? message
                         : mode === "cloud"
-                          ? "Upload saves to AWS. Playlist playback processing comes next."
+                          ? "Upload saves to AWS and starts playback preparation automatically."
                           : "Upload saves locally. Publish sends media to screens later."}
                     </p>
                     <button
@@ -1623,7 +1628,7 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
               {visibleItems.map((item) => {
                 const safety = playbackSafety(item);
                 const canAdd = canAddMediaToPlaylist(item);
-                const canPrepare = canPrepareMedia(item, mode);
+                const canRetry = canRetryPreparation(item, mode);
                 const deleting = deletingMediaId === item.id;
                 const preparing = preparingMediaId === item.id;
                 const primaryFileName = mediaPrimaryFileName(item);
@@ -1733,14 +1738,14 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
                     {hasVisibleActions ? (
                       <td className="px-4 py-3">
                         <div className="flex min-w-[124px] flex-nowrap gap-2">
-                          {canPrepare ? (
+                          {canRetry ? (
                             <button
                               type="button"
                               onClick={() => void handlePrepareMedia(item)}
                               disabled={isBusy}
                               className="min-h-9 shrink-0 rounded-md border border-teal-200 bg-white px-3 py-1.5 text-sm font-semibold text-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
                             >
-                              {preparing ? "Preparing" : "Prepare"}
+                              {preparing ? "Retrying" : "Retry"}
                             </button>
                           ) : null}
                           {canAdd ? (
