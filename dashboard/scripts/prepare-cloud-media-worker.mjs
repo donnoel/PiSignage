@@ -123,7 +123,7 @@ async function createStillVideo(sourcePath, outputPath, durationSeconds) {
     "-vf", `scale=${size}:force_original_aspect_ratio=decrease:in_range=full:out_range=tv,pad=${size}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,format=yuv420p`,
     "-r", String(profile.fps),
     "-c:v", "libx264",
-    "-preset", "slow",
+    "-preset", "veryfast",
     "-profile:v", "baseline",
     "-level:v", "4.0",
     "-pix_fmt", "yuv420p",
@@ -142,12 +142,12 @@ async function createStillVideo(sourcePath, outputPath, durationSeconds) {
 
 async function transcodeVideo(sourcePath, outputPath) {
   await execFileAsync("ffmpeg", [
-    "-hide_banner", "-loglevel", "error", "-y",
+    "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
     "-i", sourcePath,
     "-vf", playbackFilter(),
     "-c:v", "libx264",
-    "-preset", "medium",
-    "-crf", "18",
+    "-preset", "veryfast",
+    "-crf", "23",
     "-maxrate", "12M",
     "-bufsize", "24M",
     "-profile:v", "high",
@@ -164,6 +164,33 @@ async function transcodeVideo(sourcePath, outputPath) {
     "-ac", "2",
     outputPath
   ], { timeout: 30 * 60 * 1000, maxBuffer: 1024 * 1024 * 4 });
+}
+
+function canRemuxForPlayback(metadata) {
+  const width = metadata.width ?? 0;
+  const height = metadata.height ?? 0;
+  const fps = metadata.fps ?? 0;
+  const videoReady =
+    metadata.videoCodec === "h264" &&
+    metadata.pixelFormat === "yuv420p" &&
+    width > 0 &&
+    width <= profile.width &&
+    height > 0 &&
+    height <= profile.height &&
+    (fps === 0 || fps <= profile.fps + 0.01);
+  const audioReady = !metadata.audioCodec || metadata.audioCodec === "aac";
+  return videoReady && audioReady;
+}
+
+async function remuxVideo(sourcePath, outputPath) {
+  await execFileAsync("ffmpeg", [
+    "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+    "-i", sourcePath,
+    "-map", "0",
+    "-c", "copy",
+    "-movflags", "+faststart",
+    outputPath
+  ], { timeout: 5 * 60 * 1000, maxBuffer: 1024 * 1024 * 4 });
 }
 
 async function main() {
@@ -206,7 +233,19 @@ async function main() {
     if (sourceType === "image") {
       await createStillVideo(sourcePath, playbackPath, Number.isFinite(durationSeconds) ? durationSeconds : 10);
     } else {
-      await transcodeVideo(sourcePath, playbackPath);
+      const sourceMetadata = await probe(sourcePath);
+      if (canRemuxForPlayback(sourceMetadata)) {
+        const remuxStage = "Source is already Pi-safe; remuxing playback copy.";
+        console.log(`Preparing ${assetId}: ${remuxStage}`);
+        await updateItem(item, {
+          cloudStatusDetail: { S: remuxStage },
+          playbackProfile: { S: "preparing-playback-mp4-v1" },
+          status: { S: "processing" }
+        });
+        await remuxVideo(sourcePath, playbackPath);
+      } else {
+        await transcodeVideo(sourcePath, playbackPath);
+      }
     }
 
     console.log(`Preparing ${assetId}: uploading ${playbackFileName}`);

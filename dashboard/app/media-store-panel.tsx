@@ -191,6 +191,44 @@ function formatDuration(value: number | null): string {
   return typeof value === "number" && Number.isFinite(value) ? `${value}s` : "-";
 }
 
+function mediaSizeMegabytes(item: MediaItem): number {
+  return (item.sourceSizeBytes ?? item.sizeBytes) / 1_000_000;
+}
+
+function estimatedPreparationSeconds(item: MediaItem): number {
+  if (mediaKind(item) === "Image") {
+    return 30;
+  }
+
+  const sizeBasedEstimate = mediaSizeMegabytes(item) * 5;
+  return Math.min(Math.max(sizeBasedEstimate, 180), 1200);
+}
+
+function processingStageSeconds(item: MediaItem, nowMs: number): number | null {
+  const updatedAtMs = Date.parse(item.updatedAt);
+  if (!Number.isFinite(updatedAtMs)) {
+    return null;
+  }
+
+  return Math.max((nowMs - updatedAtMs) / 1000, 0);
+}
+
+function processingFeedback(item: MediaItem, nowMs: number): string | null {
+  if (item.status !== "processing") {
+    return null;
+  }
+
+  const detail = item.cloudStatusDetail ?? "Preparing Pi-safe playback copy in AWS.";
+  const stageSeconds = processingStageSeconds(item, nowMs);
+  const stageText = stageSeconds === null ? "" : ` Stage elapsed ${formatSeconds(stageSeconds)}.`;
+  const estimateSeconds = estimatedPreparationSeconds(item);
+  const estimateText =
+    stageSeconds !== null && stageSeconds > estimateSeconds
+      ? "Taking longer than estimated; Beam is still checking AWS every 5s."
+      : `Expected range around ${formatSeconds(estimateSeconds)}.`;
+  return `${detail}${stageText} ${estimateText}`;
+}
+
 function isMp4FileName(fileName: string): boolean {
   return /\.mp4$/i.test(fileName);
 }
@@ -331,10 +369,6 @@ function canPrepareMedia(item: MediaItem, mode: MediaStoreMode): boolean {
   return mode === "cloud" && item.status !== "ready" && item.origin !== "playlist";
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function messageClass(tone: "idle" | "success" | "warning" | "error"): string {
   if (tone === "error") {
     return "text-rose-700";
@@ -469,6 +503,7 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
   const [messageTone, setMessageTone] = useState<"idle" | "success" | "warning" | "error">("idle");
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [nowMs, setNowMs] = useState(Date.now());
   const [isMoving, setIsMoving] = useState(false);
   const [isDeletingSelected, setIsDeletingSelected] = useState(false);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
@@ -498,6 +533,10 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
   );
   const readyItemCount = useMemo(
     () => items.filter((item) => playbackSafety(item).canUseInPlaylist).length,
+    [items]
+  );
+  const processingItemCount = useMemo(
+    () => items.filter((item) => item.status === "processing").length,
     [items]
   );
   const playlistItemCount = useMemo(
@@ -596,6 +635,59 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
     void loadMedia(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, tagFilter]);
+
+  useEffect(() => {
+    if (processingItemCount === 0) {
+      return;
+    }
+
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [processingItemCount]);
+
+  async function refreshMediaQuietly(requestedQuery = query): Promise<void> {
+    const params = new URLSearchParams({ limit: "200", cursor: "0" });
+
+    if (requestedQuery) {
+      params.set("q", requestedQuery);
+    }
+
+    if (tagFilter) {
+      params.set("tag", tagFilter);
+    }
+
+    const response = await fetch(`/api/media?${params.toString()}`, {
+      method: "GET",
+      cache: "no-store"
+    });
+    const result = (await response.json()) as MediaListResponse & { error?: string };
+
+    if (!response.ok || result.error) {
+      throw new Error(result.error ?? "Could not refresh media.");
+    }
+
+    setFolders(result.folders ?? []);
+    setItems(result.items);
+    setSelectedMediaIds((current) => current.filter((id) => result.items.some((item) => item.id === id)));
+    setTotalItems(result.pagination.total);
+    setNextCursor(result.pagination.nextCursor);
+    setHasMore(result.pagination.hasMore);
+  }
+
+  useEffect(() => {
+    if (processingItemCount === 0) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void refreshMediaQuietly().catch((error) => {
+        setMessage(error instanceof Error ? error.message : "Could not refresh media preparation status.");
+        setMessageTone("error");
+      });
+    }, 5000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [processingItemCount, query, tagFilter]);
 
   async function handleCreateFolder(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -861,36 +953,6 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
     }
   }
 
-  async function pollPreparedMedia(mediaId: string): Promise<MediaItem> {
-    const startedAt = Date.now();
-    const timeoutMs = 45 * 60 * 1000;
-
-    while (Date.now() - startedAt < timeoutMs) {
-      await sleep(5000);
-      const response = await fetch(`/api/media/${encodeURIComponent(mediaId)}`, {
-        method: "GET",
-        cache: "no-store"
-      });
-      const result = (await response.json()) as MediaUpdateResponse;
-      if (!response.ok || result.error || !result.item) {
-        throw new Error(result.error ?? "Could not refresh media preparation status.");
-      }
-
-      setItems((current) => current.map((candidate) => (candidate.id === mediaId ? result.item! : candidate)));
-
-      if (result.item.status === "ready") {
-        return result.item;
-      }
-      if (result.item.status === "failed") {
-        throw new Error(result.item.cloudStatusDetail ?? "Media preparation failed.");
-      }
-
-      setMessage(result.item.cloudStatusDetail ?? `Preparing playback copy for ${result.item.title}...`);
-    }
-
-    throw new Error("Media preparation is still running. Refresh the Media Store to check the latest status.");
-  }
-
   async function handlePrepareMedia(item: MediaItem) {
     if (isBusy) {
       return;
@@ -903,7 +965,7 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
     }
 
     setPreparingMediaId(item.id);
-    setMessage(`Preparing playback copy for ${item.title}. This can take a minute or two...`);
+    setMessage(`Starting playback preparation for ${item.title}...`);
     setMessageTone("idle");
     try {
       const response = await fetch(`/api/media/${encodeURIComponent(item.id)}/prepare`, {
@@ -916,10 +978,14 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
       }
 
       setItems((current) => current.map((candidate) => (candidate.id === item.id ? result.item! : candidate)));
-      const preparedItem = result.item.status === "ready" ? result.item : await pollPreparedMedia(item.id);
-      await loadMedia(true);
-      setMessage(`${preparedItem.title} is ready for playlists.`);
-      setMessageTone("success");
+      await refreshMediaQuietly();
+      if (result.item.status === "ready") {
+        setMessage(`${result.item.title} is ready for playlists.`);
+        setMessageTone("success");
+      } else {
+        setMessage(`${result.item.title} is preparing in AWS. This page will refresh the status every few seconds.`);
+        setMessageTone("idle");
+      }
       startTransition(() => router.refresh());
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not prepare media.");
@@ -1562,6 +1628,7 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
                 const preparing = preparingMediaId === item.id;
                 const primaryFileName = mediaPrimaryFileName(item);
                 const secondaryFileName = mediaSecondaryFileName(item);
+                const processingText = processingFeedback(item, nowMs);
                 return (
                   <tr key={item.id} className="bg-white hover:bg-zinc-50">
                     <td className="px-4 py-3">
@@ -1579,6 +1646,9 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
                       <p className="mt-1 truncate text-xs text-zinc-500" title={primaryFileName}>{primaryFileName}</p>
                       {secondaryFileName ? (
                         <p className="mt-1 truncate text-xs text-zinc-500" title={secondaryFileName}>{secondaryFileName}</p>
+                      ) : null}
+                      {processingText ? (
+                        <p className="mt-2 max-w-[420px] text-xs leading-5 text-amber-800" title={processingText}>{processingText}</p>
                       ) : null}
                       {editingTagMediaId === item.id ? (
                         <div className="mt-3 rounded-md border border-zinc-200 bg-zinc-50 p-3">
@@ -1719,7 +1789,11 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
         </div>
 
         <div className="flex flex-col gap-2 border-t border-zinc-200 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className={`text-sm ${messageClass(messageTone)}`} role="status" aria-live="polite">{message}</p>
+          <p className={`text-sm ${messageClass(messageTone)}`} role="status" aria-live="polite">
+            {processingItemCount > 0 && messageTone !== "error"
+              ? `${message} ${processingItemCount} item${processingItemCount === 1 ? "" : "s"} preparing; refreshing every 5s.`
+              : message}
+          </p>
           <button
             type="button"
             disabled={!hasMore || isLoading}

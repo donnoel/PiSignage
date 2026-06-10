@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import {
@@ -16,6 +17,20 @@ type RouteContext = {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function mediaWorkerPath(): string {
+  const candidates = [
+    path.join(process.cwd(), "scripts", "prepare-cloud-media-worker.mjs"),
+    path.join(process.cwd(), "dashboard", "scripts", "prepare-cloud-media-worker.mjs"),
+    "/app/dashboard/scripts/prepare-cloud-media-worker.mjs"
+  ];
+  const workerPath = candidates.find((candidate) => existsSync(candidate));
+  if (!workerPath) {
+    throw new MediaUploadError(`Media worker script was not found. Checked: ${candidates.join(", ")}`, 500);
+  }
+
+  return workerPath;
+}
 
 export async function POST(_request: Request, context: RouteContext) {
   const cloudConfig = cloudMediaConfig();
@@ -48,7 +63,8 @@ export async function POST(_request: Request, context: RouteContext) {
       playbackProfile: "preparing-playback-mp4-v1",
       status: "processing"
     });
-    const workerPath = path.join(process.cwd(), "dashboard", "scripts", "prepare-cloud-media-worker.mjs");
+    const workerPath = mediaWorkerPath();
+    console.log("starting cloud media prepare worker", { mediaId, workerPath });
     const child = spawn(process.execPath, [workerPath, mediaId], {
       detached: true,
       env: process.env,
