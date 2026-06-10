@@ -3,11 +3,11 @@ import {
   ensureLivePlaylistPath,
   type PiPublishResult,
   type PublishStatusTarget,
-  readStoredPlaylist,
   writePlaylist,
   writePublishStatus
 } from "../../../lib/local-playlist";
 import { isCloudInventoryConfigured, markCloudPlaylistPublished } from "../../../lib/inventory-store";
+import { readStoredPlaylist } from "../../../lib/playlist-store";
 import { publishPlaylistToPi } from "../../../lib/pi-local";
 import { piConfigForDevice, targetDevicesForRequest } from "../../../lib/pi-targets";
 
