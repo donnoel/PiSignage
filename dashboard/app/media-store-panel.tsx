@@ -233,8 +233,8 @@ function playbackSafety(item: MediaItem): PlaybackSafety {
   if (item.status === "processing") {
     return {
       canUseInPlaylist: false,
-      detail: item.cloudStatusDetail ?? "This media is still being prepared.",
-      label: "Processing",
+      detail: item.cloudStatusDetail ?? "AWS has the source file, but a Pi-safe playback copy has not been prepared yet.",
+      label: "Needs processing",
       tone: "muted"
     };
   }
@@ -263,6 +263,18 @@ function playbackSafety(item: MediaItem): PlaybackSafety {
     label: "Ready",
     tone: "good"
   };
+}
+
+function mediaPrimaryFileName(item: MediaItem): string {
+  return item.status === "processing" ? item.sourceFileName : item.playbackFileName;
+}
+
+function mediaSecondaryFileName(item: MediaItem): string | null {
+  if (item.status === "processing" && item.playbackFileName !== item.sourceFileName) {
+    return `Playback target: ${item.playbackFileName}`;
+  }
+
+  return null;
 }
 
 function messageClass(tone: "idle" | "success" | "warning" | "error"): string {
@@ -710,7 +722,11 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
       const needsReviewCount = uploadedItems.filter((item) => !playbackSafety(item).canUseInPlaylist).length;
       const skippedSuffix = skippedCount > 0 ? ` ${skippedCount} unsupported or hidden file${skippedCount === 1 ? "" : "s"} skipped.` : "";
       if (uploadedItems.length === 1) {
-        setMessage(`${uploadedItems[0].playbackFileName} saved.${skippedSuffix}`);
+        const uploadedItem = uploadedItems[0];
+        const reviewSuffix = playbackSafety(uploadedItem).canUseInPlaylist
+          ? ""
+          : " Needs playback processing before it can be added to a playlist.";
+        setMessage(`${mediaPrimaryFileName(uploadedItem)} saved.${reviewSuffix}${skippedSuffix}`);
       } else {
         setMessage(`${uploadedItems.length} files saved.${skippedSuffix}`);
       }
@@ -1409,6 +1425,8 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
                 const safety = playbackSafety(item);
                 const canAdd = canAddMediaToPlaylist(item);
                 const deleting = deletingMediaId === item.id;
+                const primaryFileName = mediaPrimaryFileName(item);
+                const secondaryFileName = mediaSecondaryFileName(item);
                 return (
                   <tr key={item.id} className="bg-white hover:bg-zinc-50">
                     <td className="px-4 py-3">
@@ -1423,7 +1441,10 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
                     </td>
                     <td className="max-w-[380px] px-4 py-3">
                       <p className="truncate font-semibold text-zinc-950" title={item.title}>{item.title}</p>
-                      <p className="mt-1 truncate text-xs text-zinc-500" title={item.playbackFileName}>{item.playbackFileName}</p>
+                      <p className="mt-1 truncate text-xs text-zinc-500" title={primaryFileName}>{primaryFileName}</p>
+                      {secondaryFileName ? (
+                        <p className="mt-1 truncate text-xs text-zinc-500" title={secondaryFileName}>{secondaryFileName}</p>
+                      ) : null}
                       {editingTagMediaId === item.id ? (
                         <div className="mt-3 rounded-md border border-zinc-200 bg-zinc-50 p-3">
                           <label className="sr-only" htmlFor={`tags-${item.id}`}>Tags for {item.title}</label>
