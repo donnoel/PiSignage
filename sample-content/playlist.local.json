@@ -1,7 +1,15 @@
 {
-  "playlistId": "playlist-local-demo",
-  "name": "Seed Playlist",
-  "version": 14,
-  "updatedAt": "2026-06-05T19:35:00.000Z",
-  "assets": []
+  "playlistId": "playlist-first-run-fallback",
+  "name": "Beam First Run Fallback",
+  "version": 1,
+  "updatedAt": "2026-06-11T16:45:00.000Z",
+  "assets": [
+    {
+      "assetId": "asset-beam-ready-fallback",
+      "type": "video",
+      "uri": "assets/beam-ready.signage-1080p.mp4",
+      "durationSeconds": 15,
+      "altText": "Beam first-run fallback video."
+    }
+  ]
 }

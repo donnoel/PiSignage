@@ -35,6 +35,7 @@ sample-content/assets/**/*.mov
 sample-content/assets/**/*.jpg
 sample-content/assets/**/*.jpeg
 sample-content/assets/**/*.png
+!sample-content/assets/beam-ready.signage-1080p.mp4
 
 # macOS
 .DS_Store
