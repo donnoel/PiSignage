@@ -487,7 +487,7 @@ export function LocalPlaylistScreenAssignment({ playlistId }: PlaylistScreenAssi
     <details
       id="playlist-screen-assignment"
       tabIndex={-1}
-      className="mt-5 rounded-md border border-zinc-200 bg-zinc-50 outline-none transition-shadow"
+      className="rounded-lg border border-zinc-200 bg-white shadow-sm outline-none transition-shadow"
     >
       <summary className="flex cursor-pointer list-none flex-col gap-2 p-4 marker:hidden sm:flex-row sm:items-center sm:justify-between [&::-webkit-details-marker]:hidden">
         <div>
