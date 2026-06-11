@@ -11,6 +11,7 @@ import type { DeviceRecord, DeviceStore, ScreenRecord, ScreenStore } from "./loc
 import {
   createDevice,
   createScreen,
+  createScreenForDevice,
   createScreenWithDevice,
   readNormalizedInventory,
   removeDevice,
@@ -276,8 +277,16 @@ async function createCloudScreen(config: { devicesTableName: string; screensTabl
   const timestamp = isoNow();
 
   if (input.host?.trim()) {
+    const inventory = await readCloudInventory(config);
+    const existingDevice = input.deviceId
+      ? inventory.devices.items.find((device) => device.id === input.deviceId)
+      : null;
     const screenId = `screen-${randomUUID()}`;
-    const deviceId = input.deviceId?.trim() || trimmedEnv("BEAM_CLOUD_DEVICE_ID") || `device-${randomUUID()}`;
+    const deviceId =
+      existingDevice?.id ??
+      input.deviceId?.trim() ??
+      trimmedEnv("BEAM_CLOUD_DEVICE_ID") ??
+      `device-${randomUUID()}`;
     const screenName = input.name.trim();
     const group = stringOrDefault(input.group, "General");
     const location = stringOrDefault(input.location, "Unassigned");
@@ -295,18 +304,19 @@ async function createCloudScreen(config: { devicesTableName: string; screensTabl
       updatedAt: timestamp
     };
     const device: DeviceRecord = {
+      ...existingDevice,
       group,
       host: input.host.trim(),
       id: deviceId,
       location,
       name: `${screenName} Pi`,
-      notes: "",
+      notes: existingDevice?.notes ?? "",
       playlistId: input.playlistId ?? null,
       playerType: "vlc",
-      publishedAt: null,
-      publishedPlaylistId: null,
-      publishedPlaylistVersion: null,
-      rootPath: "~",
+      publishedAt: existingDevice?.publishedAt ?? null,
+      publishedPlaylistId: existingDevice?.publishedPlaylistId ?? null,
+      publishedPlaylistVersion: existingDevice?.publishedPlaylistVersion ?? null,
+      rootPath: existingDevice?.rootPath ?? "~",
       screenId,
       sshUser: stringOrDefault(input.sshUser, "donnoel"),
       updatedAt: timestamp
@@ -323,7 +333,7 @@ async function createCloudScreen(config: { devicesTableName: string; screensTabl
         },
         {
           Put: {
-            ConditionExpression: "attribute_not_exists(deviceId)",
+            ConditionExpression: existingDevice ? undefined : "attribute_not_exists(deviceId)",
             Item: deviceToItem(device),
             TableName: config.devicesTableName
           }
@@ -566,6 +576,19 @@ export async function createInventoryScreen(input: CreateScreenInput): Promise<v
   const config = cloudInventoryConfig();
   if (config) {
     await createCloudScreen(config, input);
+    return;
+  }
+
+  if (input.deviceId?.trim() && input.host?.trim()) {
+    await createScreenForDevice({
+      deviceId: input.deviceId,
+      group: input.group,
+      host: input.host,
+      location: input.location,
+      name: input.name,
+      playlistId: input.playlistId ?? null,
+      sshUser: input.sshUser
+    });
     return;
   }
 

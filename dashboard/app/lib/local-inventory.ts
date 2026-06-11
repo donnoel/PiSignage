@@ -284,6 +284,79 @@ export async function createScreenWithDevice(input: {
   return { device, screen };
 }
 
+export async function createScreenForDevice(input: {
+  deviceId: string;
+  group?: string;
+  host: string;
+  location?: string;
+  name: string;
+  playlistId?: string | null;
+  sshUser?: string;
+}): Promise<{
+  device: DeviceRecord;
+  screen: ScreenRecord;
+}> {
+  const [screenStore, deviceStore] = await Promise.all([readScreenStore(), readDeviceStore()]);
+  const deviceIndex = deviceStore.items.findIndex((item) => item.id === input.deviceId);
+  if (deviceIndex === -1) {
+    throw new Error("Device was not found.");
+  }
+
+  const timestamp = isoNow();
+  const screenId = `screen-${randomUUID()}`;
+  const screenName = input.name.trim();
+  const group = input.group?.trim() || "General";
+  const location = input.location?.trim() || "Unassigned";
+  const screen: ScreenRecord = {
+    deviceId: input.deviceId,
+    group,
+    id: screenId,
+    location,
+    name: screenName,
+    notes: "",
+    playlistId: input.playlistId ?? null,
+    updatedAt: timestamp
+  };
+  const devices = [...deviceStore.items];
+  devices[deviceIndex] = {
+    ...devices[deviceIndex],
+    group,
+    host: input.host.trim(),
+    location,
+    name: `${screenName} Pi`,
+    playlistId: input.playlistId ?? null,
+    screenId,
+    sshUser: input.sshUser?.trim() || devices[deviceIndex].sshUser || "donnoel",
+    updatedAt: timestamp
+  };
+
+  await writeScreenStore({
+    ...screenStore,
+    items: [...screenStore.items, screen],
+    updatedAt: timestamp,
+    version: screenStore.version + 1
+  });
+  await writeDeviceStore({
+    ...deviceStore,
+    items: devices,
+    updatedAt: timestamp,
+    version: deviceStore.version + 1
+  });
+
+  await appendActivityRecord({
+    id: randomUUID(),
+    action: "screen-add",
+    actor: "local-operator",
+    entityId: screen.id,
+    entityType: "screen",
+    message: `Linked screen ${screen.name} to ${devices[deviceIndex].name} at ${devices[deviceIndex].host}.`,
+    result: "success",
+    timestamp
+  });
+
+  return { device: devices[deviceIndex], screen };
+}
+
 export async function createDevice(input: {
   group?: string;
   host: string;

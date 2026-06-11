@@ -127,12 +127,47 @@ async function cachePlaylist(cacheDirectory: string, playlist: Playlist): Promis
   await writeJsonAtomic(currentPlaylistCachePath(cacheDirectory), playlist);
 }
 
+function safeRelativeAssetPath(uri: string): string | null {
+  const normalized = path.normalize(uri);
+  if (
+    path.isAbsolute(normalized) ||
+    normalized === "." ||
+    normalized === ".." ||
+    normalized.startsWith(`..${path.sep}`)
+  ) {
+    return null;
+  }
+
+  return normalized;
+}
+
+async function cacheLocalPlaylistAssets(
+  playlistPath: string,
+  cacheDirectory: string,
+  playlist: Playlist
+): Promise<void> {
+  const playlistDirectory = path.dirname(playlistPath);
+
+  for (const asset of playlist.assets) {
+    const relativePath = safeRelativeAssetPath(asset.uri);
+    if (!relativePath) {
+      throw new Error(`Playlist asset path is not local: ${asset.assetId}`);
+    }
+
+    const sourcePath = path.join(playlistDirectory, relativePath);
+    const targetPath = path.join(cacheDirectory, relativePath);
+    const bytes = await fs.readFile(sourcePath);
+    await writeBufferAtomic(targetPath, bytes);
+  }
+}
+
 async function loadPlaylistWithCache(
   playlistPath: string,
   cacheDirectory: string
 ): Promise<{ playlist: Playlist; source: "playlist" | "cache" }> {
   try {
     const playlist = await readPlaylist(playlistPath);
+    await cacheLocalPlaylistAssets(playlistPath, cacheDirectory, playlist);
     await cachePlaylist(cacheDirectory, playlist);
     return { playlist, source: "playlist" };
   } catch (error) {

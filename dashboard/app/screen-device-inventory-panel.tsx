@@ -883,6 +883,46 @@ export function ScreenDeviceInventoryPanel({
     }
   }
 
+  async function linkDeviceToScreen(device: DeviceRecord) {
+    if (isBusy) {
+      return;
+    }
+
+    const suggestedName = device.name.replace(/^Unassigned Pi\s+/i, "").trim() || device.id;
+    const nextName = window.prompt("Screen name", suggestedName)?.trim();
+    if (!nextName) {
+      return;
+    }
+
+    const savedHost = hasLocalAddress(device) ? device.host : "";
+    const nextHost = window.prompt("Pi local address or IP", savedHost)?.trim();
+    if (!nextHost) {
+      setMessage("Pi address is required to link this check-in.");
+      return;
+    }
+
+    setIsSaving(true);
+    setMessage(`Linking ${nextName} to ${device.id}...`);
+    try {
+      await postInventory({
+        deviceId: device.id,
+        group: device.group,
+        host: nextHost,
+        location: device.location,
+        name: nextName,
+        playlistId,
+        sshUser: device.sshUser,
+        targetType: "screen"
+      });
+      setMessage(`${nextName} linked to ${device.id}.`);
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not link this Pi.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   return (
     <div className="min-w-0 space-y-4">
       <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
@@ -1177,14 +1217,26 @@ export function ScreenDeviceInventoryPanel({
                       <p className="mt-1 text-xs text-zinc-600">{status.detail}</p>
                     </td>
                     <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => void removeInventory("device", device.id, device.name)}
-                        disabled={isBusy}
-                        className="min-h-9 rounded-md border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        Remove
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        {!linkedScreen ? (
+                          <button
+                            type="button"
+                            onClick={() => void linkDeviceToScreen(device)}
+                            disabled={isBusy}
+                            className="min-h-9 rounded-md border border-teal-200 bg-white px-3 py-2 text-xs font-semibold text-teal-800 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Link screen
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => void removeInventory("device", device.id, device.name)}
+                          disabled={isBusy}
+                          className="min-h-9 rounded-md border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
