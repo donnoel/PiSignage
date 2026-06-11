@@ -67,6 +67,11 @@ type UploadResponse = {
   item?: MediaItem;
 };
 
+type UploadFailure = {
+  fileName: string;
+  message: string;
+};
+
 type PlaylistActionResponse = {
   assetCount?: number;
   error?: string;
@@ -249,14 +254,14 @@ function uploadMediaForm(
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open("POST", "/api/media");
-    request.responseType = "json";
+    request.responseType = "text";
     request.upload.onprogress = (event) => {
       if (event.lengthComputable) {
         onProgress({ loaded: event.loaded, total: event.total });
       }
     };
     request.onload = () => {
-      const result = (request.response ?? JSON.parse(request.responseText || "{}")) as UploadResponse;
+      const result = uploadResponseFromText(request.responseText, request.status);
       if (request.status < 200 || request.status >= 300 || result.error) {
         reject(new Error(result.error ?? "Upload failed."));
         return;
@@ -267,6 +272,21 @@ function uploadMediaForm(
     request.ontimeout = () => reject(new Error("Upload timed out before the server responded."));
     request.send(formData);
   });
+}
+
+function uploadResponseFromText(responseText: string, status: number): UploadResponse {
+  if (!responseText.trim()) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(responseText) as UploadResponse;
+  } catch {
+    const statusText = status > 0 ? `HTTP ${status}` : "a network error";
+    return {
+      error: `Upload failed with ${statusText}. The server returned an unreadable response instead of JSON.`
+    };
+  }
 }
 
 function isSkippedDirectoryEntry(file: File): boolean {
@@ -837,8 +857,10 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
 
     try {
       const uploadedItems: MediaItem[] = [];
+      const failedUploads: UploadFailure[] = [];
 
       for (const [index, file] of files.entries()) {
+        const fileName = uploadRelativePath(file);
         const formData = new FormData();
         formData.append("media", file);
         formData.append("title", files.length === 1 ? uploadTitle : "");
@@ -847,25 +869,44 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
         formData.append("folderId", uploadFolderId);
 
         if (files.length > 1) {
-          setMessage(`Uploading ${index + 1} of ${files.length}: ${uploadRelativePath(file)}...`);
+          setMessage(`Uploading ${index + 1} of ${files.length}: ${fileName}...`);
         }
 
-        const uploadStartedAt = Date.now();
-        const result = await uploadMediaForm(formData, ({ loaded, total }) => {
-          const elapsedSeconds = Math.max((Date.now() - uploadStartedAt) / 1000, 0.1);
-          const bytesPerSecond = loaded / elapsedSeconds;
-          const remainingSeconds = bytesPerSecond > 0 ? (total - loaded) / bytesPerSecond : Number.NaN;
-          const percent = total > 0 ? Math.round((loaded / total) * 100) : 0;
-          const prefix = files.length > 1 ? `Uploading ${index + 1} of ${files.length}: ` : "Uploading ";
-          setMessage(
-            `${prefix}${uploadRelativePath(file)} ${percent}% (${formatBytes(loaded)} of ${formatBytes(total)}, about ${formatSeconds(remainingSeconds)} left).`
-          );
-        });
-        if (result.error || !result.item) {
-          throw new Error(result.error ?? `Upload failed for ${file.name}.`);
-        }
+        try {
+          const uploadStartedAt = Date.now();
+          const result = await uploadMediaForm(formData, ({ loaded, total }) => {
+            const elapsedSeconds = Math.max((Date.now() - uploadStartedAt) / 1000, 0.1);
+            const bytesPerSecond = loaded / elapsedSeconds;
+            const remainingSeconds = bytesPerSecond > 0 ? (total - loaded) / bytesPerSecond : Number.NaN;
+            const percent = total > 0 ? Math.round((loaded / total) * 100) : 0;
+            const prefix = files.length > 1 ? `Uploading ${index + 1} of ${files.length}: ` : "Uploading ";
+            setMessage(
+              `${prefix}${fileName} ${percent}% (${formatBytes(loaded)} of ${formatBytes(total)}, about ${formatSeconds(remainingSeconds)} left).`
+            );
+          });
+          if (result.error || !result.item) {
+            throw new Error(result.error ?? `Upload failed for ${file.name}.`);
+          }
 
-        uploadedItems.push(result.item);
+          uploadedItems.push(result.item);
+        } catch (error) {
+          const failureMessage = error instanceof Error ? error.message : "Upload failed.";
+          failedUploads.push({ fileName, message: failureMessage });
+          if (index < files.length - 1) {
+            setMessage(`${fileName} failed: ${failureMessage} Continuing with ${index + 2} of ${files.length}.`);
+            setMessageTone("warning");
+          }
+        }
+      }
+
+      const skippedSuffix = skippedCount > 0 ? ` ${skippedCount} unsupported or hidden file${skippedCount === 1 ? "" : "s"} skipped.` : "";
+      const failureSuffix = failedUploads.length > 0
+        ? ` ${failedUploads.length} failed. First failure: ${failedUploads[0].fileName}: ${failedUploads[0].message}`
+        : "";
+      if (uploadedItems.length === 0) {
+        setMessage(`No files were saved.${failureSuffix}${skippedSuffix}`);
+        setMessageTone("error");
+        return;
       }
 
       if (fileInputRef.current) {
@@ -881,19 +922,18 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
       setQueryInput("");
       await loadMedia(true, "");
       const needsReviewCount = uploadedItems.filter((item) => !playbackSafety(item).canUseInPlaylist).length;
-      const skippedSuffix = skippedCount > 0 ? ` ${skippedCount} unsupported or hidden file${skippedCount === 1 ? "" : "s"} skipped.` : "";
       if (uploadedItems.length === 1) {
         const uploadedItem = uploadedItems[0];
         const reviewSuffix = playbackSafety(uploadedItem).canUseInPlaylist
           ? ""
           : " Playback preparation started automatically.";
-        setMessage(`${mediaPrimaryFileName(uploadedItem)} saved.${reviewSuffix}${skippedSuffix}`);
+        setMessage(`${mediaPrimaryFileName(uploadedItem)} saved.${reviewSuffix}${failureSuffix}${skippedSuffix}`);
       } else {
         const reviewSuffix = needsReviewCount > 0 ? " Playback preparation started automatically." : "";
-        setMessage(`${uploadedItems.length} files saved.${reviewSuffix}${skippedSuffix}`);
+        setMessage(`${uploadedItems.length} files saved.${reviewSuffix}${failureSuffix}${skippedSuffix}`);
       }
-      setMessageTone(needsReviewCount > 0 ? "warning" : "success");
-      setShowUpload(false);
+      setMessageTone(needsReviewCount > 0 || failedUploads.length > 0 ? "warning" : "success");
+      setShowUpload(failedUploads.length > 0);
       startTransition(() => router.refresh());
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Upload failed.");

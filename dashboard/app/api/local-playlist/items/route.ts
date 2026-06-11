@@ -145,8 +145,8 @@ function updatePlaylistItemDetails(
     ...current,
     durationSeconds: Math.round(nextDuration),
     altText:
-      typeof options.altText === "string" && options.altText.trim()
-        ? options.altText.trim().slice(0, 160)
+      typeof options.altText === "string"
+        ? options.altText.trim().slice(0, 160) || undefined
         : current.altText
   };
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { constants as fsConstants } from "node:fs";
 import { access, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
@@ -52,7 +53,7 @@ const assetQuarantineWindowMs = Number.parseInt(
 
 let stopping = false;
 const activePlayers = new Set();
-let lastLoadedPlaylistModifiedMs = null;
+let lastLoadedPlaylistSignature = null;
 const assetQuarantine = new Map();
 let activeStatus = {
   mode: "vlc",
@@ -106,6 +107,10 @@ async function waitWithPlaylistPolling(playlist, ms) {
     await sleep(Math.min(remainingMs, Math.max(Math.min(playlistPollIntervalMs, 1_000), 250)));
   }
   return { reloadRequested: false };
+}
+
+function playlistSignature(rawPlaylist) {
+  return createHash("sha256").update(rawPlaylist).digest("hex");
 }
 
 async function writeStatus(update) {
@@ -257,7 +262,7 @@ async function playableAssetsFromPlaylist() {
     playlistId: playlist.playlistId ?? "local-playlist",
     version: playlist.version ?? "unknown",
     assets: playableAssets,
-    modifiedMs: (await stat(playlistPath)).mtimeMs
+    signature: playlistSignature(rawPlaylist)
   };
 }
 
@@ -313,8 +318,8 @@ async function waitForDisplay() {
 }
 
 async function playlistHasChanged(playlist) {
-  const playlistStats = await stat(playlistPath);
-  return playlistStats.mtimeMs !== playlist.modifiedMs;
+  const rawPlaylist = await readFile(playlistPath, "utf8");
+  return playlistSignature(rawPlaylist) !== playlist.signature;
 }
 
 function vlcBaseArgs() {
@@ -587,9 +592,9 @@ async function run() {
 
   while (!stopping) {
     const playlist = await playableAssetsFromPlaylist();
-    if (lastLoadedPlaylistModifiedMs !== playlist.modifiedMs) {
+    if (lastLoadedPlaylistSignature !== playlist.signature) {
       assetQuarantine.clear();
-      lastLoadedPlaylistModifiedMs = playlist.modifiedMs;
+      lastLoadedPlaylistSignature = playlist.signature;
       log("playlist changed; cleared VLC asset quarantine");
     }
     log(
