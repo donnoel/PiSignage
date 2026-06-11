@@ -1724,28 +1724,28 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const supportAttentionCount = recoveryEvidence.filter((item) => item.tone === "warn").length;
 
   return (
-    <main className="min-h-screen [overflow-x:clip] bg-[#f6f7f9] text-zinc-950">
+    <main className="min-h-screen [overflow-x:clip] bg-[#f3f6f8] text-zinc-950">
       <DashboardAutoRefresh />
-      <div className="grid min-h-screen lg:grid-cols-[232px_minmax(0,1fr)]">
-        <aside className="border-b border-zinc-200 bg-white px-4 py-4 text-slate-950 lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r lg:py-5">
-          <div className="flex flex-wrap items-center justify-between gap-3 lg:block">
+      <div className="grid min-h-screen lg:grid-cols-[220px_minmax(0,1fr)]">
+        <aside className="border-b border-cyan-200 bg-[radial-gradient(circle_at_top_left,rgba(94,234,212,0.34),transparent_44%),linear-gradient(180deg,#e4fbf7_0%,#f1fbff_48%,#ffffff_100%)] px-5 py-5 text-slate-950 shadow-[inset_-1px_0_0_rgba(20,184,166,0.2)] lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r lg:py-6">
+          <div className="flex flex-wrap items-end justify-between gap-2 lg:block">
             <div>
-              <div className="inline-flex items-center gap-2.5" aria-label="Beam">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-slate-950 shadow-sm" aria-hidden="true">
-                  <svg viewBox="0 0 36 36" className="h-8 w-8">
-                    <rect x="0" y="0" width="36" height="36" rx="7" fill="#0f172a" />
+              <div className="inline-flex items-center gap-3" aria-label="Beam">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-950 shadow-sm" aria-hidden="true">
+                  <svg viewBox="0 0 36 36" className="h-9 w-9">
+                    <rect x="0" y="0" width="36" height="36" rx="8" fill="#0f172a" />
                     <rect x="8" y="10" width="14" height="16" rx="2.5" fill="none" stroke="#f8fafc" strokeWidth="2.4" />
                     <path d="M20 13.5L30 9.5V26.5L20 22.5V13.5Z" fill="#5eead4" />
                     <path d="M20 16L30 13V23L20 20V16Z" fill="#ccfbf1" opacity="0.8" />
                   </svg>
                 </span>
-                <span className="text-2xl font-black leading-none tracking-normal text-slate-950 [font-family:'Trebuchet_MS',ui-rounded,'Avenir_Next_Rounded','Arial_Rounded_MT_Bold',system-ui,sans-serif]">
+                <span className="bg-gradient-to-r from-slate-950 via-teal-950 to-teal-700 bg-clip-text text-[2rem] font-black leading-none tracking-normal text-transparent [font-family:'Trebuchet_MS',ui-rounded,'Avenir_Next_Rounded','Arial_Rounded_MT_Bold',system-ui,sans-serif]">
                   Beam
                 </span>
               </div>
             </div>
           </div>
-          <nav aria-label="Dashboard views" className="-mx-1 mt-4 flex gap-1 overflow-x-auto pb-1 text-sm font-medium text-slate-700 lg:mx-0 lg:mt-7 lg:block lg:space-y-1 lg:overflow-visible lg:pb-0">
+          <nav aria-label="Dashboard views" className="mt-5 grid grid-cols-2 gap-2 text-sm font-medium text-slate-700 sm:grid-cols-3 md:flex md:flex-wrap lg:mt-8 lg:block lg:space-y-1">
             {navigationItems.map((item) => {
               const selected = item.view === selectedView;
 
@@ -1754,8 +1754,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 key={item.view}
                 href={item.view === "dashboard" ? "/" : `/?view=${item.view}`}
                 aria-current={selected ? "page" : undefined}
-                className={`block shrink-0 whitespace-nowrap rounded-md px-3 py-2 text-center transition focus:outline-none focus:ring-2 focus:ring-teal-500 lg:w-full lg:text-left ${
-                  selected ? "bg-slate-950 text-white shadow-sm" : "hover:bg-zinc-100 hover:text-slate-950"
+                className={`block whitespace-nowrap rounded-md px-3 py-2 text-center transition focus:outline-none focus:ring-2 focus:ring-teal-500 lg:text-left ${
+                  selected ? "bg-white text-teal-950 shadow-sm ring-1 ring-cyan-200" : "hover:bg-white/70 hover:text-teal-950"
                 }`}
               >
                 {item.label}
@@ -1766,12 +1766,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         </aside>
 
         <div className="mx-auto w-full min-w-0 max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8">
-          <header id="dashboard" className="flex flex-col gap-3 border-b border-zinc-200 pb-4 xl:flex-row xl:items-center xl:justify-between">
+          <header id="dashboard" className="flex flex-col gap-4 border-b border-zinc-200 pb-5 xl:flex-row xl:items-center xl:justify-between">
             <div>
               {currentViewCopy.eyebrow ? (
                 <p className="text-sm font-semibold uppercase text-teal-700">{currentViewCopy.eyebrow}</p>
               ) : null}
-              <h1 className="mt-1 text-3xl font-bold tracking-tight text-zinc-950">{currentViewCopy.title}</h1>
+              <h1 className="mt-1 text-3xl font-bold tracking-tight text-zinc-950 sm:text-4xl">{currentViewCopy.title}</h1>
               {currentViewCopy.description ? (
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600">
                   {currentViewCopy.description}
@@ -1784,42 +1784,36 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             aria-labelledby="operations-heading"
             className={selectedView === "dashboard" ? "mt-5" : "hidden"}
           >
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h2 id="operations-heading" className="text-xl font-semibold">Command center</h2>
+                <h2 id="operations-heading" className="text-2xl font-semibold">Command center</h2>
               </div>
-              <p className={`inline-flex w-fit rounded-md px-2.5 py-1 text-sm font-semibold ring-1 ${
-                systemStatusTone === "good"
-                  ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                  : systemStatusTone === "warn"
-                    ? "bg-amber-50 text-amber-800 ring-amber-200"
-                    : "bg-zinc-100 text-zinc-600 ring-zinc-200"
-              }`}>
+              <p className={`text-sm font-semibold ${systemStatusTone === "good" ? "text-emerald-700" : systemStatusTone === "warn" ? "text-amber-800" : "text-zinc-600"}`}>
                 {systemStatusLabel}
               </p>
             </div>
             <dl className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <div className={`min-h-28 rounded-md border p-4 ${onlineDeviceCount > 0 ? "border-emerald-200 bg-emerald-50" : "border-zinc-200 bg-white"}`}>
+              <div className={`rounded-lg border p-4 shadow-sm ${onlineDeviceCount > 0 ? "border-emerald-200 bg-emerald-50" : "border-zinc-200 bg-white"}`}>
                 <dt className="text-xs font-semibold uppercase text-emerald-800">Online</dt>
-                <dd className="mt-2 text-3xl font-semibold text-zinc-950">{onlineDeviceCount}</dd>
+                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{onlineDeviceCount}</dd>
                 <dd className="mt-1 text-sm text-zinc-600">of {pluralize(fleetRows.length, "screen")}</dd>
               </div>
-              <div className={`min-h-28 rounded-md border p-4 ${playingDeviceCount > 0 ? "border-sky-200 bg-sky-50" : "border-zinc-200 bg-white"}`}>
+              <div className={`rounded-lg border p-4 shadow-sm ${playingDeviceCount > 0 ? "border-sky-200 bg-sky-50" : "border-zinc-200 bg-white"}`}>
                 <dt className="text-xs font-semibold uppercase text-sky-800">Live signal</dt>
-                <dd className="mt-2 text-3xl font-semibold text-zinc-950">{playingDeviceCount}</dd>
+                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{playingDeviceCount}</dd>
                 <dd className="mt-1 text-sm text-zinc-600">{playingDetail}</dd>
               </div>
-              <div className="min-h-28 rounded-md border border-indigo-200 bg-indigo-50 p-4">
-                <dt className="text-xs font-semibold uppercase text-indigo-800">Screens</dt>
-                <dd className="mt-2 text-3xl font-semibold text-zinc-950">{inventory.screens.items.length}</dd>
+              <div className="rounded-lg border border-teal-200 bg-teal-50 p-4 shadow-sm">
+                <dt className="text-xs font-semibold uppercase text-teal-800">Screens</dt>
+                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{inventory.screens.items.length}</dd>
                 <dd className="mt-1 text-sm text-zinc-600">{screenDetail}</dd>
               </div>
-              <div className={`min-h-28 rounded-md border p-4 ${cloudHeartbeatTone === "good" ? "border-emerald-200 bg-emerald-50" : cloudHeartbeatTone === "warn" ? "border-amber-200 bg-amber-50" : "border-zinc-200 bg-white"}`}>
+              <div className={`rounded-lg border p-4 shadow-sm ${cloudHeartbeatTone === "good" ? "border-emerald-200 bg-emerald-50" : cloudHeartbeatTone === "warn" ? "border-amber-200 bg-amber-50" : "border-zinc-200 bg-white"}`}>
                 <dt className="text-xs font-semibold uppercase text-zinc-600">AWS heartbeat</dt>
-                <dd className="mt-2 flex items-center gap-2 text-2xl font-semibold leading-tight text-zinc-950">
+                <dd className="mt-2 flex items-center gap-2 text-2xl font-semibold text-zinc-950">
                   {cloudHeartbeatLabel}
                 </dd>
-                <dd className="mt-1 break-all text-sm text-zinc-600">{cloudHeartbeatDetail}</dd>
+                <dd className="mt-1 break-words text-sm text-zinc-600">{cloudHeartbeatDetail}</dd>
               </div>
             </dl>
           </section>
@@ -1828,10 +1822,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             aria-labelledby="now-playing-heading"
             className={selectedView === "dashboard" ? "mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]" : "hidden"}
           >
-            <div className="order-2 rounded-md border border-zinc-200 bg-white xl:order-2">
-              <div className="flex flex-col gap-3 border-b border-zinc-200 p-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="order-2 rounded-lg border border-zinc-200 bg-white shadow-sm xl:order-2">
+              <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <h2 id="now-playing-heading" className="text-xl font-semibold">{commandAttentionCount === 0 ? "All clear" : "Exceptions"}</h2>
+                  <h2 id="now-playing-heading" className="mt-1 text-2xl font-semibold">{commandAttentionCount === 0 ? "All clear" : "Exceptions"}</h2>
                   <p className="mt-1 text-sm text-zinc-600">
                     {commandAttentionCount === 0
                       ? "Beam has nothing urgent to call out."
@@ -1850,7 +1844,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               {systemExceptions.length > 0 || fleetExceptions.length > 0 ? (
                 <ol className="divide-y divide-zinc-200">
                   {systemExceptions.map((item) => (
-                    <li key={`${item.label}-${item.detail}`} className="grid gap-3 px-4 py-4 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+                    <li key={`${item.label}-${item.detail}`} className="grid gap-3 px-5 py-4 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="break-words font-semibold text-zinc-950">{item.label}</p>
@@ -1869,7 +1863,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     </li>
                   ))}
                   {fleetExceptions.map((row) => (
-                    <li key={row.id} className="grid gap-3 px-4 py-4 text-sm">
+                    <li key={row.id} className="grid gap-3 px-5 py-4 text-sm">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
                           <p className="break-words font-semibold text-zinc-950">{row.name}</p>
@@ -1890,17 +1884,17 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   ))}
                 </ol>
               ) : (
-                <div className="border-t border-zinc-200 px-4 py-4 text-sm text-zinc-600">
+                <div className="border-t border-zinc-200 px-5 py-4 text-sm text-zinc-600">
                   Everything Beam can see is looking good.
                 </div>
               )}
             </div>
 
             <div className="order-1 space-y-4 xl:order-1">
-              <div className="rounded-md border border-zinc-200 bg-white">
-                <div className="flex flex-col gap-4 border-b border-zinc-200 p-4">
+              <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+                <div className="flex flex-col gap-4 border-b border-zinc-200 p-5">
                   <div>
-                    <h2 className="text-xl font-semibold">Screen preview</h2>
+                    <h2 className="mt-1 text-2xl font-semibold">Screen preview</h2>
                     <p className="mt-1 text-sm text-zinc-600">{focusedScreenLocation} · {focusedScreenSummary}</p>
                   </div>
                   <form method="get" className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
@@ -1929,65 +1923,48 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     </button>
                   </form>
                 </div>
-                <div className="p-4">
-                  <div className="overflow-hidden rounded-md border border-zinc-300 bg-zinc-950 text-white">
-                    <div className="flex min-h-10 items-center justify-between border-b border-white/10 bg-zinc-900 px-4 py-2">
-                      <p className="text-xs font-semibold uppercase text-zinc-400">{previewEyebrow}</p>
-                      <StatusPill
-                        label={focusedLiveSummary}
-                        size="compact"
-                        tone={focusedScreenReachable ? "good" : focusedScreenIsLive ? "warn" : "muted"}
-                      />
-                    </div>
-                    <div className="grid min-h-[280px] gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_220px]">
-                      <div className="flex min-w-0 flex-col justify-between gap-5">
+                <div className="p-5">
+                  <div className="rounded-[1.25rem] border border-zinc-700 bg-zinc-900 p-3 shadow-xl shadow-zinc-300/60">
+                    <div className="relative overflow-hidden rounded-xl bg-[linear-gradient(145deg,#236b66_0%,#0f766e_38%,#0e7490_68%,#1e3a8a_100%)] px-4 pb-9 pt-5 text-white shadow-inner ring-1 ring-white/20">
+                      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.22)_0%,rgba(255,255,255,0.08)_34%,rgba(255,255,255,0)_70%)]" />
+                      <div className="relative flex min-h-[260px] flex-col justify-between gap-5">
                         <div>
-                          <p className="break-words text-3xl font-semibold leading-tight sm:text-4xl">{focusedScreenTitle}</p>
-                          <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-300">{focusedScreenDetail}</p>
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold uppercase text-cyan-100/80">{previewEyebrow}</p>
+                              <p className="mt-2 break-words text-3xl font-black leading-tight sm:text-4xl">{focusedScreenTitle}</p>
+                            </div>
+                            {focusedPlayerUrl ? (
+                              <a
+                                href={focusedPlayerUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-50 focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                              >
+                                Open player
+                              </a>
+                            ) : null}
+                          </div>
+                          <p className="mt-3 max-w-sm text-sm leading-6 text-cyan-50/80">{focusedScreenDetail}</p>
                         </div>
-                        <div className="grid gap-2 text-sm sm:grid-cols-3">
-                          <div className="rounded-md bg-white/[0.08] p-3 ring-1 ring-white/10">
-                            <p className="font-semibold text-zinc-400">Screen</p>
+                        <div className="grid gap-2 text-sm sm:grid-cols-2">
+                          <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/10">
+                            <p className="font-semibold text-cyan-50/70">Screen</p>
                             <p className="mt-1 break-words font-semibold text-white">{focusedScreenName}</p>
                           </div>
-                          <div className="rounded-md bg-white/[0.08] p-3 ring-1 ring-white/10">
-                            <p className="font-semibold text-zinc-400">Host</p>
+                          <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/10">
+                            <p className="font-semibold text-cyan-50/70">Host</p>
                             <p className="mt-1 break-words font-semibold text-white">{focusedScreenHost}</p>
                           </div>
-                          <div className="rounded-md bg-white/[0.08] p-3 ring-1 ring-white/10">
-                            <p className="font-semibold text-zinc-400">Loop</p>
+                          <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/10">
+                            <p className="font-semibold text-cyan-50/70">Loop</p>
                             <p className="mt-1 font-semibold text-white">
                               {focusedScreen?.assignedPlaylistAssetCount ?? playlist.assets.length} items · {focusedScreen?.assignedPlaylistDuration ?? totalDuration}
                             </p>
                           </div>
                         </div>
                       </div>
-                      <div className="rounded-md border border-white/10 bg-white/[0.04] p-3 text-sm">
-                        <dl className="space-y-3">
-                          <div>
-                            <dt className="font-semibold text-zinc-400">Playback</dt>
-                            <dd className="mt-1 text-white">{focusedPlaybackLabel}</dd>
-                          </div>
-                          <div>
-                            <dt className="font-semibold text-zinc-400">Playlist</dt>
-                            <dd className="mt-1 text-white">{focusedSyncLabel}</dd>
-                          </div>
-                          <div>
-                            <dt className="font-semibold text-zinc-400">Last report</dt>
-                            <dd className="mt-1 text-white">{focusedLastReportLabel}</dd>
-                          </div>
-                        </dl>
-                        {focusedPlayerUrl ? (
-                          <a
-                            href={focusedPlayerUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="mt-4 inline-flex min-h-10 w-full items-center justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-950 hover:bg-zinc-100 focus:outline-none focus:ring-2 focus:ring-white"
-                          >
-                            Open player
-                          </a>
-                        ) : null}
-                      </div>
+                      <div className="absolute bottom-3 left-1/2 h-2 w-24 -translate-x-1/2 rounded-full bg-white/30" aria-hidden="true" />
                     </div>
                   </div>
                 </div>
