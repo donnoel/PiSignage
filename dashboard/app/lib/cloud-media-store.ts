@@ -15,7 +15,7 @@ import {
   PutObjectCommand,
   S3Client
 } from "@aws-sdk/client-s3";
-import type { MediaRecord, MediaStore } from "./local-data-store";
+import type { MediaFolderRecord, MediaFolderStore, MediaRecord, MediaStore } from "./local-data-store";
 import {
   assertPlaybackSafeVideoFile,
   createPlaybackSafeVideoClip,
@@ -57,6 +57,9 @@ type CloudMediaDeleteResult = {
 
 const dynamoDb = new DynamoDBClient({});
 const s3 = new S3Client({});
+const mediaRecordType = "media";
+const mediaFolderRecordType = "media-folder";
+const mediaFolderAssignmentRecordType = "media-folder-assignment";
 
 function trimmedEnv(name: string): string | null {
   const value = process.env[name]?.trim();
@@ -181,6 +184,36 @@ function mediaFromItem(item: Record<string, AttributeValue>): MediaRecord {
   };
 }
 
+function itemRecordType(item: Record<string, AttributeValue>): string {
+  return stringOrNull(item.recordType) ?? mediaRecordType;
+}
+
+function folderAssignmentRecordId(mediaId: string): string {
+  return `folder-assignment-${Buffer.from(mediaId).toString("base64url")}`;
+}
+
+function mediaFolderFromItem(item: Record<string, AttributeValue>): MediaFolderRecord | null {
+  const id = stringOrNull(item.folderId) ?? stringOrNull(item.id) ?? stringOrNull(item.assetId);
+  const name = stringOrNull(item.name);
+  if (!id || !name) {
+    return null;
+  }
+
+  const createdAt = stringOrDefault(item.createdAt, isoNow());
+  return {
+    createdAt,
+    id,
+    name,
+    updatedAt: stringOrDefault(item.updatedAt, createdAt)
+  };
+}
+
+function folderAssignmentFromItem(item: Record<string, AttributeValue>): [string, string] | null {
+  const mediaId = stringOrNull(item.mediaId);
+  const folderId = stringOrNull(item.folderId);
+  return mediaId && folderId ? [mediaId, folderId] : null;
+}
+
 function cloudMediaStatus(value: AttributeValue | undefined): MediaRecord["status"] {
   const status = stringOrNull(value);
   return status === "ready" || status === "processing" || status === "failed" ? status : "processing";
@@ -206,6 +239,7 @@ function mediaToItem(media: MediaRecord): Record<string, AttributeValue> {
     playbackObjectKey: optionalStringAttribute(media.playbackObjectKey),
     playbackProfile: optionalStringAttribute(media.playbackProfile),
     preparedAt: optionalStringAttribute(media.preparedAt),
+    recordType: stringAttribute(mediaRecordType),
     sizeBytes: numberAttribute(media.sizeBytes),
     sourceFileName: stringAttribute(media.sourceFileName),
     sourceObjectKey: optionalStringAttribute(media.sourceObjectKey),
@@ -222,12 +256,39 @@ function mediaToItem(media: MediaRecord): Record<string, AttributeValue> {
   };
 }
 
+function mediaFolderToItem(folder: MediaFolderRecord): Record<string, AttributeValue> {
+  return {
+    accountId: stringAttribute("beam-dev"),
+    assetId: stringAttribute(folder.id),
+    createdAt: stringAttribute(folder.createdAt),
+    folderId: stringAttribute(folder.id),
+    id: stringAttribute(folder.id),
+    name: stringAttribute(folder.name),
+    recordType: stringAttribute(mediaFolderRecordType),
+    updatedAt: stringAttribute(folder.updatedAt)
+  };
+}
+
+function mediaFolderAssignmentToItem(mediaId: string, folderId: string, updatedAt: string): Record<string, AttributeValue> {
+  const id = folderAssignmentRecordId(mediaId);
+  return {
+    accountId: stringAttribute("beam-dev"),
+    assetId: stringAttribute(id),
+    folderId: stringAttribute(folderId),
+    id: stringAttribute(id),
+    mediaId: stringAttribute(mediaId),
+    recordType: stringAttribute(mediaFolderAssignmentRecordType),
+    updatedAt: stringAttribute(updatedAt)
+  };
+}
+
 async function scanAllItems(tableName: string): Promise<Record<string, AttributeValue>[]> {
   const items: Record<string, AttributeValue>[] = [];
   let exclusiveStartKey: Record<string, AttributeValue> | undefined;
 
   do {
     const result = await dynamoDb.send(new ScanCommand({
+      ConsistentRead: true,
       ExclusiveStartKey: exclusiveStartKey,
       TableName: tableName
     }));
@@ -239,12 +300,84 @@ async function scanAllItems(tableName: string): Promise<Record<string, Attribute
 }
 
 export async function readCloudMediaStore(config: CloudMediaConfig): Promise<MediaStore> {
-  const items = (await scanAllItems(config.assetsTableName)).map(mediaFromItem);
+  const items = (await scanAllItems(config.assetsTableName))
+    .filter((item) => itemRecordType(item) === mediaRecordType)
+    .map(mediaFromItem);
   return {
     items,
     updatedAt: items.reduce((latest, item) => item.updatedAt > latest ? item.updatedAt : latest, ""),
     version: 1
   };
+}
+
+export async function readCloudMediaFolderStore(config: CloudMediaConfig): Promise<MediaFolderStore> {
+  const scannedItems = await scanAllItems(config.assetsTableName);
+  const folders = scannedItems
+    .filter((item) => itemRecordType(item) === mediaFolderRecordType)
+    .map(mediaFolderFromItem)
+    .filter((folder): folder is MediaFolderRecord => folder !== null)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const assignments = Object.fromEntries(
+    scannedItems
+      .filter((item) => itemRecordType(item) === mediaFolderAssignmentRecordType)
+      .map(folderAssignmentFromItem)
+      .filter((assignment): assignment is [string, string] => assignment !== null)
+  );
+  const updatedAt = [...folders.map((folder) => folder.updatedAt), ...scannedItems
+    .filter((item) => itemRecordType(item) === mediaFolderAssignmentRecordType)
+    .map((item) => stringOrDefault(item.updatedAt, ""))]
+    .reduce((latest, value) => value > latest ? value : latest, "");
+
+  return {
+    assignments,
+    items: folders,
+    updatedAt,
+    version: 1
+  };
+}
+
+export async function writeCloudMediaFolderStore(config: CloudMediaConfig, store: MediaFolderStore): Promise<void> {
+  const managedItems = (await scanAllItems(config.assetsTableName)).filter((item) =>
+    itemRecordType(item) === mediaFolderRecordType || itemRecordType(item) === mediaFolderAssignmentRecordType
+  );
+  const folderItems = store.items.map(mediaFolderToItem);
+  const assignmentItems = Object.entries(store.assignments)
+    .filter((entry): entry is [string, string] => Boolean(entry[1]))
+    .map(([mediaId, folderId]) => mediaFolderAssignmentToItem(mediaId, folderId, store.updatedAt));
+  const nextIds = new Set(
+    [...folderItems, ...assignmentItems]
+      .map((item) => stringOrNull(item.assetId))
+      .filter((assetId): assetId is string => assetId !== null)
+  );
+  const deleteManagedItems = managedItems.flatMap((item) => {
+    const assetId = stringOrNull(item.assetId);
+    if (!assetId || nextIds.has(assetId)) {
+      return [];
+    }
+
+    return [
+      dynamoDb.send(new DeleteItemCommand({
+        Key: { assetId: stringAttribute(assetId) },
+        TableName: config.assetsTableName
+      }))
+    ];
+  });
+
+  await Promise.all([
+    ...deleteManagedItems,
+    ...folderItems.map((item) =>
+      dynamoDb.send(new PutItemCommand({
+        Item: item,
+        TableName: config.assetsTableName
+      }))
+    ),
+    ...assignmentItems.map((item) =>
+      dynamoDb.send(new PutItemCommand({
+        Item: item,
+        TableName: config.assetsTableName
+      }))
+    )
+  ]);
 }
 
 export async function createCloudMediaUpload(config: CloudMediaConfig, input: CloudMediaUploadInput): Promise<MediaRecord> {
@@ -473,6 +606,21 @@ export async function deleteCloudMediaRecords(
     }
 
     deletedIds.push(id);
+  }
+
+  if (deletedIds.length > 0) {
+    const folderStore = await readCloudMediaFolderStore(config);
+    const assignments = { ...folderStore.assignments };
+    for (const id of deletedIds) {
+      delete assignments[id];
+    }
+
+    await writeCloudMediaFolderStore(config, {
+      ...folderStore,
+      assignments,
+      updatedAt: isoNow(),
+      version: folderStore.version + 1
+    });
   }
 
   return { blockedIds: blocked, deletedIds, missingIds };

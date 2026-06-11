@@ -11,11 +11,10 @@ import {
 import {
   appendActivityRecord,
   ensureLocalDataFoundation,
-  readMediaFolderStore,
   readMediaStore,
-  writeMediaFolderStore,
   writeMediaStore
 } from "../../../lib/local-data-store";
+import { readMediaFolderStore, writeMediaFolderStore } from "../../../lib/media-folder-store";
 import { sampleAssetsDirectory } from "../../../lib/local-playlist";
 import type { PlaylistAsset } from "../../../lib/local-playlist";
 import {

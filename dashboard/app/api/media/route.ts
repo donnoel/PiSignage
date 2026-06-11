@@ -16,11 +16,10 @@ import {
   ensureLocalDataFoundation,
   type MediaFolderStore,
   type MediaRecord,
-  readMediaFolderStore,
   readMediaStore,
-  writeMediaFolderStore,
   writeMediaStore
 } from "../../lib/local-data-store";
+import { readMediaFolderStore, writeMediaFolderStore } from "../../lib/media-folder-store";
 import { sampleAssetsDirectory, writeFileAtomic } from "../../lib/local-playlist";
 import type { PlaylistAsset } from "../../lib/local-playlist";
 import { readPlaylistStore } from "../../lib/playlist-store";
@@ -66,11 +65,18 @@ type BulkDeleteMediaResult = {
   missingIds: string[];
 };
 
-function mediaApiItemFromCloudRecord(item: MediaRecord, playlistAssets: PlaylistAsset[] = []): MediaApiItem {
+function mediaApiItemFromCloudRecord(
+  item: MediaRecord,
+  playlistAssets: PlaylistAsset[] = [],
+  folderStore?: MediaFolderStore
+): MediaApiItem {
+  const folderById = new Map((folderStore?.items ?? []).map((folder) => [folder.id, folder.name]));
+  const folderId = folderStore ? assignedFolderId(item.id, folderStore, folderById) : null;
+
   return {
     ...item,
-    folderId: null,
-    folderName: null,
+    folderId,
+    folderName: folderId ? folderById.get(folderId) ?? null : null,
     missingFile: false,
     origin: "media-store",
     playlistAssetIds: playlistAssets.map((asset) => asset.assetId),
@@ -366,9 +372,12 @@ async function mediaItemsWithPlaylistAssets(
   return [...storeItems, ...playlistOnlyItems];
 }
 
-async function cloudMediaItemsWithPlaylistAssets(mediaStoreItems: MediaRecord[]): Promise<MediaApiItem[]> {
+async function cloudMediaItemsWithPlaylistAssets(
+  mediaStoreItems: MediaRecord[],
+  folderStore: MediaFolderStore
+): Promise<MediaApiItem[]> {
   return Promise.all(
-    mediaStoreItems.map(async (item) => mediaApiItemFromCloudRecord(item, await playlistAssetsForMediaRecord(item)))
+    mediaStoreItems.map(async (item) => mediaApiItemFromCloudRecord(item, await playlistAssetsForMediaRecord(item), folderStore))
   );
 }
 
@@ -383,8 +392,8 @@ async function cloudPlaylistBlockedMediaIds(mediaStoreItems: MediaRecord[]): Pro
 export async function GET(request: Request) {
   const cloudConfig = cloudMediaConfig();
   if (cloudConfig) {
-    const mediaStore = await readCloudMediaStore(cloudConfig);
-    const mediaItems = await cloudMediaItemsWithPlaylistAssets(mediaStore.items);
+    const [mediaStore, folderStore] = await Promise.all([readCloudMediaStore(cloudConfig), readMediaFolderStore()]);
+    const mediaItems = await cloudMediaItemsWithPlaylistAssets(mediaStore.items, folderStore);
     const { searchParams } = new URL(request.url);
     const cursor = parsePositiveInt(searchParams.get("cursor"), 0, Number.MAX_SAFE_INTEGER);
     const limit = parsePositiveInt(searchParams.get("limit"), 50, 200);
@@ -402,6 +411,7 @@ export async function GET(request: Request) {
 
       const haystack = normalize(
         `${item.title}\n${item.description}\n${item.tags.join(" ")}\n${item.playbackFileName}\n${item.sourceFileName}\n${item.origin}`
+          + `\n${item.folderName ?? ""}`
       );
       return haystack.includes(query);
     });
@@ -412,7 +422,7 @@ export async function GET(request: Request) {
     const items = sortedItems.slice(cursor, nextCursorValue);
 
     return NextResponse.json({
-      folders: [],
+      folders: folderStore.items,
       items,
       version: mediaStore.version,
       updatedAt: mediaStore.updatedAt,
@@ -502,14 +512,31 @@ export async function POST(request: Request) {
 
     const cloudConfig = cloudMediaConfig();
     if (cloudConfig) {
+      const folderStore = await readMediaFolderStore();
+      const folderId = normalizeFolderId(formData.get("folderId"), folderStore);
       const input = await cloudUploadInputFromForm(file, formData, parseTags(formData.get("tags")));
       const item = await createCloudMediaUpload(cloudConfig, input);
+      const now = new Date().toISOString();
+      const nextFolderStore = folderId
+        ? {
+            ...folderStore,
+            assignments: {
+              ...folderStore.assignments,
+              [item.id]: folderId
+            },
+            updatedAt: now,
+            version: folderStore.version + 1
+          }
+        : folderStore;
+      if (folderId) {
+        await writeMediaFolderStore(nextFolderStore);
+      }
       if (item.status === "ready") {
-        return NextResponse.json({ item: mediaApiItemFromCloudRecord(item) }, { status: 201 });
+        return NextResponse.json({ item: mediaApiItemFromCloudRecord(item, [], nextFolderStore) }, { status: 201 });
       }
 
       const { item: preparingItem } = await startCloudMediaPreparationWorker(cloudConfig, item.id);
-      return NextResponse.json({ item: mediaApiItemFromCloudRecord(preparingItem ?? item) }, { status: 201 });
+      return NextResponse.json({ item: mediaApiItemFromCloudRecord(preparingItem ?? item, [], nextFolderStore) }, { status: 201 });
     }
 
     await ensureLocalDataFoundation();

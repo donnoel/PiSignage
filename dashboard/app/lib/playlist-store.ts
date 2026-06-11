@@ -113,6 +113,7 @@ async function scanAllItems(tableName: string): Promise<Record<string, Attribute
 
   do {
     const result = await dynamoDb.send(new ScanCommand({
+      ConsistentRead: true,
       ExclusiveStartKey: exclusiveStartKey,
       TableName: tableName
     }));
@@ -145,9 +146,19 @@ async function ensureSeedPlaylist(tableName: string, playlists: Playlist[]): Pro
 }
 
 function storeFromPlaylists(playlists: Playlist[]): PlaylistStore {
+  const sortedPlaylists = playlists.slice().sort((a, b) => {
+    if (a.playlistId === seedPlaylistId) {
+      return -1;
+    }
+    if (b.playlistId === seedPlaylistId) {
+      return 1;
+    }
+
+    return a.name.localeCompare(b.name);
+  });
   return {
-    items: playlists,
-    updatedAt: playlists.reduce((latest, playlist) => playlist.updatedAt > latest ? playlist.updatedAt : latest, ""),
+    items: sortedPlaylists,
+    updatedAt: sortedPlaylists.reduce((latest, playlist) => playlist.updatedAt > latest ? playlist.updatedAt : latest, ""),
     version: 1
   };
 }

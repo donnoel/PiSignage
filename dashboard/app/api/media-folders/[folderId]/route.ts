@@ -2,10 +2,9 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
   appendActivityRecord,
-  ensureLocalDataFoundation,
-  readMediaFolderStore,
-  writeMediaFolderStore
+  ensureLocalDataFoundation
 } from "../../../lib/local-data-store";
+import { readMediaFolderStore, writeMediaFolderStore } from "../../../lib/media-folder-store";
 
 type RouteContext = {
   params: Promise<{

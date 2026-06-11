@@ -4,11 +4,11 @@ import { NextResponse } from "next/server";
 import {
   appendActivityRecord,
   ensureLocalDataFoundation,
-  readMediaFolderStore,
-  readMediaStore,
-  writeMediaFolderStore
+  readMediaStore
 } from "../../lib/local-data-store";
-import { readPlaylistStore } from "../../lib/local-playlist";
+import { cloudMediaConfig, readCloudMediaStore } from "../../lib/cloud-media-store";
+import { readMediaFolderStore, writeMediaFolderStore } from "../../lib/media-folder-store";
+import { readPlaylistStore } from "../../lib/playlist-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,7 +26,11 @@ function normalizeFolderId(value: unknown): string | null {
 }
 
 async function knownMediaIds(): Promise<Set<string>> {
-  const [mediaStore, playlistStore] = await Promise.all([readMediaStore(), readPlaylistStore()]);
+  const cloudConfig = cloudMediaConfig();
+  const [mediaStore, playlistStore] = await Promise.all([
+    cloudConfig ? readCloudMediaStore(cloudConfig) : readMediaStore(),
+    readPlaylistStore()
+  ]);
   const ids = new Set(mediaStore.items.map((item) => item.id));
 
   for (const playlist of playlistStore.items) {
