@@ -1726,9 +1726,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   return (
     <main className="min-h-screen [overflow-x:clip] bg-[#f3f6f8] text-zinc-950">
       <DashboardAutoRefresh />
-      <div className="grid min-h-screen lg:grid-cols-[220px_minmax(0,1fr)]">
-        <aside className="border-b border-cyan-200 bg-[radial-gradient(circle_at_top_left,rgba(94,234,212,0.34),transparent_44%),linear-gradient(180deg,#e4fbf7_0%,#f1fbff_48%,#ffffff_100%)] px-5 py-5 text-slate-950 shadow-[inset_-1px_0_0_rgba(20,184,166,0.2)] lg:sticky lg:top-0 lg:h-screen lg:border-b-0 lg:border-r lg:py-6">
-          <div className="flex flex-wrap items-end justify-between gap-2 lg:block">
+      <div className="min-h-screen">
+        <aside className="border-b border-cyan-200 bg-[radial-gradient(circle_at_top_left,rgba(94,234,212,0.34),transparent_44%),linear-gradient(180deg,#e4fbf7_0%,#f1fbff_48%,#ffffff_100%)] px-5 py-5 text-slate-950 shadow-[inset_0_-1px_0_rgba(20,184,166,0.2)]">
+          <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
             <div>
               <div className="inline-flex items-center gap-3" aria-label="Beam">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-950 shadow-sm" aria-hidden="true">
@@ -1744,25 +1744,25 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 </span>
               </div>
             </div>
-          </div>
-          <nav aria-label="Dashboard views" className="mt-5 grid grid-cols-2 gap-2 text-sm font-medium text-slate-700 sm:grid-cols-3 md:flex md:flex-wrap lg:mt-8 lg:block lg:space-y-1">
-            {navigationItems.map((item) => {
-              const selected = item.view === selectedView;
+            <nav aria-label="Dashboard views" className="flex gap-2 overflow-x-auto pb-1 text-sm font-medium text-slate-700 xl:flex-wrap xl:justify-end xl:overflow-visible xl:pb-0">
+              {navigationItems.map((item) => {
+                const selected = item.view === selectedView;
 
-              return (
-              <a
-                key={item.view}
-                href={item.view === "dashboard" ? "/" : `/?view=${item.view}`}
-                aria-current={selected ? "page" : undefined}
-                className={`block whitespace-nowrap rounded-md px-3 py-2 text-center transition focus:outline-none focus:ring-2 focus:ring-teal-500 lg:text-left ${
-                  selected ? "bg-white text-teal-950 shadow-sm ring-1 ring-cyan-200" : "hover:bg-white/70 hover:text-teal-950"
-                }`}
-              >
-                {item.label}
-              </a>
-              );
-            })}
-          </nav>
+                return (
+                <a
+                  key={item.view}
+                  href={item.view === "dashboard" ? "/" : `/?view=${item.view}`}
+                  aria-current={selected ? "page" : undefined}
+                  className={`block shrink-0 whitespace-nowrap rounded-md px-3 py-2 text-center transition focus:outline-none focus:ring-2 focus:ring-teal-500 ${
+                    selected ? "bg-white text-teal-950 shadow-sm ring-1 ring-cyan-200" : "hover:bg-white/70 hover:text-teal-950"
+                  }`}
+                >
+                  {item.label}
+                </a>
+                );
+              })}
+            </nav>
+          </div>
         </aside>
 
         <div className="mx-auto w-full min-w-0 max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8">
