@@ -8,8 +8,8 @@
       "assetId": "asset-beam-ready-fallback",
       "type": "video",
       "uri": "assets/beam-ready.signage-1080p.mp4",
-      "durationSeconds": 15,
-      "altText": "Beam first-run fallback video."
+      "durationSeconds": 10.719,
+      "altText": "Beam first-run promotional fallback video."
     }
   ]
 }
