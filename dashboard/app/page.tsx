@@ -1744,7 +1744,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 </span>
               </div>
             </div>
-            <nav aria-label="Dashboard views" className="flex gap-2 overflow-x-auto pb-1 text-sm font-medium text-slate-700 xl:flex-wrap xl:justify-end xl:overflow-visible xl:pb-0">
+            <nav aria-label="Dashboard views" className="grid grid-cols-4 gap-2 text-xs font-medium text-slate-700 sm:grid-cols-7 sm:text-sm xl:flex xl:flex-wrap xl:justify-end">
               {navigationItems.map((item) => {
                 const selected = item.view === selectedView;
 
@@ -1753,7 +1753,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   key={item.view}
                   href={item.view === "dashboard" ? "/" : `/?view=${item.view}`}
                   aria-current={selected ? "page" : undefined}
-                  className={`block shrink-0 whitespace-nowrap rounded-md px-3 py-2 text-center transition focus:outline-none focus:ring-2 focus:ring-teal-500 ${
+                  className={`flex min-h-10 items-center justify-center rounded-md px-2 py-2 text-center leading-tight transition focus:outline-none focus:ring-2 focus:ring-teal-500 sm:px-3 ${
                     selected ? "bg-white text-teal-950 shadow-sm ring-1 ring-cyan-200" : "hover:bg-white/70 hover:text-teal-950"
                   }`}
                 >
