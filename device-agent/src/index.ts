@@ -322,15 +322,21 @@ async function loadPlaylist(
 }
 
 async function readPlayerStatus(): Promise<PlayerStatus | null> {
-  const statusPath =
-    process.env.PISIGNAGE_PLAYER_STATUS_PATH ??
-    path.join(os.homedir(), ".local", "state", "pisignage-vlc", "status.json");
+  const statusPaths = [
+    process.env.PISIGNAGE_PLAYER_STATUS_PATH,
+    path.join(os.homedir(), ".local", "state", "pisignage", "player-status.json"),
+    path.join(os.homedir(), ".local", "state", "pisignage-vlc", "status.json")
+  ].filter((statusPath): statusPath is string => Boolean(statusPath));
 
-  try {
-    return JSON.parse(await fs.readFile(statusPath, "utf8")) as PlayerStatus;
-  } catch {
-    return null;
+  for (const statusPath of statusPaths) {
+    try {
+      return JSON.parse(await fs.readFile(statusPath, "utf8")) as PlayerStatus;
+    } catch {
+      // Try the next known status path.
+    }
   }
+
+  return null;
 }
 
 function cloudHeartbeatConfig(): CloudHeartbeatConfig | null {
