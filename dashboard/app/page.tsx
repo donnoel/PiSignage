@@ -1977,6 +1977,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             className={selectedView === "device-health" ? "" : "hidden"}
           >
             <DeviceHealthFleetPanel
+              dashboardMode={dashboardMode}
               deviceStatuses={deviceStatuses}
               devices={inventory.devices.items}
               screens={inventory.screens.items}

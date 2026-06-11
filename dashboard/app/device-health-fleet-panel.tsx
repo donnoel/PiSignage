@@ -20,12 +20,19 @@ type DeviceRecord = {
   location: string;
   name: string;
   playlistId: string | null;
+  resetFinishedAt?: string | null;
+  resetRequestedAt?: string | null;
+  resetStartedAt?: string | null;
+  resetStatus?: "failed" | "pending" | "running" | "succeeded" | null;
+  resetStatusMessage?: string | null;
+  resetUpdatedAt?: string | null;
   screenId: string | null;
 };
 
 type Tone = "good" | "muted" | "warn";
 
 type FleetDeviceHealthPanelProps = {
+  dashboardMode: "cloud" | "local";
   deviceStatuses: Record<string, DeviceLiveStatus>;
   devices: DeviceRecord[];
   screens: ScreenRecord[];
@@ -78,6 +85,10 @@ type RowState = {
   playbackDetail: string;
   playbackTone: Tone;
   playbackLabel: string;
+  resetActive: boolean;
+  resetDetail: string;
+  resetLabel: string;
+  resetTone: Tone;
   syncDetail: string;
   syncLabel: string;
   syncTone: Tone;
@@ -301,7 +312,53 @@ function rowActionFor(input: {
   };
 }
 
+function resetStateFor(device: DeviceRecord): { active: boolean; detail: string; label: string; tone: Tone } {
+  if (device.resetStatus === "pending") {
+    return {
+      active: true,
+      detail: device.resetStatusMessage ?? "Reset is queued in Beam and will run on the next Pi check-in.",
+      label: "Reset pending",
+      tone: "warn"
+    };
+  }
+
+  if (device.resetStatus === "running") {
+    return {
+      active: true,
+      detail: device.resetStatusMessage ?? "Reset is running on the Pi.",
+      label: "Reset running",
+      tone: "warn"
+    };
+  }
+
+  if (device.resetStatus === "succeeded") {
+    return {
+      active: false,
+      detail: device.resetStatusMessage ?? "Reset completed. Device is ready to redeploy.",
+      label: "Reset complete",
+      tone: "good"
+    };
+  }
+
+  if (device.resetStatus === "failed") {
+    return {
+      active: false,
+      detail: device.resetStatusMessage ?? "Reset failed on the Pi.",
+      label: "Reset failed",
+      tone: "warn"
+    };
+  }
+
+  return {
+    active: false,
+    detail: "No reset has been requested for this Pi.",
+    label: "No reset",
+    tone: "muted"
+  };
+}
+
 export function DeviceHealthFleetPanel({
+  dashboardMode,
   deviceStatuses,
   devices,
   screens,
@@ -316,7 +373,7 @@ export function DeviceHealthFleetPanel({
   const [sortKey, setSortKey] = useState<SortKey>("screen");
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(devices[0]?.id ?? null);
   const [message, setMessage] = useState("");
-  const [busyAction, setBusyAction] = useState<"publish" | "reboot" | "recover" | "refresh" | "restart" | null>(null);
+  const [busyAction, setBusyAction] = useState<"publish" | "reboot" | "recover" | "refresh" | "reset" | "restart" | null>(null);
   const [rebootWatch, setRebootWatch] = useState<{
     baselineStatusUpdatedAt: string | null;
     deviceId: string;
@@ -464,6 +521,7 @@ export function DeviceHealthFleetPanel({
           syncLabel,
           syncTone
         });
+        const resetState = resetStateFor(device);
 
         return {
           device,
@@ -486,6 +544,10 @@ export function DeviceHealthFleetPanel({
           playbackDetail,
           playbackLabel,
           playbackTone,
+          resetActive: resetState.active,
+          resetDetail: resetState.detail,
+          resetLabel: resetState.label,
+          resetTone: resetState.tone,
           syncDetail,
           syncLabel,
           syncTone,
@@ -632,15 +694,28 @@ export function DeviceHealthFleetPanel({
     return result;
   }
 
-  async function runAction(action: "publish" | "reboot" | "recover" | "restart", row: RowState) {
-    if (!row.isLive || isBusy) {
+  async function runAction(action: "publish" | "reboot" | "recover" | "reset" | "restart", row: RowState) {
+    if ((action !== "reset" && !row.isLive) || isBusy || (action === "reset" && row.resetActive)) {
       return;
     }
 
+    const targetName = row.linkedScreen?.name ?? row.device.name;
     if (
       action === "reboot" &&
       !window.confirm(
-        `Reboot ${row.linkedScreen?.name ?? row.device.name} Pi?\n\nPlayback will stop while the Pi restarts. Beam will wait for a fresh check-in after reboot.`
+        `Reboot ${targetName} Pi?\n\nPlayback will stop while the Pi restarts. Beam will wait for a fresh check-in after reboot.`
+      )
+    ) {
+      return;
+    }
+    if (action === "reset" && dashboardMode !== "cloud") {
+      setMessage("Remote Pi reset is available from the AWS dashboard after the device-agent is installed.");
+      return;
+    }
+    if (
+      action === "reset" &&
+      !window.confirm(
+        `Reset ${targetName} Pi for deployment?\n\nBeam will queue this in AWS. The Pi will run it on its next cloud check-in, restore the Beam first-run playlist, remove stale published media and schedules, clear runtime status/cache, reinstall managed services, and unassign this device/screen in Beam. Network, SSH, hostname, and device identity are preserved.`
       )
     ) {
       return;
@@ -649,26 +724,35 @@ export function DeviceHealthFleetPanel({
     setBusyAction(action);
     setMessage(
       action === "publish"
-        ? `Retrying playlist update for ${row.linkedScreen?.name ?? row.device.name}...`
+        ? `Retrying playlist update for ${targetName}...`
         : action === "restart"
-          ? `Restarting playback for ${row.linkedScreen?.name ?? row.device.name}...`
+          ? `Restarting playback for ${targetName}...`
           : action === "reboot"
-            ? `Requesting reboot for ${row.linkedScreen?.name ?? row.device.name}...`
-            : `Running full recovery for ${row.linkedScreen?.name ?? row.device.name}...`
+            ? `Requesting reboot for ${targetName}...`
+            : action === "reset"
+              ? `Queueing reset for ${targetName}...`
+              : `Running full recovery for ${targetName}...`
     );
     try {
       const result =
         action === "publish"
-            ? await postJson("/api/local-playlist/publish", {
+          ? await postJson("/api/local-playlist/publish", {
               deviceId: row.device.id,
               playlistId: row.linkedScreen?.playlistId ?? row.device.playlistId ?? undefined,
               screenId: row.linkedScreen?.id ?? undefined
             })
-          : await postJson("/api/local-player/actions", {
-              action: action === "restart" ? "restart-vlc" : action === "reboot" ? "reboot-pi" : "recover",
-              deviceId: row.device.id,
-              screenId: row.linkedScreen?.id ?? undefined
-            });
+          : action === "reset"
+            ? await postJson(`/api/cloud/devices/${encodeURIComponent(row.device.id)}/reset`)
+            : await postJson("/api/local-player/actions", {
+                action:
+                  action === "restart"
+                    ? "restart-vlc"
+                    : action === "reboot"
+                      ? "reboot-pi"
+                      : "recover",
+                deviceId: row.device.id,
+                screenId: row.linkedScreen?.id ?? undefined
+              });
       const publishMessage = result.piPublish?.message ? ` ${result.piPublish.message}` : "";
       if (action === "reboot") {
         setRebootWatch({
@@ -971,6 +1055,15 @@ export function DeviceHealthFleetPanel({
                     Last check-in: <span className="font-semibold text-zinc-900">{selectedRow.lastSeenAge}</span>
                   </div>
                 </div>
+                {selectedRow.resetLabel !== "No reset" ? (
+                  <div className="mt-3 flex flex-col gap-2 rounded-md border border-zinc-200 bg-white p-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-zinc-950">Remote reset</p>
+                      <p className="mt-1 text-sm text-zinc-600">{selectedRow.resetDetail}</p>
+                    </div>
+                    <StatusPill label={selectedRow.resetLabel} tone={selectedRow.resetTone} />
+                  </div>
+                ) : null}
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -1031,6 +1124,18 @@ export function DeviceHealthFleetPanel({
                     className="min-h-10 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {busyAction === "reboot" ? "Rebooting..." : "Reboot Pi"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isBusy || selectedRow.resetActive}
+                    onClick={() => void runAction("reset", selectedRow)}
+                    className="min-h-10 rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-800 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busyAction === "reset"
+                      ? "Queueing reset..."
+                      : selectedRow.resetActive
+                        ? selectedRow.resetLabel
+                        : "Reset for deployment"}
                   </button>
                 </div>
                 {rebootWatchApplies ? (

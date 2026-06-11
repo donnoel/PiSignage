@@ -2,7 +2,7 @@ import path from "node:path";
 import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { NextResponse } from "next/server";
-import { readInventory } from "../../../../../lib/inventory-store";
+import { readInventory, resetCommandForDevice } from "../../../../../lib/inventory-store";
 import type { PlaylistAsset } from "../../../../../lib/local-playlist";
 import { readPlaylistStore, selectPlaylist } from "../../../../../lib/playlist-store";
 
@@ -56,7 +56,7 @@ async function signedAsset(asset: PlaylistAsset): Promise<DevicePlaylistAsset> {
   };
 }
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   const { deviceId } = await context.params;
   const [inventory, playlistStore] = await Promise.all([
     readInventory("playlist-main-playlist"),
@@ -70,15 +70,41 @@ export async function GET(_request: Request, context: RouteContext) {
   const screen = inventory.screens.items.find((candidate) =>
     candidate.deviceId === device.id || candidate.id === device.screenId
   );
+  const resetStatusUrl = new URL(`/api/cloud/devices/${encodeURIComponent(deviceId)}/reset-result`, request.url).toString();
+  const command = resetCommandForDevice(device, resetStatusUrl);
   const publishedPlaylistId = screen?.publishedPlaylistId ?? device.publishedPlaylistId ?? null;
   const publishedPlaylistVersion = screen?.publishedPlaylistVersion ?? device.publishedPlaylistVersion ?? null;
   const playlistId = publishedPlaylistId;
   if (!playlistId) {
+    if (command) {
+      return NextResponse.json({
+        command,
+        deviceId,
+        playlist: null,
+        serverTime: new Date().toISOString()
+      });
+    }
+
     return NextResponse.json({ error: "No playlist has been manually published to this device." }, { status: 404 });
   }
 
   const playlist = selectPlaylist(playlistStore, playlistId);
   if (typeof publishedPlaylistVersion === "number" && playlist.version !== publishedPlaylistVersion) {
+    if (command) {
+      return NextResponse.json({
+        command,
+        deviceId,
+        playlist: null,
+        playlistError: {
+          error: "A newer playlist draft exists, but it has not been manually published to this device.",
+          publishedPlaylistId: playlistId,
+          publishedPlaylistVersion,
+          savedPlaylistVersion: playlist.version
+        },
+        serverTime: new Date().toISOString()
+      });
+    }
+
     return NextResponse.json(
       {
         error: "A newer playlist draft exists, but it has not been manually published to this device.",
@@ -92,6 +118,7 @@ export async function GET(_request: Request, context: RouteContext) {
   const assets = await Promise.all(playlist.assets.map(signedAsset));
 
   return NextResponse.json({
+    command,
     deviceId,
     playlist: {
       ...playlist,

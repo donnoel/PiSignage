@@ -7,7 +7,7 @@ import {
   TransactWriteItemsCommand
 } from "@aws-sdk/client-dynamodb";
 import type { AttributeValue } from "@aws-sdk/client-dynamodb";
-import type { DeviceRecord, DeviceStore, ScreenRecord, ScreenStore } from "./local-data-store";
+import type { DeviceRecord, DeviceResetStatus, DeviceStore, ScreenRecord, ScreenStore } from "./local-data-store";
 import {
   createDevice,
   createScreen,
@@ -60,6 +60,14 @@ type InventoryUpdateInput = {
 export type InventoryPublishTarget = {
   device: DeviceRecord | null;
   screen: ScreenRecord | null;
+};
+
+export type DeviceResetCommand = {
+  id: string;
+  requestedAt: string;
+  status: "pending" | "running";
+  statusUrl?: string;
+  type: "reset-device";
 };
 
 const dynamoDb = new DynamoDBClient({});
@@ -123,6 +131,13 @@ function numberOrNullAttribute(value: AttributeValue | undefined): number | null
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function resetStatusOrNull(value: AttributeValue | undefined): DeviceResetStatus | null {
+  const status = stringOrNullAttribute(value);
+  return status === "failed" || status === "pending" || status === "running" || status === "succeeded"
+    ? status
+    : null;
+}
+
 function nullableNumber(value: number | undefined | null): AttributeValue {
   return typeof value === "number" && Number.isFinite(value) ? numberAttribute(value) : { NULL: true };
 }
@@ -158,6 +173,13 @@ function deviceToItem(device: DeviceRecord): Record<string, AttributeValue> {
     publishedAt: nullableString(device.publishedAt),
     publishedPlaylistId: nullableString(device.publishedPlaylistId),
     publishedPlaylistVersion: nullableNumber(device.publishedPlaylistVersion),
+    resetCommandId: nullableString(device.resetCommandId),
+    resetFinishedAt: nullableString(device.resetFinishedAt),
+    resetRequestedAt: nullableString(device.resetRequestedAt),
+    resetStartedAt: nullableString(device.resetStartedAt),
+    resetStatus: nullableString(device.resetStatus),
+    resetStatusMessage: nullableString(device.resetStatusMessage),
+    resetUpdatedAt: nullableString(device.resetUpdatedAt),
     rootPath: stringAttribute(device.rootPath),
     screenId: nullableString(device.screenId),
     sshUser: stringAttribute(device.sshUser),
@@ -196,6 +218,13 @@ function deviceFromItem(item: Record<string, AttributeValue>): DeviceRecord {
     publishedAt: stringOrNullAttribute(item.publishedAt),
     publishedPlaylistId: stringOrNullAttribute(item.publishedPlaylistId),
     publishedPlaylistVersion: numberOrNullAttribute(item.publishedPlaylistVersion),
+    resetCommandId: stringOrNullAttribute(item.resetCommandId),
+    resetFinishedAt: stringOrNullAttribute(item.resetFinishedAt),
+    resetRequestedAt: stringOrNullAttribute(item.resetRequestedAt),
+    resetStartedAt: stringOrNullAttribute(item.resetStartedAt),
+    resetStatus: resetStatusOrNull(item.resetStatus),
+    resetStatusMessage: stringOrNullAttribute(item.resetStatusMessage),
+    resetUpdatedAt: stringOrNullAttribute(item.resetUpdatedAt),
     rootPath: stringAttributeOrDefault(item.rootPath, "~"),
     screenId: stringOrNullAttribute(item.screenId),
     sshUser: stringAttributeOrDefault(item.sshUser, "donnoel"),
@@ -570,6 +599,135 @@ export async function markCloudPlaylistPublished(input: {
   );
 
   return targets;
+}
+
+export function resetCommandForDevice(device: DeviceRecord, statusUrl?: string): DeviceResetCommand | null {
+  if (
+    !device.resetCommandId ||
+    !device.resetRequestedAt ||
+    (device.resetStatus !== "pending" && device.resetStatus !== "running")
+  ) {
+    return null;
+  }
+
+  return {
+    id: device.resetCommandId,
+    requestedAt: device.resetRequestedAt,
+    status: device.resetStatus,
+    statusUrl,
+    type: "reset-device"
+  };
+}
+
+export async function requestDeviceReset(deviceId: string): Promise<DeviceRecord> {
+  const config = cloudInventoryConfig();
+  if (!config) {
+    throw new Error("Cloud inventory is required for remote Pi reset.");
+  }
+
+  const inventory = await readCloudInventory(config);
+  const device = inventory.devices.items.find((item) => item.id === deviceId);
+  if (!device) {
+    throw new Error("Device was not found.");
+  }
+
+  const timestamp = isoNow();
+  const nextDevice: DeviceRecord = {
+    ...device,
+    resetCommandId: randomUUID(),
+    resetFinishedAt: null,
+    resetRequestedAt: timestamp,
+    resetStartedAt: null,
+    resetStatus: "pending",
+    resetStatusMessage: "Reset is queued. The Pi will run it on its next cloud check-in.",
+    resetUpdatedAt: timestamp,
+    updatedAt: timestamp
+  };
+
+  await dynamoDb.send(new PutItemCommand({
+    Item: deviceToItem(nextDevice),
+    TableName: config.devicesTableName
+  }));
+
+  return nextDevice;
+}
+
+export async function updateDeviceResetStatus(input: {
+  commandId: string;
+  deviceId: string;
+  finishedAt?: string | null;
+  message?: string | null;
+  startedAt?: string | null;
+  status: DeviceResetStatus;
+}): Promise<DeviceRecord> {
+  const config = cloudInventoryConfig();
+  if (!config) {
+    throw new Error("Cloud inventory is required for remote Pi reset.");
+  }
+
+  const inventory = await readCloudInventory(config);
+  const device = inventory.devices.items.find((item) => item.id === input.deviceId);
+  if (!device) {
+    throw new Error("Device was not found.");
+  }
+  if (device.resetCommandId !== input.commandId) {
+    throw new Error("Reset command does not match the current pending command.");
+  }
+
+  const timestamp = isoNow();
+  const linkedScreen = inventory.screens.items.find((screen) =>
+    screen.deviceId === device.id || screen.id === device.screenId
+  ) ?? null;
+  const resetSucceeded = input.status === "succeeded";
+  const nextDevice: DeviceRecord = {
+    ...device,
+    playlistId: resetSucceeded ? null : device.playlistId,
+    publishedAt: resetSucceeded ? null : device.publishedAt,
+    publishedPlaylistId: resetSucceeded ? null : device.publishedPlaylistId,
+    publishedPlaylistVersion: resetSucceeded ? null : device.publishedPlaylistVersion,
+    resetFinishedAt: input.finishedAt ?? (resetSucceeded || input.status === "failed" ? timestamp : null),
+    resetStartedAt: input.startedAt ?? device.resetStartedAt ?? (input.status === "running" ? timestamp : null),
+    resetStatus: input.status,
+    resetStatusMessage: input.message?.trim() || (
+      input.status === "running"
+        ? "Reset is running on the Pi."
+        : input.status === "succeeded"
+          ? "Reset completed. Device is ready to redeploy."
+          : input.status === "failed"
+            ? "Reset failed on the Pi."
+            : "Reset is queued."
+    ),
+    resetUpdatedAt: timestamp,
+    screenId: resetSucceeded ? null : device.screenId,
+    updatedAt: timestamp
+  };
+
+  const writes: Promise<unknown>[] = [
+    dynamoDb.send(new PutItemCommand({
+      Item: deviceToItem(nextDevice),
+      TableName: config.devicesTableName
+    }))
+  ];
+
+  if (resetSucceeded && linkedScreen) {
+    writes.push(
+      dynamoDb.send(new PutItemCommand({
+        Item: screenToItem({
+          ...linkedScreen,
+          deviceId: null,
+          playlistId: null,
+          publishedAt: null,
+          publishedPlaylistId: null,
+          publishedPlaylistVersion: null,
+          updatedAt: timestamp
+        }),
+        TableName: config.screensTableName
+      }))
+    );
+  }
+
+  await Promise.all(writes);
+  return nextDevice;
 }
 
 export async function createInventoryScreen(input: CreateScreenInput): Promise<void> {

@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 
 type PlaylistAsset = {
   assetId: string;
@@ -47,11 +49,23 @@ type CloudHeartbeatConfig = {
 };
 
 type CloudPlaylistResponse = {
-  playlist?: Playlist;
+  command?: DeviceCommand | null;
+  playlist?: Playlist | null;
 };
+
+type DeviceCommand = {
+  id: string;
+  requestedAt: string;
+  status: "pending" | "running";
+  statusUrl?: string;
+  type: "reset-device";
+};
+
+type ResetStatus = "failed" | "running" | "succeeded";
 
 const appVersion = "0.1.0";
 const currentPlaylistFileName = "current.json";
+const execFileAsync = promisify(execFile);
 let stopping = false;
 
 function repoRoot(): string {
@@ -132,6 +146,11 @@ function playlistCachePath(cacheDirectory: string, playlistId: string): string {
 
 function currentPlaylistCachePath(cacheDirectory: string): string {
   return path.join(cacheDirectory, "playlists", currentPlaylistFileName);
+}
+
+function commandStatusPath(cacheDirectory: string, commandId: string): string {
+  const safeCommandId = commandId.replace(/[^A-Za-z0-9_.-]/g, "_");
+  return path.join(cacheDirectory, "commands", `${safeCommandId}.json`);
 }
 
 function localIpAddress(): string | null {
@@ -271,6 +290,126 @@ async function downloadCloudAsset(cacheDirectory: string, asset: PlaylistAsset):
   };
 }
 
+function resetScriptPath(root: string): string {
+  return process.env.PISIGNAGE_RESET_SCRIPT_PATH?.trim() || path.join(root, "device", "pi", "bin", "pisignage-reset-device.sh");
+}
+
+function summarizeOutput(stdout: string | undefined, stderr: string | undefined): string {
+  const lines = `${stdout ?? ""}\n${stderr ?? ""}`
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return lines.slice(-12).join(" ") || "No reset output was returned.";
+}
+
+async function postResetStatus(
+  command: DeviceCommand,
+  status: ResetStatus,
+  input: {
+    finishedAt?: string;
+    message: string;
+    startedAt: string;
+  }
+): Promise<void> {
+  if (!command.statusUrl) {
+    log("error", "cloud.command.status_url.missing", {
+      commandId: command.id,
+      status
+    });
+    return;
+  }
+
+  const response = await fetch(command.statusUrl, {
+    body: JSON.stringify({
+      commandId: command.id,
+      finishedAt: input.finishedAt,
+      message: input.message,
+      startedAt: input.startedAt,
+      status
+    }),
+    headers: {
+      "content-type": "application/json"
+    },
+    method: "POST"
+  });
+
+  if (!response.ok) {
+    throw new Error(`Reset status returned ${response.status}.`);
+  }
+}
+
+async function runResetCommand(root: string, cacheDirectory: string, command: DeviceCommand): Promise<void> {
+  const startedAt = new Date().toISOString();
+  const commandPath = commandStatusPath(cacheDirectory, command.id);
+  await writeJsonAtomic(commandPath, {
+    commandId: command.id,
+    requestedAt: command.requestedAt,
+    startedAt,
+    status: "running",
+    type: command.type
+  });
+  await postResetStatus(command, "running", {
+    message: "Reset is running on the Pi.",
+    startedAt
+  });
+
+  const scriptPath = resetScriptPath(root);
+  log("info", "cloud.command.reset.start", {
+    commandId: command.id,
+    scriptPath
+  });
+
+  try {
+    const result = await execFileAsync(
+      scriptPath,
+      ["--repo-root", root, "--source", "git-head", "--agent-safe", "--apply"],
+      {
+        maxBuffer: 1024 * 1024,
+        timeout: 5 * 60_000
+      }
+    );
+    const finishedAt = new Date().toISOString();
+    const message = summarizeOutput(result.stdout, result.stderr);
+    await writeJsonAtomic(commandPath, {
+      commandId: command.id,
+      finishedAt,
+      message,
+      requestedAt: command.requestedAt,
+      startedAt,
+      status: "succeeded",
+      type: command.type
+    });
+    await postResetStatus(command, "succeeded", {
+      finishedAt,
+      message,
+      startedAt
+    });
+    log("info", "cloud.command.reset.complete", {
+      commandId: command.id
+    });
+  } catch (error) {
+    const finishedAt = new Date().toISOString();
+    const execError = error as Error & { stderr?: string; stdout?: string };
+    const output = summarizeOutput(execError.stdout, execError.stderr);
+    const message = `${execError.message}${output ? ` ${output}` : ""}`;
+    await writeJsonAtomic(commandPath, {
+      commandId: command.id,
+      finishedAt,
+      message,
+      requestedAt: command.requestedAt,
+      startedAt,
+      status: "failed",
+      type: command.type
+    });
+    await postResetStatus(command, "failed", {
+      finishedAt,
+      message,
+      startedAt
+    });
+    throw error;
+  }
+}
+
 async function fetchCloudPlaylist(cacheDirectory: string): Promise<{
   playlist: Playlist;
   source: "cloud";
@@ -286,6 +425,10 @@ async function fetchCloudPlaylist(cacheDirectory: string): Promise<{
   }
 
   const body = (await response.json()) as CloudPlaylistResponse;
+  if (body.command?.type === "reset-device" && body.command.status === "pending") {
+    await runResetCommand(repoRoot(), cacheDirectory, body.command);
+  }
+
   if (!body.playlist) {
     throw new Error("Cloud playlist response did not include a playlist.");
   }
