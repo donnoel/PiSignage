@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 type PlaylistAsset = {
@@ -26,7 +27,18 @@ type Heartbeat = {
   currentPlaylistId: string;
   currentAssetId: string | null;
   diskFreeBytes: number | null;
+  hostname: string | null;
+  localIpAddress: string | null;
   networkOnline: boolean;
+  playbackState: string | null;
+  playlistVersion: number | null;
+};
+
+type PlayerStatus = {
+  currentAssetId?: string | null;
+  playlistId?: string;
+  playlistVersion?: number;
+  state?: string;
 };
 
 type CloudHeartbeatConfig = {
@@ -120,6 +132,18 @@ function playlistCachePath(cacheDirectory: string, playlistId: string): string {
 
 function currentPlaylistCachePath(cacheDirectory: string): string {
   return path.join(cacheDirectory, "playlists", currentPlaylistFileName);
+}
+
+function localIpAddress(): string | null {
+  for (const addresses of Object.values(os.networkInterfaces())) {
+    for (const address of addresses ?? []) {
+      if (address.family === "IPv4" && !address.internal) {
+        return address.address;
+      }
+    }
+  }
+
+  return null;
 }
 
 async function cachePlaylist(cacheDirectory: string, playlist: Playlist): Promise<void> {
@@ -297,6 +321,18 @@ async function loadPlaylist(
   return loadPlaylistWithCache(playlistPath, cacheDirectory);
 }
 
+async function readPlayerStatus(): Promise<PlayerStatus | null> {
+  const statusPath =
+    process.env.PISIGNAGE_PLAYER_STATUS_PATH ??
+    path.join(os.homedir(), ".local", "state", "pisignage-vlc", "status.json");
+
+  try {
+    return JSON.parse(await fs.readFile(statusPath, "utf8")) as PlayerStatus;
+  } catch {
+    return null;
+  }
+}
+
 function cloudHeartbeatConfig(): CloudHeartbeatConfig | null {
   const baseUrl = process.env.PISIGNAGE_CLOUD_API_URL?.trim().replace(/\/+$/, "");
   const apiKey = process.env.PISIGNAGE_CLOUD_API_KEY?.trim();
@@ -371,16 +407,21 @@ async function runHeartbeatOnce(): Promise<void> {
     source,
     cacheDirectory
   });
-  const firstAsset = playlist.assets[0] ?? null;
+  const playerStatus = await readPlayerStatus();
+  const currentAssetId = playerStatus?.currentAssetId ?? playlist.assets[0]?.assetId ?? null;
 
   const heartbeat: Heartbeat = {
     deviceId,
     timestamp: new Date().toISOString(),
     appVersion,
-    currentPlaylistId: playlist.playlistId,
-    currentAssetId: firstAsset?.assetId ?? null,
+    currentPlaylistId: playerStatus?.playlistId ?? playlist.playlistId,
+    currentAssetId,
     diskFreeBytes: await diskFreeBytes(root),
-    networkOnline
+    hostname: os.hostname() || null,
+    localIpAddress: localIpAddress(),
+    networkOnline,
+    playbackState: playerStatus?.state ?? null,
+    playlistVersion: playerStatus?.playlistVersion ?? playlist.version ?? null
   };
 
   await writeJsonAtomic(heartbeatPath, heartbeat);

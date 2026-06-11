@@ -3,7 +3,7 @@ import { Socket } from "node:net";
 import { DashboardAutoRefresh } from "./dashboard-auto-refresh";
 import { Metric, StatusPill } from "./dashboard-ui";
 import { DeviceHealthFleetPanel } from "./device-health-fleet-panel";
-import { readCloudHeartbeat } from "./lib/cloud-heartbeat";
+import { readCloudHeartbeat, readCloudHeartbeats } from "./lib/cloud-heartbeat";
 import type { CloudHeartbeatState } from "./lib/cloud-heartbeat";
 import { ensureLocalDataFoundation } from "./lib/local-data-store";
 import type { DeviceRecord, DeviceStore, ScreenRecord, ScreenStore } from "./lib/local-data-store";
@@ -86,6 +86,7 @@ type LastKnownPlayback = {
 
 type DashboardState = {
   cloudHeartbeat: CloudHeartbeatState;
+  cloudHeartbeats: Record<string, CloudHeartbeatState>;
   deviceStatuses: Record<string, DeviceLiveStatus>;
   heartbeat: Heartbeat | null;
   inventory: {
@@ -809,25 +810,26 @@ async function loadPiProbe(config: PiConfig | null): Promise<PiProbe> {
   }
 }
 
-function cloudDeviceStatus(device: DeviceRecord, cloudHeartbeat: CloudHeartbeatState): DeviceLiveStatus | null {
-  const heartbeat = cloudHeartbeat.heartbeat;
-  if (!cloudHeartbeat.ok || !heartbeat || heartbeat.deviceId !== device.id) {
+function cloudDeviceStatus(device: DeviceRecord, cloudHeartbeat: CloudHeartbeatState | undefined): DeviceLiveStatus | null {
+  const heartbeat = cloudHeartbeat?.heartbeat;
+  if (!cloudHeartbeat?.ok || !heartbeat || heartbeat.deviceId !== device.id) {
     return null;
   }
 
   const timestamp = heartbeat.receivedAt ?? heartbeat.timestamp ?? undefined;
   const ageMs = statusAgeMs(timestamp);
   const fresh = ageMs !== null && ageMs <= staleHeartbeatThresholdMs;
-  const state = heartbeat.currentAssetId ? "playing" : "unknown";
+  const state = heartbeat.playbackState ?? (heartbeat.currentAssetId ? "playing" : "unknown");
   const playbackHealthy = fresh && state === "playing";
 
   return {
     ageLabel: formatStatusAge(timestamp),
-    host: device.host,
+    host: heartbeat.localIpAddress ?? device.host,
     playbackHealthy,
     playbackLabel: playbackHealthy ? "Playing" : fresh ? "Cloud heartbeat" : "Stale",
     playerStatus: {
       playlistId: heartbeat.currentPlaylistId ?? undefined,
+      playlistVersion: heartbeat.playlistVersion ?? undefined,
       state,
       updatedAt: timestamp
     },
@@ -839,11 +841,11 @@ function cloudDeviceStatus(device: DeviceRecord, cloudHeartbeat: CloudHeartbeatS
 
 async function loadDeviceStatuses(
   inventory: DashboardState["inventory"],
-  cloudHeartbeat: CloudHeartbeatState
+  cloudHeartbeats: Record<string, CloudHeartbeatState>
 ): Promise<Record<string, DeviceLiveStatus>> {
   const entries = await Promise.all(
     inventory.devices.items.map(async (device) => {
-      const cloudStatus = cloudDeviceStatus(device, cloudHeartbeat);
+      const cloudStatus = cloudDeviceStatus(device, cloudHeartbeats[device.id]);
       if (cloudStatus) {
         return [device.id, cloudStatus] as const;
       }
@@ -904,13 +906,16 @@ async function loadDashboardState(selectedPlaylistId?: string | null): Promise<D
     readInventory(seedPlaylistId),
     readJsonFile<PublishStatus>(publishStatusPath())
   ]);
-  const cloudHeartbeat = await readCloudHeartbeat();
+  const [cloudHeartbeat, cloudHeartbeats] = await Promise.all([
+    readCloudHeartbeat(),
+    readCloudHeartbeats(inventory.devices.items.map((device) => device.id))
+  ]);
   const primaryPiConfig = piConfigFromInventory(inventory, playlist.playlistId);
   const pi = loadCachedPiProbe(primaryPiConfig);
-  const deviceStatuses = await loadDeviceStatuses(inventory, cloudHeartbeat);
+  const deviceStatuses = await loadDeviceStatuses(inventory, cloudHeartbeats);
   const lastKnownPlayback = await resolveLastKnownPlayback(pi);
 
-  return { cloudHeartbeat, deviceStatuses, heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi };
+  return { cloudHeartbeat, cloudHeartbeats, deviceStatuses, heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi };
 }
 
 function syncState(localVersion: number, piVersion: number | undefined, piReachable: boolean): PlaylistSyncState {

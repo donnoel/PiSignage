@@ -80,15 +80,22 @@ function heartbeatFromItem(item) {
     currentPlaylistId: stringOrNullAttribute(item.currentPlaylistId),
     currentAssetId: stringOrNullAttribute(item.currentAssetId),
     diskFreeBytes: numberOrNull(item.diskFreeBytes),
+    hostname: stringOrNullAttribute(item.hostname),
+    localIpAddress: stringOrNullAttribute(item.localIpAddress),
     networkOnline: item.networkOnline?.BOOL ?? false,
+    playbackState: stringOrNullAttribute(item.playbackState),
+    playlistVersion: numberOrNull(item.playlistVersion),
     receivedAt: stringOrNullAttribute(item.receivedAt)
   };
 }
 
-async function registerDeviceIfMissing(deviceId, receivedAt) {
+async function registerDeviceIfMissing(deviceId, receivedAt, heartbeat) {
   if (!devicesTableName) {
     return false;
   }
+
+  const reportedHost = stringOrNull(heartbeat.localIpAddress) ?? "Not configured";
+  const reportedHostname = stringOrNull(heartbeat.hostname);
 
   try {
     await dynamoDb.send(new PutItemCommand({
@@ -98,10 +105,10 @@ async function registerDeviceIfMissing(deviceId, receivedAt) {
         accountId: { S: defaultAccountId },
         deviceId: { S: deviceId },
         group: { S: "Unassigned" },
-        host: { S: "Not configured" },
+        host: { S: reportedHost },
         id: { S: deviceId },
         location: { S: "Unassigned" },
-        name: { S: `Unassigned Pi ${deviceId}` },
+        name: { S: reportedHostname ? `Unassigned Pi ${reportedHostname}` : `Unassigned Pi ${deviceId}` },
         notes: { S: "Registered automatically from a device heartbeat." },
         playerType: { S: "vlc" },
         playlistId: { NULL: true },
@@ -150,6 +157,18 @@ function validateHeartbeat(body, pathDeviceId) {
   }
   if (typeof body.networkOnline !== "boolean") {
     return "Heartbeat networkOnline must be a boolean.";
+  }
+  if (body.hostname !== undefined && !nullableString(body.hostname)) {
+    return "Heartbeat hostname must be a string or null.";
+  }
+  if (body.localIpAddress !== undefined && !nullableString(body.localIpAddress)) {
+    return "Heartbeat localIpAddress must be a string or null.";
+  }
+  if (body.playbackState !== undefined && !nullableString(body.playbackState)) {
+    return "Heartbeat playbackState must be a string or null.";
+  }
+  if (body.playlistVersion !== undefined && !nullableNumber(body.playlistVersion)) {
+    return "Heartbeat playlistVersion must be a number or null.";
   }
 
   return null;
@@ -211,7 +230,11 @@ export async function handler(event, context) {
     currentPlaylistId: { S: body.currentPlaylistId },
     currentAssetId: body.currentAssetId === null ? { NULL: true } : { S: body.currentAssetId },
     diskFreeBytes: body.diskFreeBytes === null ? { NULL: true } : { N: String(body.diskFreeBytes) },
+    hostname: body.hostname === null || body.hostname === undefined ? { NULL: true } : { S: body.hostname },
+    localIpAddress: body.localIpAddress === null || body.localIpAddress === undefined ? { NULL: true } : { S: body.localIpAddress },
     networkOnline: { BOOL: body.networkOnline },
+    playbackState: body.playbackState === null || body.playbackState === undefined ? { NULL: true } : { S: body.playbackState },
+    playlistVersion: body.playlistVersion === null || body.playlistVersion === undefined ? { NULL: true } : { N: String(body.playlistVersion) },
     receivedAt: { S: receivedAt }
   };
 
@@ -219,7 +242,7 @@ export async function handler(event, context) {
     TableName: heartbeatTableName,
     Item: item
   }));
-  const registeredDevice = await registerDeviceIfMissing(body.deviceId, receivedAt);
+  const registeredDevice = await registerDeviceIfMissing(body.deviceId, receivedAt, body);
 
   return jsonResponse(202, {
     accepted: true,

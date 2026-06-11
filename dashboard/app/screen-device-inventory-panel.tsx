@@ -894,7 +894,8 @@ export function ScreenDeviceInventoryPanel({
       return;
     }
 
-    const savedHost = hasLocalAddress(device) ? device.host : "";
+    const reportedHost = statusFor(device)?.host;
+    const savedHost = hasLocalAddress(device) ? device.host : reportedHost ?? "";
     const nextHost = window.prompt("Pi local address or IP", savedHost)?.trim();
     if (!nextHost) {
       setMessage("Pi address is required to link this check-in.");
@@ -1209,7 +1210,7 @@ export function ScreenDeviceInventoryPanel({
                       {linkedScreen?.name ?? (unlinkedDevices.some((item) => item.id === device.id) ? "No screen linked" : "Linked")}
                     </td>
                     <td className="px-4 py-3">
-                      <p className="break-words text-zinc-700">{device.host}</p>
+                      <p className="break-words text-zinc-700">{statusFor(device)?.host ?? device.host}</p>
                     </td>
                     <td className="px-4 py-3 text-zinc-700">{playlistName(device.playlistId)}</td>
                     <td className="px-4 py-3">

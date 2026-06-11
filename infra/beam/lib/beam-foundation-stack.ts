@@ -161,7 +161,7 @@ export class BeamFoundationStack extends Stack {
       assumedBy: new iam.ServicePrincipal("tasks.apprunner.amazonaws.com")
     });
     dashboardInstanceRole.addToPolicy(new iam.PolicyStatement({
-      actions: ["dynamodb:DescribeTable", "dynamodb:GetItem"],
+      actions: ["dynamodb:BatchGetItem", "dynamodb:DescribeTable", "dynamodb:GetItem"],
       resources: [heartbeatsTable.tableArn]
     }));
     dashboardInstanceRole.addToPolicy(new iam.PolicyStatement({
