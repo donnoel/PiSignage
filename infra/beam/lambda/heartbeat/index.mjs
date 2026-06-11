@@ -1,6 +1,7 @@
 import { DynamoDBClient, GetItemCommand, PutItemCommand } from "@aws-sdk/client-dynamodb";
 
 const dynamoDb = new DynamoDBClient({});
+const devicesTableName = process.env.DEVICES_TABLE_NAME;
 const heartbeatTableName = process.env.HEARTBEATS_TABLE_NAME;
 const defaultAccountId = process.env.DEFAULT_ACCOUNT_ID ?? "beam-dev";
 const nextHeartbeatInSeconds = Number.parseInt(process.env.NEXT_HEARTBEAT_IN_SECONDS ?? "60", 10);
@@ -82,6 +83,45 @@ function heartbeatFromItem(item) {
     networkOnline: item.networkOnline?.BOOL ?? false,
     receivedAt: stringOrNullAttribute(item.receivedAt)
   };
+}
+
+async function registerDeviceIfMissing(deviceId, receivedAt) {
+  if (!devicesTableName) {
+    return false;
+  }
+
+  try {
+    await dynamoDb.send(new PutItemCommand({
+      ConditionExpression: "attribute_not_exists(deviceId)",
+      TableName: devicesTableName,
+      Item: {
+        accountId: { S: defaultAccountId },
+        deviceId: { S: deviceId },
+        group: { S: "Unassigned" },
+        host: { S: "Not configured" },
+        id: { S: deviceId },
+        location: { S: "Unassigned" },
+        name: { S: `Unassigned Pi ${deviceId}` },
+        notes: { S: "Registered automatically from a device heartbeat." },
+        playerType: { S: "vlc" },
+        playlistId: { NULL: true },
+        publishedAt: { NULL: true },
+        publishedPlaylistId: { NULL: true },
+        publishedPlaylistVersion: { NULL: true },
+        registeredAt: { S: receivedAt },
+        rootPath: { S: "~" },
+        screenId: { NULL: true },
+        sshUser: { S: "donnoel" },
+        updatedAt: { S: receivedAt }
+      }
+    }));
+    return true;
+  } catch (error) {
+    if (error?.name === "ConditionalCheckFailedException") {
+      return false;
+    }
+    throw error;
+  }
 }
 
 function validateHeartbeat(body, pathDeviceId) {
@@ -179,9 +219,11 @@ export async function handler(event, context) {
     TableName: heartbeatTableName,
     Item: item
   }));
+  const registeredDevice = await registerDeviceIfMissing(body.deviceId, receivedAt);
 
   return jsonResponse(202, {
     accepted: true,
+    registeredDevice,
     serverTime: receivedAt,
     nextHeartbeatInSeconds
   });

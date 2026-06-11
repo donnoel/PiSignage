@@ -88,6 +88,7 @@ export class BeamFoundationStack extends Stack {
       entry: path.join(__dirname, "..", "lambda", "heartbeat", "index.mjs"),
       environment: {
         DEFAULT_ACCOUNT_ID: "beam-dev",
+        DEVICES_TABLE_NAME: devicesTable.tableName,
         HEARTBEATS_TABLE_NAME: heartbeatsTable.tableName,
         NEXT_HEARTBEAT_IN_SECONDS: "60"
       },
@@ -104,6 +105,10 @@ export class BeamFoundationStack extends Stack {
     heartbeatFunction.addToRolePolicy(new iam.PolicyStatement({
       actions: ["dynamodb:DescribeTable", "dynamodb:GetItem", "dynamodb:PutItem"],
       resources: [heartbeatsTable.tableArn]
+    }));
+    heartbeatFunction.addToRolePolicy(new iam.PolicyStatement({
+      actions: ["dynamodb:DescribeTable", "dynamodb:PutItem"],
+      resources: [devicesTable.tableArn]
     }));
 
     const api = new apigateway.RestApi(this, "BeamApi", {
