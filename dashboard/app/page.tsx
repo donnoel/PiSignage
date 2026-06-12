@@ -268,7 +268,8 @@ function formatBytes(value: number | null | undefined): string {
 
 function formatDuration(assets: PlaylistAsset[]): string {
   const totalSeconds = assets.reduce((total, asset) => total + (asset.durationSeconds ?? 0), 0);
-  return formatSeconds(totalSeconds);
+  const minutes = totalSeconds > 0 ? Math.max(1, Math.round(totalSeconds / 60)) : 0;
+  return `${minutes}m`;
 }
 
 function formatSeconds(totalSeconds: number): string {
