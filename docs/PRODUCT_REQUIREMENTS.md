@@ -27,7 +27,7 @@ The demo must show real behavior, not mock flows.
 
 Requirements:
 
-- Dashboard shows real status from configured local state and any reachable Pi.
+- What's Playing shows real status from configured local state and any reachable Pi.
 - Media upload uses real files and produces playback-safe assets.
 - Playlist reorder/remove/publish uses live local state.
 - Screens and Devices show honest configured/unconfigured/reachable/unreachable states.
@@ -76,7 +76,7 @@ Requirements:
 
 The dashboard information architecture should use these sections:
 
-- Dashboard
+- What's Playing
 - Media Store
 - Playlists
 - Screens
@@ -102,9 +102,9 @@ Deferred:
 - Advanced RBAC.
 - SSO.
 
-## Dashboard
+## What's Playing
 
-The Dashboard is the first screen operators use to answer whether signage is healthy.
+What's Playing is the first screen operators use to answer whether signage is healthy and jump to a specific screen.
 
 Requirements:
 
@@ -119,7 +119,7 @@ Acceptance:
 
 - A user can tell whether playback is healthy without opening a detail page.
 - Status text does not rely on color alone.
-- The dashboard remains useful when the internet is unavailable.
+- What's Playing remains useful when the internet is unavailable.
 
 ## Media Store
 

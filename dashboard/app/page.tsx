@@ -170,19 +170,20 @@ type DashboardPageProps = {
 };
 
 const navigationItems: Array<{ label: string; view: DashboardView }> = [
-  { label: "Dashboard", view: "dashboard" },
+  { label: "What's Playing", view: "dashboard" },
   { label: "Media Store", view: "media-store" },
-  { label: "Layouts", view: "layouts" },
   { label: "Playlists", view: "playlist" },
   { label: "Screen Health", view: "device-health" },
   { label: "Screens", view: "screens" },
+  { label: "Layouts", view: "layouts" },
   { label: "Scheduling", view: "scheduling" }
 ];
 
 const viewCopy: Record<DashboardView, { eyebrow: string; title: string; description?: string }> = {
   dashboard: {
-    eyebrow: "",
-    title: "Dashboard"
+    eyebrow: "Overview",
+    title: "What's Playing",
+    description: "At-a-glance playback and health for every screen."
   },
   "media-store": {
     eyebrow: "Library",
@@ -1733,7 +1734,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 </span>
               </div>
             </div>
-            <nav aria-label="Dashboard views" className="grid grid-cols-4 gap-2 text-xs font-medium text-slate-700 sm:grid-cols-7 sm:text-sm xl:flex xl:flex-wrap xl:justify-end">
+            <nav aria-label="Beam views" className="grid grid-cols-4 gap-2 text-xs font-medium text-slate-700 sm:grid-cols-7 sm:text-sm xl:flex xl:flex-wrap xl:justify-end">
               {navigationItems.map((item) => {
                 const selected = item.view === selectedView;
 
@@ -1775,7 +1776,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           >
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h2 id="operations-heading" className="text-2xl font-semibold">Command center</h2>
+                <h2 id="operations-heading" className="text-2xl font-semibold">Screen overview</h2>
               </div>
               <p className={`text-sm font-semibold ${systemStatusTone === "good" ? "text-emerald-700" : systemStatusTone === "warn" ? "text-amber-800" : "text-zinc-600"}`}>
                 {systemStatusLabel}
@@ -1883,7 +1884,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
                 <div className="flex flex-col gap-4 border-b border-zinc-200 p-5">
                   <div>
-                    <h2 className="mt-1 text-2xl font-semibold">Screen preview</h2>
+                    <h2 className="mt-1 text-2xl font-semibold">Selected screen</h2>
                     <p className="mt-1 text-sm text-zinc-600">{focusedScreenLocation} · {focusedScreenSummary}</p>
                   </div>
                   <form method="get" className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">

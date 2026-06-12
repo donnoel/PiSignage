@@ -6,7 +6,7 @@ The current repository provides a local-only foundation. It does not deploy AWS 
 
 ## What Exists Now
 
-- `dashboard/`: Next.js + TypeScript + Tailwind local operations dashboard with Media Store, Playlists, Screen Status, Screens, Scheduling, and Recovery views.
+- `dashboard/`: Next.js + TypeScript + Tailwind local operations dashboard with What's Playing, Media Store, Playlists, Screen Health, Screens, Layouts, Scheduling, and Recovery views.
 - `player/`: TypeScript browser playback fallback/experimental app for same-origin local playlist playback.
 - `device-agent/`: Node.js + TypeScript local device agent that reads a playlist and writes heartbeat JSON.
 - `docs/`: architecture, phases, API contract, AWS design, security notes, and device setup.

@@ -8,7 +8,7 @@ The current product baseline lives in `docs/PRODUCT_REQUIREMENTS.md`.
 
 Beam is moving from a one-screen demo toward a local-first operations console with these locked dashboard sections:
 
-- Dashboard
+- What's Playing
 - Media Store
 - Playlists
 - Screens
@@ -57,7 +57,7 @@ Acceptance:
 
 - `docs/PRODUCT_REQUIREMENTS.md` defines the product direction.
 - `docs/PHASES.md` reflects the new roadmap.
-- Dashboard sections are locked: Dashboard, Media Store, Playlists, Screens, Devices, Activity, Troubleshooting, Settings.
+- Dashboard sections are locked: What's Playing, Media Store, Playlists, Screens, Devices, Activity, Troubleshooting, Settings.
 - Map/location UI is marked removed/deferred.
 - Demo, five-system soak, AWS buildout, and production gates are explicit.
 
@@ -73,7 +73,7 @@ Goal: make the Wednesday, June 3, 2026 team demo honest and useful.
 
 Acceptance:
 
-- Dashboard, Playlists, Screens, Devices, and Troubleshooting demo paths show real local behavior.
+- What's Playing, Playlists, Screens, Devices, and Troubleshooting demo paths show real local behavior.
 - Media upload uses real files and produces playback-safe assets.
 - Playlist edits use live local state.
 - Publish/recovery paths either run against a real configured Pi or clearly report missing prerequisites.
@@ -88,14 +88,14 @@ Validation:
 - Honest unconfigured-state smoke when Pi is not configured.
 - Record exactly what was proven on hardware.
 
-## Phase 3: Dashboard And Screens Rework
+## Phase 3: What's Playing And Screens Rework
 
-Goal: make the main dashboard and Screens section useful for operations without relying on a map.
+Goal: make the What's Playing overview and Screens section useful for operations without relying on a map.
 
 Acceptance:
 
-- Dashboard shows online, offline, stale, and needs-attention counts.
-- Dashboard shows playback state, playlist sync, last publish, last heartbeat, and top recovery prompts.
+- What's Playing shows online, offline, stale, and needs-attention counts.
+- What's Playing shows playback state, playlist sync, last publish, last heartbeat, and top recovery prompts.
 - Screens view is an operations table with screen name, location label, assigned device, assigned playlist, status, last seen, playback state, and sync state.
 - Existing map UI is removed from the active navigation and screen workflow.
 - Status is communicated in text, not color alone.
@@ -103,7 +103,7 @@ Acceptance:
 Validation:
 
 - `npm --workspace dashboard run typecheck`
-- Manual dashboard smoke of the Dashboard and Screens sections.
+- Manual dashboard smoke of the What's Playing and Screens sections.
 - Responsive check for affected views.
 
 ## Phase 4: Local Data Stores
