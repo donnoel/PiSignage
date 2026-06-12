@@ -171,7 +171,7 @@ type DashboardPageProps = {
 
 const navigationItems: Array<{ label: string; view: DashboardView }> = [
   { label: "What's Playing", view: "dashboard" },
-  { label: "Media Store", view: "media-store" },
+  { label: "Library", view: "media-store" },
   { label: "Playlists", view: "playlist" },
   { label: "Screen Health", view: "device-health" },
   { label: "Screens", view: "screens" },
@@ -186,8 +186,8 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
     description: "At-a-glance playback and health for every screen."
   },
   "media-store": {
-    eyebrow: "Library",
-    title: "Media Store",
+    eyebrow: "Assets",
+    title: "Library",
     description: "Upload, find, and organize media for your screens."
   },
   layouts: {
@@ -2081,7 +2081,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             aria-labelledby="media-store-heading"
             className={selectedView === "media-store" ? "mt-6" : "hidden"}
           >
-            <h2 id="media-store-heading" className="sr-only">Media Store</h2>
+            <h2 id="media-store-heading" className="sr-only">Library</h2>
             <MediaStorePanel mode={dashboardMode} />
           </section>
 
