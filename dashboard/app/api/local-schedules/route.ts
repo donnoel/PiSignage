@@ -199,6 +199,8 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     await ensureLocalDataFoundation();
+    const session = activeWorkspaceSession();
+    const context = workspaceContextFromSession(session);
     const body = (await request.json()) as ScheduleInput;
     const inventory = await inventoryForSchedules();
     const input = validateInput(body, new Set(inventory.screens.items.map((screen) => screen.id)));
@@ -229,7 +231,7 @@ export async function POST(request: Request) {
     await appendActivityRecord({
       id: randomUUID(),
       action: "schedule-add",
-      actor: "local-operator",
+      actor: context.userId,
       entityId: schedule.id,
       entityType: "schedule",
       message: `Added schedule ${schedule.name}.`,
@@ -250,6 +252,8 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     await ensureLocalDataFoundation();
+    const session = activeWorkspaceSession();
+    const context = workspaceContextFromSession(session);
     const body = (await request.json()) as ScheduleInput;
     if (!body.id) {
       return NextResponse.json({ error: "Missing schedule id." }, { status: 400 });
@@ -289,7 +293,7 @@ export async function PATCH(request: Request) {
     await appendActivityRecord({
       id: randomUUID(),
       action: "schedule-update",
-      actor: "local-operator",
+      actor: context.userId,
       entityId: body.id,
       entityType: "schedule",
       message: `Updated schedule ${input.name}.`,
@@ -310,6 +314,8 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   try {
     await ensureLocalDataFoundation();
+    const session = activeWorkspaceSession();
+    const context = workspaceContextFromSession(session);
     const body = (await request.json()) as { id?: string };
     if (!body.id) {
       return NextResponse.json({ error: "Missing schedule id." }, { status: 400 });
@@ -331,7 +337,7 @@ export async function DELETE(request: Request) {
     await appendActivityRecord({
       id: randomUUID(),
       action: "schedule-remove",
-      actor: "local-operator",
+      actor: context.userId,
       entityId: body.id,
       entityType: "schedule",
       message: `Removed schedule ${schedule.name}.`,

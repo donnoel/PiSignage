@@ -9,6 +9,7 @@ import {
 import { apiErrorResponse } from "../../../lib/api-error-response";
 import { publishScheduleStoreToPi } from "../../../lib/pi-local";
 import { piConfigForDevice, targetDevicesForRequest } from "../../../lib/pi-targets";
+import { activeWorkspaceSession, workspaceContextFromSession } from "../../../lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +21,8 @@ function sumOk(results: Array<{ ok: boolean }>): number {
 export async function POST(request: Request) {
   try {
     await ensureLocalDataFoundation();
+    const session = activeWorkspaceSession();
+    const context = workspaceContextFromSession(session);
     const body = (await request.json().catch(() => ({}))) as {
       deviceId?: string;
       screenId?: string;
@@ -66,7 +69,7 @@ export async function POST(request: Request) {
     await appendActivityRecord({
       id: randomUUID(),
       action: "schedule-publish",
-      actor: "local-operator",
+      actor: context.userId,
       entityId: body.screenId ?? body.deviceId ?? "schedules",
       entityType: "schedule",
       message: publish.message,
