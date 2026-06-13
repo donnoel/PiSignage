@@ -19,6 +19,7 @@ import {
   isValidTimezone,
   scheduleStateForScreen
 } from "../../lib/schedule-evaluator";
+import { activeWorkspaceSession, workspaceContextFromSession } from "../../lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -106,6 +107,8 @@ async function scheduleResponse(publish?: {
   ok: boolean;
 }) {
   await ensureLocalDataFoundation();
+  const session = activeWorkspaceSession();
+  const context = workspaceContextFromSession(session);
   const inventory = await inventoryForSchedules();
   await repairSchedulesForScreens(inventory.screens.items.map((screen) => screen.id));
   const [scheduleStore, settings, playlistStore, activityStore] = await Promise.all([
@@ -151,6 +154,7 @@ async function scheduleResponse(publish?: {
   const configuredScreenCount = screens.filter((screen) => Boolean(screen.deviceHost)).length;
 
   return NextResponse.json({
+    activeWorkspaceId: context.activeWorkspaceId,
     defaultTimezone: settings.defaultScheduleTimezone,
     days: dayOptions,
     playlists: playlistStore.items.map((playlist) => ({
@@ -183,7 +187,8 @@ async function scheduleResponse(publish?: {
     screens,
     screenStates,
     storeUpdatedAt: scheduleStore.updatedAt,
-    storeVersion: scheduleStore.version
+    storeVersion: scheduleStore.version,
+    userId: context.userId
   });
 }
 
