@@ -10,6 +10,7 @@ import { apiErrorResponse } from "../../lib/api-error-response";
 import { cloudMediaConfig, readCloudMediaStore } from "../../lib/cloud-media-store";
 import { readMediaFolderStore, writeMediaFolderStore } from "../../lib/media-folder-store";
 import { readPlaylistStore } from "../../lib/playlist-store";
+import { activeWorkspaceSession, workspaceContextFromSession } from "../../lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,12 +48,16 @@ async function knownMediaIds(): Promise<Set<string>> {
 
 export async function GET() {
   await ensureLocalDataFoundation();
+  const session = activeWorkspaceSession();
+  const context = workspaceContextFromSession(session);
   const folderStore = await readMediaFolderStore();
 
   return NextResponse.json({
+    activeWorkspaceId: context.activeWorkspaceId,
     assignments: folderStore.assignments,
     folders: folderStore.items,
     updatedAt: folderStore.updatedAt,
+    userId: context.userId,
     version: folderStore.version
   });
 }
