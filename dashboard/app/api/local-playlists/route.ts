@@ -17,6 +17,7 @@ import { isCloudInventoryConfigured, readInventory, updateInventory } from "../.
 import { apiErrorResponse } from "../../lib/api-error-response";
 import { readPlaylistStore, writePlaylistStore } from "../../lib/playlist-store";
 import { slugify } from "../../lib/media-processing";
+import { activeWorkspaceSession, workspaceContextFromSession } from "../../lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -81,6 +82,8 @@ async function clearPlaylistAssignments(playlistIds: Set<string>, timestamp: str
 
 export async function POST(request: Request) {
   try {
+    const session = activeWorkspaceSession();
+    const context = workspaceContextFromSession(session);
     const body = (await request.json()) as {
       name?: string;
     };
@@ -110,7 +113,7 @@ export async function POST(request: Request) {
     await appendActivityRecord({
       id: randomUUID(),
       action: "playlist-create",
-      actor: "local-operator",
+      actor: context.userId,
       entityId: playlist.playlistId,
       entityType: "playlist",
       message: `Created playlist ${playlist.name}.`,
@@ -127,6 +130,8 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const session = activeWorkspaceSession();
+    const context = workspaceContextFromSession(session);
     const body = (await request.json()) as {
       name?: string;
       playlistId?: string;
@@ -174,7 +179,7 @@ export async function PATCH(request: Request) {
       await appendActivityRecord({
         id: randomUUID(),
         action: "playlist-rename",
-        actor: "local-operator",
+        actor: context.userId,
         entityId: playlist.playlistId,
         entityType: "playlist",
         message: `Renamed playlist ${previous.name} to ${playlist.name}.`,
@@ -192,6 +197,8 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const session = activeWorkspaceSession();
+    const context = workspaceContextFromSession(session);
     const body = (await request.json()) as {
       resetLibrary?: boolean;
       resetName?: string;
@@ -225,7 +232,7 @@ export async function DELETE(request: Request) {
       await appendActivityRecord({
         id: randomUUID(),
         action: "playlist-library-reset",
-        actor: "local-operator",
+        actor: context.userId,
         entityId: resetPlaylist.playlistId,
         entityType: "playlist",
         message: `Reset playlist library and created ${resetPlaylist.name}. Publish manually when the new playlist is ready.`,
@@ -281,7 +288,7 @@ export async function DELETE(request: Request) {
     await appendActivityRecord({
       id: randomUUID(),
       action: "playlist-delete",
-      actor: "local-operator",
+      actor: context.userId,
       entityId: playlist.playlistId,
       entityType: "playlist",
       message: `Deleted playlist ${playlist.name}. Publish the replacement playlist manually if a screen should change.`,

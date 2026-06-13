@@ -15,6 +15,7 @@ import { isCloudPlaylistStoreConfigured, readPlaylistStore, readStoredPlaylist, 
 import { apiErrorResponse } from "../../../lib/api-error-response";
 import { defaultDurationSeconds, playbackPrepProfile, slugify } from "../../../lib/media-processing";
 import { isPlaybackSafeVideoFileName } from "../../../lib/playback-safety";
+import { activeWorkspaceSession, workspaceContextFromSession } from "../../../lib/workspace";
 
 type PlaylistEditAction = "move-up" | "move-down" | "remove" | "update-item" | "add-media" | "reorder";
 
@@ -277,6 +278,8 @@ async function markPlaylistEditPendingPublish(playlist: Playlist): Promise<PiPub
 
 export async function POST(request: Request) {
   try {
+    const session = activeWorkspaceSession();
+    const context = workspaceContextFromSession(session);
     const body = (await request.json()) as {
       action?: string;
       altText?: string;
@@ -327,7 +330,7 @@ export async function POST(request: Request) {
     await appendActivityRecord({
       id: randomUUID(),
       action: `playlist-${body.action}`,
-      actor: "local-operator",
+      actor: context.userId,
       entityId: body.assetId ?? body.mediaId ?? nextPlaylist.playlistId,
       entityType: "playlist",
       message: `Playlist action ${body.action} applied to ${nextPlaylist.name}. ${piPublish.message}`,

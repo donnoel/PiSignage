@@ -48,6 +48,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const session = activeWorkspaceSession();
+    const context = workspaceContextFromSession(session);
     const body = (await request.json()) as {
       assigned?: boolean;
       playlistId?: string | null;
@@ -170,7 +172,7 @@ export async function POST(request: Request) {
     await appendActivityRecord({
       id: randomUUID(),
       action: "playlist-assign",
-      actor: "local-operator",
+      actor: context.userId,
       entityId: body.targetId,
       entityType: body.targetType,
       message:
