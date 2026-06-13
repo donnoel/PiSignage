@@ -9,19 +9,24 @@ import {
 } from "../../lib/inventory-store";
 import { apiErrorResponse } from "../../lib/api-error-response";
 import { readLivePlaylist } from "../../lib/local-playlist";
+import { activeWorkspaceSession, workspaceContextFromSession } from "../../lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function getInventoryResponse() {
+  const session = activeWorkspaceSession();
+  const context = workspaceContextFromSession(session);
   const playlist = await readLivePlaylist();
   const inventory = await readInventory(playlist.playlistId);
 
   return NextResponse.json({
+    activeWorkspaceId: context.activeWorkspaceId,
     devices: inventory.devices.items,
     playlistId: playlist.playlistId,
     playlistName: playlist.name,
-    screens: inventory.screens.items
+    screens: inventory.screens.items,
+    userId: context.userId
   });
 }
 

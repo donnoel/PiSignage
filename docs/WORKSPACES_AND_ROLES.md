@@ -150,8 +150,10 @@ the default workspace. Mutation API routes that hit workspace authorization now
 return a structured `403` instead of a generic route failure, and invalid
 workspace sessions can return a structured `401`. A read-only
 `GET /api/workspace-session` endpoint exposes the current normalized session for
-future UI integration. This does not yet load real authenticated memberships
-from a login provider or expose user-driven workspace switching.
+future UI integration, and `GET /api/local-inventory` now derives its response
+context from that same active session path. This does not yet load real
+authenticated memberships from a login provider or expose user-driven workspace
+switching.
 
 1. Document the workspace/role model and update product requirements.
 2. Add a default workspace seed/migration for existing local and cloud data.
