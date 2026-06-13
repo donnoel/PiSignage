@@ -15,6 +15,12 @@ import { readPiConfig, runSsh } from "./lib/pi-local";
 import type { PiConfig } from "./lib/pi-local";
 import { piConfigForDevice } from "./lib/pi-targets";
 import { isPlaybackSafeVideoFileName } from "./lib/playback-safety";
+import {
+  activeWorkspaceSession,
+  workspaceContextFromSession,
+  workspaceMembershipFor,
+  type WorkspaceRole
+} from "./lib/workspace";
 import { LayoutsPanel } from "./layouts-panel";
 import { MediaStorePanel } from "./media-store-panel";
 import { LocalPlaylistBuilder, LocalPlaylistScreenAssignment } from "./local-playlist-builder";
@@ -397,6 +403,18 @@ function screenLabel(pi: PiProbe, heartbeat: Heartbeat | null, isHeartbeatFresh:
 
 function locationLabel(): string {
   return localConfigLabel("PISIGNAGE_LOCATION_NAME") ?? "Location not configured";
+}
+
+function roleLabel(role: WorkspaceRole | null | undefined): string {
+  const labels: Record<WorkspaceRole, string> = {
+    "content-manager": "Content Manager",
+    operator: "Operator",
+    "platform-admin": "Platform Admin",
+    viewer: "Viewer",
+    "workspace-admin": "Workspace Admin"
+  };
+
+  return role ? labels[role] : "No role";
 }
 
 function deviceIdentifier(pi: PiProbe, heartbeat: Heartbeat | null, isHeartbeatFresh: boolean): string {
@@ -1275,6 +1293,12 @@ function scalarSearchParam(value: string | string[] | undefined): string | null 
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const isCloudDashboard = dashboardMode === "cloud";
+  const workspaceSession = activeWorkspaceSession();
+  const workspaceContext = workspaceContextFromSession(workspaceSession);
+  const activeWorkspace = workspaceSession.workspaces.find((workspace) => workspace.workspaceId === workspaceContext.activeWorkspaceId);
+  const activeMembership = workspaceMembershipFor(workspaceContext.activeWorkspaceId, workspaceContext);
+  const workspaceName = activeWorkspace?.name ?? workspaceContext.activeWorkspaceId;
+  const workspaceRoleLabel = roleLabel(activeMembership?.role);
   const resolvedSearchParams = await searchParams;
   const selectedView = dashboardViewFrom(resolvedSearchParams?.view);
   const selectedPlaylistParam = scalarSearchParam(resolvedSearchParams?.playlist);
@@ -1725,6 +1749,14 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 <span className="bg-gradient-to-r from-slate-950 via-teal-950 to-teal-700 bg-clip-text text-[2rem] font-black leading-none tracking-normal text-transparent [font-family:'Trebuchet_MS',ui-rounded,'Avenir_Next_Rounded','Arial_Rounded_MT_Bold',system-ui,sans-serif]">
                   Beam
                 </span>
+              </div>
+              <div
+                className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-l-2 border-teal-500 pl-3 text-xs text-slate-700"
+                aria-label={`Current workspace session: ${workspaceName}; ${workspaceRoleLabel}; ${workspaceSession.user.displayName}`}
+              >
+                <span className="font-semibold text-slate-950">{workspaceName}</span>
+                <span>{workspaceRoleLabel}</span>
+                <span>{workspaceSession.user.displayName}</span>
               </div>
             </div>
             <nav aria-label="Beam views" className="grid grid-cols-4 gap-2 text-xs font-medium text-slate-700 sm:grid-cols-7 sm:text-sm xl:flex xl:flex-wrap xl:justify-end">
