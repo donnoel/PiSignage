@@ -1058,7 +1058,7 @@ export function ScreenDeviceInventoryPanel({
                   <td className="px-4 py-3">
                     <div className="flex min-w-[152px] flex-nowrap gap-2">
                       <a
-                        href={`/?view=device-health&screen=${encodeURIComponent(row.screen.id)}`}
+                        href={`/?view=screens&screen=${encodeURIComponent(row.screen.id)}`}
                         title="Status"
                         aria-label={`Open status for ${row.screen.name}`}
                         className={`inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white text-base font-semibold ${screenActionClass("neutral")}`}

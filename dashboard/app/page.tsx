@@ -157,7 +157,6 @@ type DashboardView =
   | "media-store"
   | "layouts"
   | "playlist"
-  | "device-health"
   | "screens"
   | "scheduling";
 
@@ -173,7 +172,6 @@ const navigationItems: Array<{ label: string; view: DashboardView }> = [
   { label: "What's Playing", view: "dashboard" },
   { label: "Library", view: "media-store" },
   { label: "Playlists", view: "playlist" },
-  { label: "Screen Health", view: "device-health" },
   { label: "Screens", view: "screens" },
   { label: "Layouts", view: "layouts" },
   { label: "Scheduling", view: "scheduling" }
@@ -200,15 +198,10 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
     title: "Playlists",
     description: "Create a playlist, choose screens, then publish."
   },
-  "device-health": {
-    eyebrow: "Health",
-    title: "Screen Health",
-    description: "Connection, playback, playlist update, recovery tools, logs, and Pi evidence for local screens."
-  },
   screens: {
-    eyebrow: "Inventory",
+    eyebrow: "Operations",
     title: "Screens",
-    description: "Local screens, assigned playlists, and live playback status."
+    description: "Screen inventory, health, assigned playlists, recovery tools, and Pi evidence."
   },
   scheduling: {
     eyebrow: "Hours",
@@ -218,8 +211,8 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
 
 function dashboardViewFrom(value: string | string[] | undefined): DashboardView {
   const candidate = Array.isArray(value) ? value[0] : value;
-  if (candidate === "troubleshooting") {
-    return "device-health";
+  if (candidate === "device-health" || candidate === "troubleshooting") {
+    return "screens";
   }
 
   return navigationItems.some((item) => item.view === candidate) ? (candidate as DashboardView) : "dashboard";
@@ -1824,10 +1817,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 </div>
                 <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                   <a
-                    href="/?view=device-health"
+                    href="/?view=screens"
                     className="inline-flex min-h-10 items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-950 ring-1 ring-zinc-200 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-teal-600"
                   >
-                    Screen Health
+                    Screens
                   </a>
                 </div>
               </div>
@@ -1964,7 +1957,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
           <section
             id="fleet-health"
-            className={selectedView === "device-health" ? "" : "hidden"}
+            className={selectedView === "screens" ? "" : "hidden"}
           >
             <DeviceHealthFleetPanel
               dashboardMode={dashboardMode}
@@ -1984,7 +1977,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           <section
             id="screen-health-diagnostics"
             aria-labelledby="screen-health-diagnostics-heading"
-            className={selectedView === "device-health" ? "mt-6 rounded-lg border border-zinc-200 bg-white shadow-sm" : "hidden"}
+            className={selectedView === "screens" ? "mt-6 rounded-lg border border-zinc-200 bg-white shadow-sm" : "hidden"}
           >
             <details>
               <summary className="flex cursor-pointer list-none flex-col gap-2 p-5 marker:hidden sm:flex-row sm:items-center sm:justify-between [&::-webkit-details-marker]:hidden">
