@@ -60,11 +60,11 @@ async function runRecoverStep(
   }
 }
 
-async function logRecoveryStep(step: RecoveryStep): Promise<void> {
+async function logRecoveryStep(step: RecoveryStep, actor: string): Promise<void> {
   await appendActivityRecord({
     id: randomUUID(),
     action: "recovery-step",
-    actor: "local-operator",
+    actor,
     entityId: step.id,
     entityType: "system",
     message: `${step.title}: ${step.status}. ${step.detail}`,
@@ -73,7 +73,7 @@ async function logRecoveryStep(step: RecoveryStep): Promise<void> {
   });
 }
 
-async function runRecoverWorkflow(config: PiConfig): Promise<RecoveryRun> {
+async function runRecoverWorkflow(config: PiConfig, actor: string): Promise<RecoveryRun> {
   const startedAt = nowIso();
   const displayOutput = process.env.PISIGNAGE_DISPLAY_OUTPUT?.trim() || "HDMI-A-1";
   const displayMode = process.env.PISIGNAGE_DISPLAY_RESOLUTION?.trim() || "1920x1080@60.000000";
@@ -88,7 +88,7 @@ async function runRecoverWorkflow(config: PiConfig): Promise<RecoveryRun> {
   async function executeStep(title: string, command: string, timeoutMs?: number): Promise<void> {
     const step = await runRecoverStep(config, title, command, timeoutMs);
     steps.push(step);
-    await logRecoveryStep(step);
+    await logRecoveryStep(step, actor);
   }
 
   await executeStep("Check SSH connectivity", "echo recover-connected");
@@ -131,14 +131,14 @@ async function runRecoverWorkflow(config: PiConfig): Promise<RecoveryRun> {
     summary: ok
       ? "Recover completed. VLC service is active and evidence was refreshed."
       : "Recover completed with failures. Review step log for details.",
-    triggeredBy: "local-operator"
+    triggeredBy: actor
   };
 
   await appendRecoveryRun(run);
   await appendActivityRecord({
     id: randomUUID(),
     action: "recover-run",
-    actor: "local-operator",
+    actor,
     entityId: run.id,
     entityType: "system",
     message: run.summary,
@@ -181,6 +181,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const session = activeWorkspaceSession();
+    const context = workspaceContextFromSession(session);
     const body = (await request.json()) as {
       action?: string;
       deviceId?: string;
@@ -206,7 +208,7 @@ export async function POST(request: Request) {
       await appendActivityRecord({
         id: randomUUID(),
         action: "restart-vlc",
-        actor: "local-operator",
+        actor: context.userId,
         entityId: config.host,
         entityType: "system",
         message: `Restarted VLC field player on ${targetLabel} (${config.host}).`,
@@ -226,7 +228,7 @@ export async function POST(request: Request) {
         await appendActivityRecord({
           id: randomUUID(),
           action: "reboot-pi",
-          actor: "local-operator",
+          actor: context.userId,
           entityId: config.host,
           entityType: "system",
           message: `Pi reboot was not requested on ${targetLabel} (${config.host}): ${
@@ -247,7 +249,7 @@ export async function POST(request: Request) {
       await appendActivityRecord({
         id: randomUUID(),
         action: "reboot-pi",
-        actor: "local-operator",
+        actor: context.userId,
         entityId: config.host,
         entityType: "system",
         message: `Requested Pi reboot on ${targetLabel} (${config.host}).`,
@@ -260,7 +262,7 @@ export async function POST(request: Request) {
       });
     }
 
-    const run = await runRecoverWorkflow(config);
+    const run = await runRecoverWorkflow(config, context.userId);
     return NextResponse.json({
       message: run.summary,
       run
