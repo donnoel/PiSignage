@@ -138,6 +138,11 @@ That area is separate from the normal workspace operations console.
 
 ## Implementation Sequence
 
+Current status: the dashboard has a shared default workspace ID,
+`workspace-beam-dev`, and local/cloud store normalization can attach that
+workspace to existing records as they are read or written. This does not yet
+enforce multi-workspace permissions or filter data by active workspace.
+
 1. Document the workspace/role model and update product requirements.
 2. Add a default workspace seed/migration for existing local and cloud data.
 3. Add `workspaceId` to workspace-owned local JSON and cloud table rows.

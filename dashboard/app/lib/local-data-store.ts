@@ -3,6 +3,7 @@ import path from "node:path";
 import { validateLayoutTemplate } from "./layout-contract";
 import { localStateDirectory, writeFileAtomic } from "./local-playlist";
 import type { LayoutStore, LayoutTemplate } from "./layout-contract";
+import { defaultWorkspaceId, withDefaultWorkspace, workspaceIdOrDefault } from "./workspace";
 
 export type MediaRecord = {
   id: string;
@@ -34,6 +35,7 @@ export type MediaRecord = {
   status: "ready" | "processing" | "failed";
   createdAt: string;
   updatedAt: string;
+  workspaceId?: string;
 };
 
 export type MediaStore = {
@@ -47,6 +49,7 @@ export type MediaFolderRecord = {
   name: string;
   createdAt: string;
   updatedAt: string;
+  workspaceId?: string;
 };
 
 export type MediaFolderStore = {
@@ -68,6 +71,7 @@ export type ScreenRecord = {
   publishedPlaylistId?: string | null;
   publishedPlaylistVersion?: number | null;
   updatedAt: string;
+  workspaceId?: string;
 };
 
 export type ScreenStore = {
@@ -101,6 +105,7 @@ export type DeviceRecord = {
   resetStatusMessage?: string | null;
   resetUpdatedAt?: string | null;
   updatedAt: string;
+  workspaceId?: string;
 };
 
 export type DeviceStore = {
@@ -122,6 +127,7 @@ export type ScheduleRecord = {
   screenIds: string[];
   timezone: string;
   updatedAt: string;
+  workspaceId?: string;
 };
 
 export type ScheduleStore = {
@@ -139,6 +145,7 @@ export type ActivityRecord = {
   message: string;
   result: "success" | "warning" | "error";
   timestamp: string;
+  workspaceId?: string;
 };
 
 export type ActivityStore = {
@@ -153,6 +160,7 @@ export type SettingsRecord = {
   maxUploadBytes: number;
   preferredPlaybackMode: "vlc";
   updatedAt: string;
+  workspaceId?: string;
 };
 
 export type RecoveryStep = {
@@ -172,6 +180,7 @@ export type RecoveryRun = {
   summary: string;
   triggeredBy: string;
   ok: boolean;
+  workspaceId?: string;
 };
 
 export type RecoveryStore = {
@@ -282,7 +291,8 @@ function defaultSettingsRecord(): SettingsRecord {
     defaultScheduleTimezone: "America/Los_Angeles",
     maxUploadBytes: 1024 * 1024 * 1024,
     preferredPlaybackMode: "vlc",
-    updatedAt: isoNow()
+    updatedAt: isoNow(),
+    workspaceId: defaultWorkspaceId
   };
 }
 
@@ -339,12 +349,19 @@ export async function ensureLocalDataFoundation(): Promise<void> {
 
 export async function readMediaStore(): Promise<MediaStore> {
   const paths = jsonStorePaths();
-  return readJsonOrDefaults(paths.media, defaultMediaStore());
+  const store = await readJsonOrDefaults(paths.media, defaultMediaStore());
+  return {
+    ...store,
+    items: Array.isArray(store.items) ? store.items.map(withDefaultWorkspace) : []
+  };
 }
 
 export async function writeMediaStore(value: MediaStore): Promise<void> {
   const paths = jsonStorePaths();
-  await writeJsonStore(paths.media, value);
+  await writeJsonStore(paths.media, {
+    ...value,
+    items: value.items.map(withDefaultWorkspace)
+  });
 }
 
 export async function readMediaFolderStore(): Promise<MediaFolderStore> {
@@ -353,13 +370,16 @@ export async function readMediaFolderStore(): Promise<MediaFolderStore> {
   return {
     ...store,
     assignments: store.assignments ?? {},
-    items: Array.isArray(store.items) ? store.items : []
+    items: Array.isArray(store.items) ? store.items.map(withDefaultWorkspace) : []
   };
 }
 
 export async function writeMediaFolderStore(value: MediaFolderStore): Promise<void> {
   const paths = jsonStorePaths();
-  await writeJsonStore(paths.mediaFolders, value);
+  await writeJsonStore(paths.mediaFolders, {
+    ...value,
+    items: value.items.map(withDefaultWorkspace)
+  });
 }
 
 function normalizeLayoutStore(store: LayoutStore): LayoutStore {
@@ -371,7 +391,11 @@ function normalizeLayoutStore(store: LayoutStore): LayoutStore {
   const errors: string[] = [];
 
   store.items.forEach((item, index) => {
-    const result = validateLayoutTemplate(item);
+    const candidate = {
+      ...item,
+      workspaceId: workspaceIdOrDefault(item.workspaceId)
+    };
+    const result = validateLayoutTemplate(candidate);
     if (result.ok) {
       items.push(result.value);
     } else {
@@ -402,27 +426,45 @@ export async function writeLayoutStore(value: LayoutStore): Promise<void> {
 
 export async function readScreenStore(): Promise<ScreenStore> {
   const paths = jsonStorePaths();
-  return readJsonOrDefaults(paths.screens, defaultScreenStore());
+  const store = await readJsonOrDefaults(paths.screens, defaultScreenStore());
+  return {
+    ...store,
+    items: Array.isArray(store.items) ? store.items.map(withDefaultWorkspace) : []
+  };
 }
 
 export async function writeScreenStore(value: ScreenStore): Promise<void> {
   const paths = jsonStorePaths();
-  await writeJsonStore(paths.screens, value);
+  await writeJsonStore(paths.screens, {
+    ...value,
+    items: value.items.map(withDefaultWorkspace)
+  });
 }
 
 export async function readDeviceStore(): Promise<DeviceStore> {
   const paths = jsonStorePaths();
-  return readJsonOrDefaults(paths.devices, defaultDeviceStore());
+  const store = await readJsonOrDefaults(paths.devices, defaultDeviceStore());
+  return {
+    ...store,
+    items: Array.isArray(store.items) ? store.items.map(withDefaultWorkspace) : []
+  };
 }
 
 export async function writeDeviceStore(value: DeviceStore): Promise<void> {
   const paths = jsonStorePaths();
-  await writeJsonStore(paths.devices, value);
+  await writeJsonStore(paths.devices, {
+    ...value,
+    items: value.items.map(withDefaultWorkspace)
+  });
 }
 
 export async function readScheduleStore(): Promise<ScheduleStore> {
   const paths = jsonStorePaths();
-  return readJsonOrDefaults(paths.schedules, defaultScheduleStore());
+  const store = await readJsonOrDefaults(paths.schedules, defaultScheduleStore());
+  return {
+    ...store,
+    items: Array.isArray(store.items) ? store.items.map(withDefaultWorkspace) : []
+  };
 }
 
 export function scheduleStorePath(): string {
@@ -431,27 +473,44 @@ export function scheduleStorePath(): string {
 
 export async function writeScheduleStore(value: ScheduleStore): Promise<void> {
   const paths = jsonStorePaths();
-  await writeJsonStore(paths.schedules, value);
+  await writeJsonStore(paths.schedules, {
+    ...value,
+    items: value.items.map(withDefaultWorkspace)
+  });
 }
 
 export async function readActivityStore(): Promise<ActivityStore> {
   const paths = jsonStorePaths();
-  return readJsonOrDefaults(paths.activity, defaultActivityStore());
+  const store = await readJsonOrDefaults(paths.activity, defaultActivityStore());
+  return {
+    ...store,
+    items: Array.isArray(store.items) ? store.items.map(withDefaultWorkspace) : []
+  };
 }
 
 export async function writeActivityStore(value: ActivityStore): Promise<void> {
   const paths = jsonStorePaths();
-  await writeJsonStore(paths.activity, value);
+  await writeJsonStore(paths.activity, {
+    ...value,
+    items: value.items.map(withDefaultWorkspace)
+  });
 }
 
 export async function readRecoveryStore(): Promise<RecoveryStore> {
   const paths = jsonStorePaths();
-  return readJsonOrDefaults(paths.recovery, defaultRecoveryStore());
+  const store = await readJsonOrDefaults(paths.recovery, defaultRecoveryStore());
+  return {
+    ...store,
+    runs: Array.isArray(store.runs) ? store.runs.map(withDefaultWorkspace) : []
+  };
 }
 
 export async function writeRecoveryStore(value: RecoveryStore): Promise<void> {
   const paths = jsonStorePaths();
-  await writeJsonStore(paths.recovery, value);
+  await writeJsonStore(paths.recovery, {
+    ...value,
+    runs: value.runs.map(withDefaultWorkspace)
+  });
 }
 
 export async function appendRecoveryRun(run: RecoveryRun): Promise<void> {
@@ -478,10 +537,11 @@ export async function appendActivityRecord(record: ActivityRecord): Promise<void
 
 export async function readSettingsRecord(): Promise<SettingsRecord> {
   const paths = jsonStorePaths();
-  return readJsonOrDefaults(paths.settings, defaultSettingsRecord());
+  const settings = await readJsonOrDefaults(paths.settings, defaultSettingsRecord());
+  return withDefaultWorkspace(settings);
 }
 
 export async function writeSettingsRecord(value: SettingsRecord): Promise<void> {
   const paths = jsonStorePaths();
-  await writeJsonStore(paths.settings, value);
+  await writeJsonStore(paths.settings, withDefaultWorkspace(value));
 }

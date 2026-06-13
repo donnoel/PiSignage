@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { defaultWorkspaceId, withDefaultWorkspace } from "./workspace";
 
 export type PlaylistAsset = {
   assetId: string;
@@ -19,6 +20,7 @@ export type Playlist = {
   version: number;
   updatedAt: string;
   assets: PlaylistAsset[];
+  workspaceId?: string;
 };
 
 export type PlaylistStore = {
@@ -101,12 +103,12 @@ export async function writeFileAtomic(filePath: string, value: Buffer | string):
 }
 
 function normalizePlaylist(playlist: Playlist): Playlist {
-  return {
+  return withDefaultWorkspace({
     ...playlist,
     assets: Array.isArray(playlist.assets) ? playlist.assets : [],
     updatedAt: typeof playlist.updatedAt === "string" ? playlist.updatedAt : isoNow(),
     version: typeof playlist.version === "number" ? playlist.version : 1
-  };
+  });
 }
 
 function normalizePlaylistStore(store: PlaylistStore): PlaylistStore {
@@ -142,7 +144,10 @@ export async function readPlaylist(playlistPath: string): Promise<Playlist> {
     throw new Error("Local playlist is malformed.");
   }
 
-  return playlist as Playlist;
+  return normalizePlaylist({
+    ...(playlist as Playlist),
+    workspaceId: playlist.workspaceId ?? defaultWorkspaceId
+  });
 }
 
 export async function readLivePlaylist(): Promise<Playlist> {
@@ -240,7 +245,7 @@ export async function writeStoredPlaylist(playlist: Playlist): Promise<PlaylistS
 }
 
 export async function writePlaylist(playlistPath: string, playlist: Playlist): Promise<void> {
-  await writeFileAtomic(playlistPath, `${JSON.stringify(playlist, null, 2)}\n`);
+  await writeFileAtomic(playlistPath, `${JSON.stringify(normalizePlaylist(playlist), null, 2)}\n`);
 }
 
 export async function writePublishStatus(
@@ -268,7 +273,8 @@ export async function writePublishStatus(
         playlistName: playlist.name,
         playlistVersion: playlist.version,
         targets,
-        timestamp: isoNow()
+        timestamp: isoNow(),
+        workspaceId: playlist.workspaceId ?? defaultWorkspaceId
       },
       null,
       2

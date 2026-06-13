@@ -92,6 +92,7 @@ export type LayoutTemplate = {
   render: LayoutRender;
   updatedAt: string;
   version: number;
+  workspaceId?: string;
 };
 
 export type LayoutStore = {

@@ -32,6 +32,7 @@ import {
   transcodedVideoFileName
 } from "./media-processing";
 import { isPlaybackSafeVideoFileName } from "./playback-safety";
+import { withDefaultWorkspace, workspaceIdOrDefault } from "./workspace";
 
 export type CloudMediaConfig = {
   assetsTableName: string;
@@ -180,7 +181,8 @@ function mediaFromItem(item: Record<string, AttributeValue>): MediaRecord {
     updatedAt: stringOrDefault(item.updatedAt, isoNow()),
     videoCodec: stringOrNull(item.videoCodec),
     videoProfile: stringOrNull(item.videoProfile),
-    width: nullableNumber(item.width)
+    width: nullableNumber(item.width),
+    workspaceId: workspaceIdOrDefault(stringOrNull(item.workspaceId))
   };
 }
 
@@ -204,7 +206,8 @@ function mediaFolderFromItem(item: Record<string, AttributeValue>): MediaFolderR
     createdAt,
     id,
     name,
-    updatedAt: stringOrDefault(item.updatedAt, createdAt)
+    updatedAt: stringOrDefault(item.updatedAt, createdAt),
+    workspaceId: workspaceIdOrDefault(stringOrNull(item.workspaceId))
   };
 }
 
@@ -220,52 +223,56 @@ function cloudMediaStatus(value: AttributeValue | undefined): MediaRecord["statu
 }
 
 function mediaToItem(media: MediaRecord): Record<string, AttributeValue> {
+  const normalizedMedia = withDefaultWorkspace(media);
   return {
     accountId: stringAttribute("beam-dev"),
-    assetId: stringAttribute(media.id),
-    audioCodec: optionalStringAttribute(media.audioCodec),
-    bitRate: nullableNumberAttribute(media.bitRate),
-    checksumSha256: optionalStringAttribute(media.checksumSha256),
-    cloudStatusDetail: optionalStringAttribute(media.cloudStatusDetail),
-    createdAt: stringAttribute(media.createdAt),
-    description: stringAttribute(media.description),
-    durationSeconds: nullableNumberAttribute(media.durationSeconds),
-    fps: nullableNumberAttribute(media.fps),
-    height: nullableNumberAttribute(media.height),
-    id: stringAttribute(media.id),
-    mimeType: stringAttribute(media.mimeType),
-    pixelFormat: optionalStringAttribute(media.pixelFormat),
-    playbackFileName: stringAttribute(media.playbackFileName),
-    playbackObjectKey: optionalStringAttribute(media.playbackObjectKey),
-    playbackProfile: optionalStringAttribute(media.playbackProfile),
-    preparedAt: optionalStringAttribute(media.preparedAt),
+    assetId: stringAttribute(normalizedMedia.id),
+    audioCodec: optionalStringAttribute(normalizedMedia.audioCodec),
+    bitRate: nullableNumberAttribute(normalizedMedia.bitRate),
+    checksumSha256: optionalStringAttribute(normalizedMedia.checksumSha256),
+    cloudStatusDetail: optionalStringAttribute(normalizedMedia.cloudStatusDetail),
+    createdAt: stringAttribute(normalizedMedia.createdAt),
+    description: stringAttribute(normalizedMedia.description),
+    durationSeconds: nullableNumberAttribute(normalizedMedia.durationSeconds),
+    fps: nullableNumberAttribute(normalizedMedia.fps),
+    height: nullableNumberAttribute(normalizedMedia.height),
+    id: stringAttribute(normalizedMedia.id),
+    mimeType: stringAttribute(normalizedMedia.mimeType),
+    pixelFormat: optionalStringAttribute(normalizedMedia.pixelFormat),
+    playbackFileName: stringAttribute(normalizedMedia.playbackFileName),
+    playbackObjectKey: optionalStringAttribute(normalizedMedia.playbackObjectKey),
+    playbackProfile: optionalStringAttribute(normalizedMedia.playbackProfile),
+    preparedAt: optionalStringAttribute(normalizedMedia.preparedAt),
     recordType: stringAttribute(mediaRecordType),
-    sizeBytes: numberAttribute(media.sizeBytes),
-    sourceFileName: stringAttribute(media.sourceFileName),
-    sourceObjectKey: optionalStringAttribute(media.sourceObjectKey),
-    sourceSizeBytes: nullableNumberAttribute(media.sourceSizeBytes),
-    status: stringAttribute(media.status),
-    storageBucket: optionalStringAttribute(media.storageBucket),
-    storageProvider: stringAttribute(media.storageProvider ?? "s3"),
-    tagsJson: stringAttribute(JSON.stringify(media.tags)),
-    title: stringAttribute(media.title),
-    updatedAt: stringAttribute(media.updatedAt),
-    videoCodec: optionalStringAttribute(media.videoCodec),
-    videoProfile: optionalStringAttribute(media.videoProfile),
-    width: nullableNumberAttribute(media.width)
+    sizeBytes: numberAttribute(normalizedMedia.sizeBytes),
+    sourceFileName: stringAttribute(normalizedMedia.sourceFileName),
+    sourceObjectKey: optionalStringAttribute(normalizedMedia.sourceObjectKey),
+    sourceSizeBytes: nullableNumberAttribute(normalizedMedia.sourceSizeBytes),
+    status: stringAttribute(normalizedMedia.status),
+    storageBucket: optionalStringAttribute(normalizedMedia.storageBucket),
+    storageProvider: stringAttribute(normalizedMedia.storageProvider ?? "s3"),
+    tagsJson: stringAttribute(JSON.stringify(normalizedMedia.tags)),
+    title: stringAttribute(normalizedMedia.title),
+    updatedAt: stringAttribute(normalizedMedia.updatedAt),
+    videoCodec: optionalStringAttribute(normalizedMedia.videoCodec),
+    videoProfile: optionalStringAttribute(normalizedMedia.videoProfile),
+    width: nullableNumberAttribute(normalizedMedia.width),
+    workspaceId: stringAttribute(normalizedMedia.workspaceId)
   };
 }
 
 function mediaFolderToItem(folder: MediaFolderRecord): Record<string, AttributeValue> {
+  const normalizedFolder = withDefaultWorkspace(folder);
   return {
     accountId: stringAttribute("beam-dev"),
-    assetId: stringAttribute(folder.id),
-    createdAt: stringAttribute(folder.createdAt),
-    folderId: stringAttribute(folder.id),
-    id: stringAttribute(folder.id),
-    name: stringAttribute(folder.name),
+    assetId: stringAttribute(normalizedFolder.id),
+    createdAt: stringAttribute(normalizedFolder.createdAt),
+    folderId: stringAttribute(normalizedFolder.id),
+    id: stringAttribute(normalizedFolder.id),
+    name: stringAttribute(normalizedFolder.name),
     recordType: stringAttribute(mediaFolderRecordType),
-    updatedAt: stringAttribute(folder.updatedAt)
+    updatedAt: stringAttribute(normalizedFolder.updatedAt),
+    workspaceId: stringAttribute(normalizedFolder.workspaceId)
   };
 }
 
@@ -278,7 +285,8 @@ function mediaFolderAssignmentToItem(mediaId: string, folderId: string, updatedA
     id: stringAttribute(id),
     mediaId: stringAttribute(mediaId),
     recordType: stringAttribute(mediaFolderAssignmentRecordType),
-    updatedAt: stringAttribute(updatedAt)
+    updatedAt: stringAttribute(updatedAt),
+    workspaceId: stringAttribute(workspaceIdOrDefault(null))
   };
 }
 

@@ -10,6 +10,7 @@ import {
   selectPlaylist as selectLocalPlaylist
 } from "./local-playlist";
 import type { Playlist, PlaylistAsset, PlaylistStore } from "./local-playlist";
+import { defaultWorkspaceId, withDefaultWorkspace, workspaceIdOrDefault } from "./workspace";
 
 const dynamoDb = new DynamoDBClient({});
 const seedPlaylistId = "playlist-main-playlist";
@@ -92,18 +93,21 @@ function playlistFromItem(item: Record<string, AttributeValue>): Playlist {
     name: stringOrDefault(item.name, playlistId === seedPlaylistId ? "Main Playlist" : "Untitled Playlist"),
     playlistId,
     updatedAt: stringOrDefault(item.updatedAt, isoNow()),
-    version: numberOrDefault(item.version, 1)
+    version: numberOrDefault(item.version, 1),
+    workspaceId: workspaceIdOrDefault(stringOrNull(item.workspaceId))
   };
 }
 
 function playlistToItem(playlist: Playlist): Record<string, AttributeValue> {
+  const normalizedPlaylist = withDefaultWorkspace(playlist);
   return {
     accountId: stringAttribute("beam-dev"),
-    assetsJson: stringAttribute(JSON.stringify(playlist.assets)),
-    name: stringAttribute(playlist.name),
-    playlistId: stringAttribute(playlist.playlistId),
-    updatedAt: stringAttribute(playlist.updatedAt),
-    version: numberAttribute(playlist.version)
+    assetsJson: stringAttribute(JSON.stringify(normalizedPlaylist.assets)),
+    name: stringAttribute(normalizedPlaylist.name),
+    playlistId: stringAttribute(normalizedPlaylist.playlistId),
+    updatedAt: stringAttribute(normalizedPlaylist.updatedAt),
+    version: numberAttribute(normalizedPlaylist.version),
+    workspaceId: stringAttribute(normalizedPlaylist.workspaceId)
   };
 }
 
@@ -134,7 +138,8 @@ async function ensureSeedPlaylist(tableName: string, playlists: Playlist[]): Pro
     name: "Main Playlist",
     playlistId: seedPlaylistId,
     updatedAt: isoNow(),
-    version: 1
+    version: 1,
+    workspaceId: defaultWorkspaceId
   };
 
   await dynamoDb.send(new PutItemCommand({

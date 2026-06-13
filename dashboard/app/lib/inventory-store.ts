@@ -24,6 +24,7 @@ import {
   writeDeviceStore,
   writeScreenStore
 } from "./local-data-store";
+import { withDefaultWorkspace, workspaceIdOrDefault } from "./workspace";
 
 type InventoryStore = {
   devices: DeviceStore;
@@ -143,47 +144,51 @@ function nullableNumber(value: number | undefined | null): AttributeValue {
 }
 
 function screenToItem(screen: ScreenRecord): Record<string, AttributeValue> {
+  const normalizedScreen = withDefaultWorkspace(screen);
   return {
-    deviceId: nullableString(screen.deviceId),
-    group: stringAttribute(screen.group),
-    id: stringAttribute(screen.id),
-    location: stringAttribute(screen.location),
-    name: stringAttribute(screen.name),
-    notes: stringAttribute(screen.notes),
-    playlistId: nullableString(screen.playlistId),
-    publishedAt: nullableString(screen.publishedAt),
-    publishedPlaylistId: nullableString(screen.publishedPlaylistId),
-    publishedPlaylistVersion: nullableNumber(screen.publishedPlaylistVersion),
-    screenId: stringAttribute(screen.id),
-    updatedAt: stringAttribute(screen.updatedAt)
+    deviceId: nullableString(normalizedScreen.deviceId),
+    group: stringAttribute(normalizedScreen.group),
+    id: stringAttribute(normalizedScreen.id),
+    location: stringAttribute(normalizedScreen.location),
+    name: stringAttribute(normalizedScreen.name),
+    notes: stringAttribute(normalizedScreen.notes),
+    playlistId: nullableString(normalizedScreen.playlistId),
+    publishedAt: nullableString(normalizedScreen.publishedAt),
+    publishedPlaylistId: nullableString(normalizedScreen.publishedPlaylistId),
+    publishedPlaylistVersion: nullableNumber(normalizedScreen.publishedPlaylistVersion),
+    screenId: stringAttribute(normalizedScreen.id),
+    updatedAt: stringAttribute(normalizedScreen.updatedAt),
+    workspaceId: stringAttribute(normalizedScreen.workspaceId)
   };
 }
 
 function deviceToItem(device: DeviceRecord): Record<string, AttributeValue> {
+  const normalizedDevice = withDefaultWorkspace(device);
   return {
-    deviceId: stringAttribute(device.id),
-    group: stringAttribute(device.group),
-    host: stringAttribute(device.host),
-    id: stringAttribute(device.id),
-    location: stringAttribute(device.location),
-    name: stringAttribute(device.name),
-    notes: stringAttribute(device.notes),
-    playerType: stringAttribute(device.playerType),
-    playlistId: nullableString(device.playlistId),
-    publishedAt: nullableString(device.publishedAt),
-    publishedPlaylistId: nullableString(device.publishedPlaylistId),
-    publishedPlaylistVersion: nullableNumber(device.publishedPlaylistVersion),
-    resetCommandId: nullableString(device.resetCommandId),
-    resetFinishedAt: nullableString(device.resetFinishedAt),
-    resetRequestedAt: nullableString(device.resetRequestedAt),
-    resetStartedAt: nullableString(device.resetStartedAt),
-    resetStatus: nullableString(device.resetStatus),
-    resetStatusMessage: nullableString(device.resetStatusMessage),
-    resetUpdatedAt: nullableString(device.resetUpdatedAt),
-    rootPath: stringAttribute(device.rootPath),
-    screenId: nullableString(device.screenId),
-    sshUser: stringAttribute(device.sshUser),
-    updatedAt: stringAttribute(device.updatedAt)
+    deviceId: stringAttribute(normalizedDevice.id),
+    group: stringAttribute(normalizedDevice.group),
+    host: stringAttribute(normalizedDevice.host),
+    id: stringAttribute(normalizedDevice.id),
+    location: stringAttribute(normalizedDevice.location),
+    name: stringAttribute(normalizedDevice.name),
+    notes: stringAttribute(normalizedDevice.notes),
+    playerType: stringAttribute(normalizedDevice.playerType),
+    playlistId: nullableString(normalizedDevice.playlistId),
+    publishedAt: nullableString(normalizedDevice.publishedAt),
+    publishedPlaylistId: nullableString(normalizedDevice.publishedPlaylistId),
+    publishedPlaylistVersion: nullableNumber(normalizedDevice.publishedPlaylistVersion),
+    resetCommandId: nullableString(normalizedDevice.resetCommandId),
+    resetFinishedAt: nullableString(normalizedDevice.resetFinishedAt),
+    resetRequestedAt: nullableString(normalizedDevice.resetRequestedAt),
+    resetStartedAt: nullableString(normalizedDevice.resetStartedAt),
+    resetStatus: nullableString(normalizedDevice.resetStatus),
+    resetStatusMessage: nullableString(normalizedDevice.resetStatusMessage),
+    resetUpdatedAt: nullableString(normalizedDevice.resetUpdatedAt),
+    rootPath: stringAttribute(normalizedDevice.rootPath),
+    screenId: nullableString(normalizedDevice.screenId),
+    sshUser: stringAttribute(normalizedDevice.sshUser),
+    updatedAt: stringAttribute(normalizedDevice.updatedAt),
+    workspaceId: stringAttribute(normalizedDevice.workspaceId)
   };
 }
 
@@ -200,7 +205,8 @@ function screenFromItem(item: Record<string, AttributeValue>): ScreenRecord {
     publishedAt: stringOrNullAttribute(item.publishedAt),
     publishedPlaylistId: stringOrNullAttribute(item.publishedPlaylistId),
     publishedPlaylistVersion: numberOrNullAttribute(item.publishedPlaylistVersion),
-    updatedAt: stringAttributeOrDefault(item.updatedAt, isoNow())
+    updatedAt: stringAttributeOrDefault(item.updatedAt, isoNow()),
+    workspaceId: workspaceIdOrDefault(stringOrNullAttribute(item.workspaceId))
   };
 }
 
@@ -228,7 +234,8 @@ function deviceFromItem(item: Record<string, AttributeValue>): DeviceRecord {
     rootPath: stringAttributeOrDefault(item.rootPath, "~"),
     screenId: stringOrNullAttribute(item.screenId),
     sshUser: stringAttributeOrDefault(item.sshUser, "donnoel"),
-    updatedAt: stringAttributeOrDefault(item.updatedAt, isoNow())
+    updatedAt: stringAttributeOrDefault(item.updatedAt, isoNow()),
+    workspaceId: workspaceIdOrDefault(stringOrNullAttribute(item.workspaceId))
   };
 }
 
