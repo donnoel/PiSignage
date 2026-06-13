@@ -18,6 +18,7 @@
     "agent:loop": "npm --workspace device-agent run loop",
     "simulate:failures": "node scripts/local-failure-smoke.mjs",
     "test:schedule": "node scripts/schedule-evaluation-smoke.mjs",
+    "test:workspace-auth": "node scripts/workspace-auth-smoke.mjs",
     "test:release-state": "node scripts/release-state-smoke.mjs",
     "test:dashboard-css": "node scripts/dashboard-css-smoke.mjs",
     "test:bad-upload": "node scripts/bad-media-upload-smoke.mjs",

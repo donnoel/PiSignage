@@ -174,3 +174,12 @@ Before calling workspaces production-ready:
 - Activity logs show the correct workspace and actor.
 - Existing five-system pilot data survives migration into the default
   workspace.
+
+Current local smoke:
+
+```bash
+npm run test:workspace-auth
+```
+
+This checks the centralized role-to-permission helper, including denied
+viewer/operator/content-manager actions and cross-workspace membership denial.
