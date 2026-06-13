@@ -4,7 +4,7 @@
 
 ## Product Intent
 
-Beam is a real local-first Raspberry Pi signage operations console. AWS remains a later option after the local-first foundation is proven.
+Beam is a real local-first Raspberry Pi signage operations console. AWS dev alpha work has started, but the local playback, manual publish, and recovery contracts remain the product baseline.
 
 The near-term product target is deliberately small:
 
@@ -14,13 +14,13 @@ The near-term product target is deliberately small:
 - Reusable media and playlists.
 - Reliable fullscreen playback and recovery.
 
-This is not a full enterprise clone. The project should evolve incrementally from a real local product into a cloud-backed alpha only after the local playback, device status, and contracts are clear.
+This is not a full enterprise clone. The project should evolve incrementally from a real local product into a production-ready local-plus-cloud service only as playback, device status, and contracts stay clear.
 
 Delivery path:
 
-- Team demo by Wednesday, June 3, 2026.
-- Five real Raspberry Pi signage systems controlled from the interface after the demo, with a soak period for playback, control, monitoring, recovery, and outage behavior.
-- Real AWS buildout only after the local demo and five-device soak prove the operating model, with explicit approval before resource creation.
+- Current sprint: production-minded hardening for real local operations, screen health, playlists, media, recovery, and cloud alpha truthfulness.
+- Five real Raspberry Pi signage systems controlled from the interface as the pilot surface, with a soak period for playback, control, monitoring, recovery, and outage behavior.
+- Real AWS buildout happens only through explicit approval. The current `dev` alpha scaffold is intentionally narrow and must preserve local playback and manual publish.
 - Production only after the five-system pilot and later cloud work prove playback, control, monitoring, and recovery.
 
 ## Current Product Phase
@@ -29,16 +29,16 @@ The repository is in a local product re-baseline phase. Product requirements now
 
 Current implementation snapshot:
 
-- The dashboard currently exposes Dashboard, Media Store, Playlists, Screen Status, Screens, Scheduling, and Recovery views.
+- The dashboard currently exposes What's Playing, Library, Playlists, Screen Health, Screens, Layouts, and Scheduling views.
 - Device inventory and activity evidence exist in local JSON and are surfaced through the current status, screens, scheduling, and recovery workflows.
-- Dedicated Devices, Activity, Troubleshooting, and Settings sections remain product goals where the current UI has not split them out yet.
+- Screen Health currently carries device-style health, diagnostics, recovery, reset, and troubleshooting controls. Dedicated Activity and Settings sections remain product goals where the current UI has not split them out yet.
 
 Current goals:
 
-- Keep the dashboard focused on local operations: Dashboard, Media Store, Playlists, Screens, Devices, Activity, Troubleshooting, and Settings.
+- Keep the dashboard focused on operations: What's Playing, Library, Playlists, Screens, device health, Activity, Troubleshooting, and Settings.
 - Keep dashboard, player, and device-agent boundaries clear.
 - Preserve the proven local playback and Pi recovery path while adding inventory, media, activity, scheduling, and recovery workflows.
-- Avoid creating AWS resources until the demo and five-device local soak are complete and the user explicitly approves that phase.
+- Do not create or mutate AWS resources unless the user explicitly asks for that deploy/change in the current task.
 - Remove/defer map UI until the operations foundation is stronger.
 
 ## Non-Goals For The Initial Product
@@ -50,7 +50,7 @@ Do not build these until explicitly approved:
 - Advanced RBAC.
 - Analytics.
 - Screenshot capture.
-- Remote reboot.
+- Remote reboot as a default recovery response.
 - OTA deployment/update system.
 - Advanced fleet management beyond the five-system pilot.
 - Complex scheduling beyond simple business-hours windows.
@@ -67,10 +67,10 @@ Target architecture:
 - `player/`: browser playback fallback/experimental app that can run from local playlist/cache data.
 - `device-agent/`: Node.js + TypeScript Raspberry Pi agent for playlist reads, local heartbeat writes, cache management, and future MQTT.
 - `docs/`: architecture, phases, setup, API, AWS design, and security documentation.
-- `infra/`: AWS architecture notes and future IaC planning only; no active cloud infrastructure.
+- `infra/`: AWS architecture notes and the `infra/beam` CDK scaffold for the opt-in `dev` alpha.
 - `sample-content/`: tracked seed playlist and local media examples.
 
-Future AWS services are expected to include API Gateway, Lambda, DynamoDB, S3, CloudFront, Cognito, and AWS IoT Core MQTT. Greengrass is a later consideration, not a current requirement.
+The current AWS dev alpha scaffold includes API Gateway, Lambda, DynamoDB, S3, CloudWatch log groups, and App Runner for the dashboard. CloudFront, Cognito, and AWS IoT Core MQTT remain future production-oriented work. Greengrass is a later consideration, not a current requirement.
 
 ## Behavior Invariants
 
@@ -81,7 +81,7 @@ Do not regress these contracts:
 - Device startup should recover to playback without dashboard interaction.
 - A missing network connection must not stop already-cached playback.
 - Heartbeat state must be inspectable as local JSON.
-- Cloud integrations must remain absent or clearly documented until real AWS implementation is approved.
+- Cloud integrations must remain clearly documented, opt-in, and honest about what is wired. They must not weaken local cached playback or manual publish.
 - Device playback and reboot recovery are first-class behavior contracts.
 
 ## Real Implementation Rules
@@ -99,20 +99,20 @@ Keep the phase plan in `docs/PHASES.md` current. Every phase needs acceptance cr
 Near-term priority order:
 
 1. Preserve the existing local playback, publishing, and Pi recovery foundation.
-2. Get the June 3 team demo honest and real.
+2. Keep the current product honest and real while hardening toward production.
 3. Rework dashboard and Screens around operational status, not maps.
 4. Add local data stores for media, screens, devices, activity, settings, and schedules.
-5. Build Media Store and playlist workflows around playback-safe assets.
+5. Build Library and playlist workflows around playback-safe assets.
 6. Add device inventory, troubleshooting, activity, scheduling, settings, and simple local login.
-7. Run a five-device local soak after the demo, then build AWS only after approval and preserve the proven local playback/recovery contracts.
+7. Run a five-device soak and expand AWS only through explicit approval while preserving the proven local playback/recovery contracts.
 
 ## Dashboard Rules
 
 - Keep the dashboard operational and focused, not marketing-heavy.
-- Use these main sections: Dashboard, Media Store, Playlists, Screens, Devices, Activity, Troubleshooting, and Settings.
+- Use these main sections: What's Playing, Library, Playlists, Screens, Devices/Screen Health, Activity, Troubleshooting, and Settings.
 - Use accessible status text for online/offline state.
 - Prefer dense tables and detail panels for screen inventory; map UI is deferred.
-- Keep cloud data out of product flows until backend contracts exist and real implementation is approved.
+- Keep cloud data behind explicit cloud-mode contracts and honest unavailable states when a workflow is not wired.
 - Avoid advanced account, org, RBAC, billing, or analytics UI.
 
 ## Player Rules
@@ -149,8 +149,8 @@ Heartbeat model starts with:
 
 ## AWS Rules
 
-- Do not create real AWS infrastructure until the team demo and five-device local soak are complete and the user explicitly approves the AWS buildout phase.
-- Do not require AWS credentials for local demo work.
+- Do not create, update, destroy, or deploy real AWS infrastructure unless the user explicitly approves that action in the current task.
+- Do not require AWS credentials for local operations.
 - When AWS starts, build real resource-backed behavior rather than placeholder cloud flows.
 - Keep future AWS design least-privilege and easy to reason about.
 - Use signed CloudFront/S3 access patterns for private media in future docs.

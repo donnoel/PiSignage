@@ -1,18 +1,41 @@
 # AWS Design
 
-No AWS resources are deployed in the current phase. This document records the intended Phase 4 design so implementation can stay incremental, mockable, and easy to validate before any cloud work starts.
+AWS `dev` alpha work has started. This document records the target design and distinguishes the current scaffold from later production-grade cloud work.
 
-The first cloud alpha should still serve the same narrow product: one account, one dashboard, one Raspberry Pi, one TV, one assigned playlist, and reliable offline-capable playback.
+The first cloud alpha still serves the same narrow product: one account, one dashboard, one or more Raspberry Pis, assigned playlists, and reliable offline-capable playback.
+
+## Current Dev Alpha
+
+Implemented or scaffolded now:
+
+- `infra/beam` CDK stack for a `dev` environment.
+- App Runner dashboard container from `Dockerfile.dashboard`.
+- Private S3 buckets for source media, playback media, thumbnails, and logs.
+- DynamoDB tables for accounts, devices, screens, playlists, assets, heartbeats, and activity.
+- API Gateway and Lambda routes for latest-device heartbeat write/read.
+- Dashboard cloud mode for Screens, Devices, playlist catalog, media source upload/cataloging, manual playlist publish markers, and heartbeat reads.
+- Device-agent cloud playlist fetch and heartbeat post when provisioned with ignored local environment variables.
+- Dev device playlist endpoint at `/api/cloud/devices/{deviceId}/playlist`.
+- Cloud reset queue/result endpoints for deployment reset workflows.
+
+Still not production-ready:
+
+- No Cognito dashboard authentication.
+- No IoT certificates or MQTT command channel.
+- No production device-auth boundary for playlist fetch.
+- No CloudFront distribution or production signed URL strategy.
+- No OTA update system, screenshot capture, analytics, billing, or advanced RBAC.
+- Cloud schedules and cloud recovery are still partial; local POC paths remain authoritative there.
 
 ## Services
 
 - API Gateway: HTTPS API for dashboard and device contract endpoints.
-- Lambda: small request handlers for pairing, heartbeat, playlist, asset, and assignment flows.
+- Lambda: small request handlers for heartbeat now; pairing, playlist, asset, and assignment API handlers remain target design where not already served by the dashboard.
 - DynamoDB: account, screen, device, playlist, asset, assignment, and heartbeat metadata.
 - S3: private source media and processed media storage.
-- CloudFront: signed asset delivery to devices.
-- Cognito: simple dashboard sign-in boundary.
-- AWS IoT Core: MQTT device command, event, and playlist update messages.
+- CloudFront: future signed asset delivery to devices.
+- Cognito: future simple dashboard sign-in boundary.
+- AWS IoT Core: future MQTT device command, event, and playlist update messages.
 
 Greengrass may be considered later, but it is not part of the initial alpha.
 
@@ -40,8 +63,8 @@ Rules:
 
 - `assetId` is the durable lookup key; file names are display metadata only.
 - Original uploads and processed playback assets use separate prefixes.
-- The first alpha should support image assets only.
-- Video prefixes are reserved for later and should not drive current implementation.
+- The current alpha accepts MP4 source uploads into the cloud media catalog.
+- JPEG, PNG, and MOV source uploads can be stored and marked processing until playback-safe MP4 preparation is available.
 - Device cache keys should use `assetId` plus checksum/version, not raw file name.
 - S3 lifecycle rules can clean failed uploads and obsolete processed renditions later.
 
@@ -298,12 +321,12 @@ Migration steps:
 1. Keep local file mode as the default development path.
 2. Add API clients behind explicit config flags.
 3. Mock API responses with the same shapes as `docs/API_CONTRACT.md`.
-4. Add AWS implementation only after contracts and local failure behavior are stable.
+4. Keep AWS implementation limited to the approved `dev` alpha until contracts and local failure behavior are stable.
 5. Keep the device cache fallback path identical for local and cloud playlists.
 
 ## Phase 5 Readiness Checklist
 
-Before implementing AWS alpha:
+Before expanding AWS alpha:
 
 - Confirm Phase 1 local playback survives missing playlist and missing asset tests.
 - Confirm Phase 2 dashboard renders heartbeat and playlist state clearly.
@@ -325,6 +348,6 @@ Before implementing AWS alpha:
 - Greengrass.
 - Advanced fleet management.
 - Screenshot capture.
-- Remote reboot.
+- Remote reboot as a default recovery response.
 - OTA update service.
 - Billing and analytics.

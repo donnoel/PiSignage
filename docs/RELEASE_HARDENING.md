@@ -12,7 +12,7 @@ Beam release hardening must prove real local behavior. Automated checks can catc
   - Runs local failure fallback checks for the device agent.
 - `npm run test:bad-upload`
   - Requires the dashboard running at `http://localhost:3000` unless `PISIGNAGE_DASHBOARD_URL` is set.
-  - Posts an unsupported media file to the Media Store and playlist upload paths.
+  - Posts an unsupported media file to the Library and playlist upload paths.
   - Confirms the upload is rejected and playlist/media state is unchanged.
 - `npm run drill:pi`
   - Requires the dashboard running.

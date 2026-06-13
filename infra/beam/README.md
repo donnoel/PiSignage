@@ -21,9 +21,9 @@ npm run synth
 
 `npm run synth` creates a CloudFormation template under `cdk.out/`. Generated output is ignored by git.
 
-## Deploy Later
+## Deploy
 
-Deploy only after reviewing the synthesized template:
+Deploy only after reviewing the synthesized template and confirming the intended AWS change for the current task:
 
 ```sh
 cd infra/beam

@@ -11,9 +11,9 @@ This is being built and tested for real. Do not add placeholder implementation, 
 ## Product Direction
 
 - Start local-first with one account and a small number of Raspberry Pi devices.
-- Prepare for a team demo by Wednesday, June 3, 2026 with real local behavior and honest validation evidence.
-- After the demo, add five real Raspberry Pi signage systems and soak playback, control, monitoring, recovery, and outage behavior.
-- Build the AWS portion only after the local demo and five-device soak prove the operating model.
+- Preserve real local behavior and honest validation evidence while hardening toward production.
+- Operate the five real Raspberry Pi signage systems as the pilot surface for playback, control, monitoring, recovery, and outage behavior.
+- Expand the AWS dev alpha only when it preserves local cached playback and manual publish.
 - Treat VLC as the default field playback path for appliance mode.
 - Keep each Pi able to continue playback from cached local media and playlist state during network outages.
 - Keep dashboard operations from dirtying tracked source files.
@@ -21,9 +21,9 @@ This is being built and tested for real. Do not add placeholder implementation, 
 
 ## Delivery Milestones
 
-### Team Demo: June 3, 2026
+### Current Sprint
 
-The demo must show real behavior, not mock flows.
+Current work must improve the real service, not mock flows.
 
 Requirements:
 
@@ -33,12 +33,12 @@ Requirements:
 - Screens and Devices show honest configured/unconfigured/reachable/unreachable states.
 - Troubleshooting shows real SSH/player/service evidence when configured.
 - Recovery actions either run against the real Pi or clearly report the missing prerequisite.
-- Map UI is absent from the primary demo path.
+- Map UI is absent from the primary operations path.
 
 Acceptance:
 
-- The team can see how one real screen is controlled end to end.
-- Any unimplemented area is named plainly in the UI or demo notes.
+- An operator can see how one real screen is controlled end to end.
+- Any unimplemented area is named plainly in the UI or docs.
 - No placeholder data is presented as product behavior.
 
 ### Five-System Pilot
@@ -63,11 +63,11 @@ Acceptance:
 
 ### AWS Buildout
 
-AWS comes after the local demo and five-device soak, and must preserve the same real-product rule.
+AWS dev alpha work has started and must preserve the same real-product rule.
 
 Requirements:
 
-- Implement real backend services only after explicit approval for AWS resource creation.
+- Implement or mutate real backend services only after explicit approval for the current task.
 - Keep least-privilege IAM, private media storage, and clear device identity boundaries.
 - Avoid fake cloud success states; if a cloud operation is not wired, show it as unavailable.
 - Preserve local cached playback during cloud/network outages.
@@ -77,7 +77,7 @@ Requirements:
 The dashboard information architecture should use these sections:
 
 - What's Playing
-- Media Store
+- Library
 - Playlists
 - Screens
 - Devices
@@ -121,9 +121,9 @@ Acceptance:
 - Status text does not rely on color alone.
 - What's Playing remains useful when the internet is unavailable.
 
-## Media Store
+## Library
 
-The Media Store is the source of reusable media and metadata.
+The Library is the source of reusable media and metadata.
 
 Requirements:
 
@@ -148,7 +148,7 @@ Playlists define ordered playback for screens.
 
 Requirements:
 
-- Add media from the Media Store.
+- Add media from the Library.
 - Rearrange playlist items.
 - Remove playlist items while preserving at least one playable item for assigned screens.
 - Show item details: media title, tags, duration, file path, validation status, and Pi sync/reporting state.
@@ -182,7 +182,7 @@ Acceptance:
 - A saved layout template can be validated locally without touching the Pi.
 - A layout is not publishable until it has a ready rendered MP4 asset.
 - The Pi playlist continues to receive video assets, preserving cached playback and reboot recovery.
-- Rendered layout playlist additions use the same Pi-safe MP4 checks as ordinary Media Store items.
+- Rendered layout playlist additions use the same Pi-safe MP4 checks as ordinary Library items.
 
 ## Screens
 

@@ -1,12 +1,12 @@
 # Device Setup
 
-This document prepares for Raspberry Pi + TV testing without assuming the hardware is available today. It is a plan and checklist, not a production installer.
+This document covers Raspberry Pi + TV setup for the current local-first Beam appliance path. It is still not a production installer.
 
 ## Target Device
 
 - Raspberry Pi running Raspberry Pi OS.
 - TV connected over HDMI.
-- Chromium running in kiosk mode.
+- VLC running fullscreen for field playback, with Chromium kiosk retained as a fallback/experimental path.
 - Device agent managed by `systemd`.
 - Local playlist and asset cache on disk.
 
@@ -14,7 +14,7 @@ This document prepares for Raspberry Pi + TV testing without assuming the hardwa
 
 Use Raspberry Pi OS with desktop support for the first TV test because Chromium kiosk mode is the fastest path to visible playback.
 
-Recommended tomorrow:
+Recommended baseline:
 
 - Raspberry Pi OS 64-bit with desktop.
 - Enable SSH during imaging if remote terminal access is useful.
@@ -39,7 +39,7 @@ Recommended tomorrow:
 - The first device test can run fully local after dependencies are installed.
 - Internet is useful for install/update, but playback should not depend on internet.
 - The player should use `http://localhost:5173` from the local static player service on the Pi.
-- AWS is not required for tomorrow’s test.
+- AWS is not required for local playback or recovery testing.
 - If Wi-Fi is unreliable, keep validating local playback and reboot recovery.
 
 ## Local POC Flow
@@ -72,7 +72,7 @@ device-agent/local-state/heartbeat.json
 
 ## Device Configuration
 
-Use `device-agent/config.example.json` as the local config shape. The current agent still reads environment variables; the config file documents the intended values for tomorrow’s setup.
+Use `device-agent/config.example.json` as the local config shape. The current agent reads environment variables; the config file documents the intended stable values for Pi provisioning.
 
 Current environment variable mapping:
 
@@ -376,7 +376,7 @@ cat ~/.local/state/pisignage/schedule-status.json
 
 ## Reboot Recovery Plan
 
-Manual recovery expectations for tomorrow:
+Manual recovery expectations:
 
 1. Start player and open kiosk manually.
 2. Confirm playlist is visible on TV.
@@ -391,7 +391,7 @@ Do not treat recovery as supported until it passes on real hardware.
 
 ## Manual Validation Checklist For TV Testing
 
-Use this tomorrow once the Pi and TV are available:
+Use this once the Pi and TV are available:
 
 - TV receives HDMI signal after boot.
 - Desktop resolution fits the screen.
@@ -413,5 +413,5 @@ Use this tomorrow once the Pi and TV are available:
 - Device certificates.
 - AWS IoT pairing.
 - OTA updates.
-- Remote reboot.
+- Remote reboot as a default recovery response.
 - Fleet management.

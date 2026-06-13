@@ -1,6 +1,6 @@
 # Device Configuration
 
-PiSignage device configuration is local and mockable today. The current agent primarily reads environment variables; `device-agent/config.example.json` documents the intended stable config shape for tomorrow’s Pi work and future pairing.
+PiSignage device configuration is local-first. The current agent reads environment variables for both local mode and optional AWS dev alpha mode; `device-agent/config.example.json` documents the intended stable config shape for provisioning and future pairing.
 
 No config file should contain AWS credentials, IoT private keys, signed URLs, or production secrets.
 
@@ -23,9 +23,9 @@ No config file should contain AWS credentials, IoT private keys, signed URLs, or
 
 - `deviceId`: stable local device ID. Cloud-connected Pis must be provisioned
   with a unique value before the device-agent service starts.
-- `screenId`: assigned screen ID. Initial POC uses one screen.
-- `environment`: `local` for the current repo; future values may include `dev` or `alpha`.
-- `playlistSourcePath`: local playlist path or future HTTPS playlist endpoint.
+- `screenId`: assigned screen ID.
+- `environment`: `local` for local operation, or `dev` for the current AWS alpha.
+- `playlistSourcePath`: local playlist path or cloud dashboard playlist endpoint.
 - `cacheDirectory`: local last-known-good playlist and asset cache root.
 - `heartbeatPath`: local heartbeat JSON output path.
 - `pollIntervalSeconds`: device-agent loop interval. The default loop interval is 60 seconds.

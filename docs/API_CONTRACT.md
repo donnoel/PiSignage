@@ -1,8 +1,8 @@
 # API Contract
 
-This document records the future API and MQTT contract before cloud implementation. The current repository still uses local files, local dashboard routes, and direct Pi SSH/SCP operations; it does not expose or deploy a real cloud API.
+This document records the API and MQTT contract direction for Beam. The current repository uses local files, local dashboard routes, and direct Pi SSH/SCP operations for the default local product path, and it also includes a limited AWS `dev` alpha for heartbeat, cloud-backed dashboard data, media cataloging, and device playlist fetch.
 
-These contracts are intentionally scoped to the initial product path: one account, a small local fleet, reusable media, playlists, and playback-safe assets. They must remain locally testable until a future AWS phase is explicitly approved.
+These contracts are intentionally scoped to the initial product path: one account, a small fleet, reusable media, playlists, and playback-safe assets. Local behavior must remain testable without AWS credentials.
 
 All examples are illustrative and contain no real secrets.
 
@@ -62,7 +62,7 @@ Rules:
 
 Pairing creates a relationship between one physical device and one screen. The initial POC does not support organizations, fleet ownership transfer, or advanced RBAC.
 
-Future endpoint:
+Target endpoint:
 
 ```http
 POST /v1/devices/pair
@@ -108,7 +108,7 @@ Security notes:
 
 Heartbeat is the first monitoring model. It tells the dashboard whether the device recently reported status, but it is not a command channel.
 
-Future endpoint:
+Implemented in the dev AWS alpha:
 
 ```http
 POST /v1/devices/{deviceId}/heartbeat
@@ -189,7 +189,7 @@ Expected failures:
 
 Playlist fetch gives the device the current screen assignment and asset list. It must be safe for the device to call repeatedly.
 
-Future endpoint:
+Implemented for the dashboard-hosted dev device playlist bridge:
 
 ```http
 GET /v1/devices/{deviceId}/playlist
@@ -210,7 +210,7 @@ Response:
       "type": "image",
       "uri": "https://example.cloudfront.net/assets/welcome.png",
       "durationSeconds": 10,
-      "altText": "PiSignage demo title card",
+      "altText": "Beam title card",
       "checksumSha256": "example-checksum"
     }
   ]
@@ -231,9 +231,9 @@ Device behavior:
 
 ## Asset Upload
 
-The dashboard eventually needs a way to upload media without sending large files through Lambda. The first contract returns a signed upload URL and records intended metadata.
+The dashboard cloud alpha currently uploads source media through the hosted dashboard into private S3 and records media metadata in DynamoDB. The later production contract should avoid sending large files through Lambda by returning a signed upload URL and recording intended metadata.
 
-Future endpoint:
+Target endpoint:
 
 ```http
 POST /v1/assets/upload-url
@@ -271,14 +271,14 @@ Expected failures:
 Rules:
 
 - The dashboard must not log `uploadUrl`.
-- Image upload comes before video.
+- MP4 video is already supported in the alpha; image and MOV sources still require playback-safe processing before playlist use.
 - Server-side validation and processing status should be designed before production uploads.
 
 ## Screen Assignment
 
 Screen assignment connects the single screen to a playlist. This is intentionally not a scheduling system yet.
 
-Future endpoint:
+Target endpoint:
 
 ```http
 PUT /v1/screens/{screenId}/assignment
@@ -355,11 +355,11 @@ MQTT rules:
 - Commands must be idempotent where practical.
 - Large payloads do not belong in MQTT messages.
 - Device policies must scope each device to its own topics.
-- MQTT is not required for the current local POC.
+- MQTT is not required for current local operation or the current dev alpha.
 
 ## Local-To-Cloud Mapping
 
-Current local files map to future contracts:
+Current local files map to cloud contracts like this:
 
 | Local file | Future contract |
 | --- | --- |

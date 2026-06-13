@@ -1,17 +1,17 @@
 # Beam
 
-Beam is a real local-first Raspberry Pi based digital signage operations console. The first target is intentionally small: one account, one dashboard, real Raspberry Pi screens, reusable media and playlists, and reliable fullscreen playback from local content. AWS services are planned only after the local demo and a five-device soak prove the operating model.
+Beam is a real local-first Raspberry Pi based digital signage operations console. The target remains intentionally small: one account, one operations dashboard, real Raspberry Pi screens, reusable media and playlists, and reliable fullscreen playback from local content. The local playback path is the product contract even while the AWS dev alpha comes online.
 
-The current repository provides a local-only foundation. It does not deploy AWS infrastructure, require AWS credentials, or attempt to clone a full enterprise signage platform.
+The current repository provides a local-first product foundation plus an opt-in AWS dev alpha scaffold. Running the local dashboard, player, and device agent does not require AWS credentials. AWS work lives behind explicit environment variables and `infra/beam`; it is not production infrastructure and must not be deployed or treated as active unless the operator intentionally runs the AWS commands.
 
 ## What Exists Now
 
-- `dashboard/`: Next.js + TypeScript + Tailwind local operations dashboard with What's Playing, Media Store, Playlists, Screen Health, Screens, Layouts, Scheduling, and Recovery views.
+- `dashboard/`: Next.js + TypeScript + Tailwind operations dashboard with What's Playing, Library, Playlists, Screen Health, Screens, Layouts, and Scheduling views. Screen Health currently contains deeper diagnostics and recovery controls.
 - `player/`: TypeScript browser playback fallback/experimental app for same-origin local playlist playback.
-- `device-agent/`: Node.js + TypeScript local device agent that reads a playlist and writes heartbeat JSON.
-- `docs/`: architecture, phases, API contract, AWS design, security notes, and device setup.
+- `device-agent/`: Node.js + TypeScript device agent that reads a local playlist or optional cloud playlist endpoint, writes heartbeat JSON, caches the last known good playlist, and can post an optional dev cloud heartbeat.
+- `docs/`: architecture, phase plan, API contract, AWS alpha notes, security notes, and device setup.
 - `sample-content/`: tracked seed playlist and local media fixtures.
-- `infra/`: future AWS notes only; no active cloud infrastructure is deployed from this repo.
+- `infra/`: AWS CDK scaffold for the Beam `dev` alpha. It includes App Runner, DynamoDB, S3, API Gateway, Lambda, and log resources when deliberately deployed.
 
 ## Local Requirements
 
@@ -19,7 +19,7 @@ The current repository provides a local-only foundation. It does not deploy AWS 
 - npm 10 or newer.
 - `ffmpeg` for JPEG/PNG uploads, because still images are converted into Pi-safe MP4 clips before playback.
 
-No AWS credentials are required for the current local POC.
+No AWS credentials are required for local operation.
 
 ## Getting Started
 
@@ -48,9 +48,10 @@ PISIGNAGE_PI_PASSWORD='<local-pi-password>' \
 npm run dev:dashboard
 ```
 
-Dashboard uploads still save to the local checkout first, then copy the uploaded
-MP4 and playlist JSON to the Pi with `scp`/`ssh`. If Pi publishing is not
-configured, the dashboard will show that the upload was saved locally only.
+Dashboard uploads save to the active local or cloud store. In local mode, ready
+media and playlist JSON are copied to a configured Pi with `scp`/`ssh` only when
+the operator publishes. If Pi publishing is not configured, the dashboard shows
+that the change was saved locally only.
 
 Optional dashboard labels can also live in `dashboard/.env.local`. Leave them
 unset if they are not known yet; the dashboard will say they are not configured
@@ -121,7 +122,7 @@ PiSignage/
 
 ## Current Phase
 
-The current focus is June 3 demo readiness and local pilot hardening: real media uploads, reusable playlists, honest screen/device status, schedule publishing, and recovery evidence from local JSON plus any configured Pi. The next proof point is operating five real Raspberry Pi signage systems from the interface and soaking them before AWS buildout.
+The current focus is production-minded sprint hardening: real media uploads, reusable playlists, honest screen/device status, schedule publishing, local recovery evidence, and an AWS `dev` alpha that preserves manual publish and cached Pi playback. The next UI cleanup target is collapsing redundant Screen Health and Screens functionality into one clearer operations view.
 
 See `docs/PHASES.md` for the full phase plan.
 
@@ -131,7 +132,7 @@ See `docs/PHASES.md` for the full phase plan.
 - Offline-first playback.
 - Appliance-like Raspberry Pi behavior.
 - Simple architecture with clean dashboard/backend/device boundaries.
-- Keep cloud integrations absent until AWS resource creation is explicitly approved.
+- Keep cloud integrations opt-in, honest, and unable to replace local playback recovery.
 - Do not show fake devices, fake health, fake media, or fake cloud success states.
 - Build incrementally with validation at every phase.
 

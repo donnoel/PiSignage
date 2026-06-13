@@ -2,9 +2,15 @@
 
 Goal: run Beam in AWS instead of relying on the laptop-hosted dashboard, while preserving local-first playback and recovery.
 
+## Current Snapshot
+
+Beam now has a real `dev` alpha scaffold and partial cloud workflows. Foundation resources, App Runner dashboard hosting, DynamoDB-backed dashboard stores, cloud source-media cataloging, latest heartbeat routes, device-agent cloud heartbeat, device-agent playlist fetch, manual publish markers, and a cloud reset queue are present in code. Production auth, IoT/MQTT, complete media processing, cloud schedule parity, and production device identity remain future work.
+
 ## Phase 1: Foundation
 
 Create a repeatable Beam `dev` stack beside the existing app showcase resources.
+
+Status: implemented/scaffolded in `infra/beam`; deploys still require intentional operator approval.
 
 Deliverables:
 
@@ -24,13 +30,15 @@ Validation:
 
 Create real backend endpoints before moving dashboard behavior.
 
+Status: partially implemented. Heartbeat routes exist through API Gateway/Lambda. Several dashboard workflows use DynamoDB/S3 directly from the server-side dashboard in cloud mode. Pairing and production API boundaries remain future work.
+
 Deliverables:
 
 - DynamoDB-backed dashboard Screens and Devices inventory.
 - DynamoDB-backed dashboard playlist catalog, starting with the dev main playlist record.
 - Cloud media source upload and asset cataloging for MP4, JPEG, PNG, and MOV.
 - Device-agent cloud playlist fetch with local media cache fallback.
-- `POST /v1/devices/pair`
+- `POST /v1/devices/pair` remains future work.
 - `POST /v1/devices/{deviceId}/heartbeat`
 - `GET /v1/devices/{deviceId}/playlist`
 - Structured API errors with request IDs.
@@ -49,6 +57,8 @@ Validation:
 ## Phase 3: Device Agent Cloud Mode
 
 Make the Pi phone home to AWS while keeping local mode as the default.
+
+Status: partially implemented. The device agent can fetch a cloud playlist, cache it locally, send cloud heartbeat, write local heartbeat, and fall back to local/cache data.
 
 Deliverables:
 
@@ -69,6 +79,8 @@ Validation:
 
 Move media storage out of the laptop runtime.
 
+Status: partially implemented. Cloud mode stores source media in S3 and metadata in DynamoDB. MP4 uploads can become catalog records; playback preparation for JPEG, PNG, and MOV is still incomplete unless the preparation worker is available and succeeds.
+
 Deliverables:
 
 - Signed upload URL endpoint.
@@ -87,6 +99,8 @@ Validation:
 ## Phase 5: Cloud Dashboard Mode
 
 Move the operator dashboard to AWS-backed data.
+
+Status: partially implemented. The App Runner dashboard and cloud-mode stores exist for selected workflows. Cognito sign-in and full API-backed dashboard boundaries remain future work.
 
 Deliverables:
 
