@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiErrorResponse } from "../../../../../lib/api-error-response";
 import { requestDeviceReset, resetCommandForDevice } from "../../../../../lib/inventory-store";
 
 type RouteContext = {
@@ -23,9 +24,6 @@ export async function POST(request: Request, context: RouteContext) {
       message: "Reset queued. The Pi will run it on its next cloud check-in."
     });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Could not queue reset." },
-      { status: 400 }
-    );
+    return apiErrorResponse(error, "Could not queue reset.", 400);
   }
 }

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
+import { apiErrorResponse } from "../../../lib/api-error-response";
 import {
   appendActivityRecord,
   ensureLocalDataFoundation,
@@ -150,7 +151,6 @@ function mediaRecordFromRender(layout: LayoutTemplate, playbackFileName: string,
 }
 
 function errorResponse(error: unknown, fallback: string) {
-  const message = error instanceof Error ? error.message : fallback;
   const status =
     error instanceof LayoutRenderApiError
       ? error.status
@@ -158,7 +158,7 @@ function errorResponse(error: unknown, fallback: string) {
         ? error.status
         : 500;
 
-  return NextResponse.json({ error: message }, { status });
+  return apiErrorResponse(error, fallback, status);
 }
 
 export async function POST(request: Request) {

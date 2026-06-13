@@ -14,6 +14,7 @@ import {
   readMediaStore,
   writeMediaStore
 } from "../../../lib/local-data-store";
+import { apiErrorResponse } from "../../../lib/api-error-response";
 import { readMediaFolderStore, writeMediaFolderStore } from "../../../lib/media-folder-store";
 import { sampleAssetsDirectory } from "../../../lib/local-playlist";
 import type { PlaylistAsset } from "../../../lib/local-playlist";
@@ -211,9 +212,8 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     return NextResponse.json({ item: updated });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to update media item.";
     console.error("media store update failed", error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(error, "Failed to update media item.");
   }
 }
 
@@ -305,8 +305,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
     return NextResponse.json({ deleted: true, item: current });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to delete media item.";
     console.error("media store delete failed", error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(error, "Failed to delete media item.");
   }
 }

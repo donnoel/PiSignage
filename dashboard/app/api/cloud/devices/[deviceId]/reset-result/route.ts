@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiErrorResponse } from "../../../../../lib/api-error-response";
 import type { DeviceResetStatus } from "../../../../../lib/local-data-store";
 import { updateDeviceResetStatus } from "../../../../../lib/inventory-store";
 
@@ -56,9 +57,6 @@ export async function POST(request: Request, context: RouteContext) {
       resetUpdatedAt: device.resetUpdatedAt
     });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Could not update reset status." },
-      { status: 400 }
-    );
+    return apiErrorResponse(error, "Could not update reset status.", 400);
   }
 }

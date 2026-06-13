@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiErrorResponse } from "../../../../lib/api-error-response";
 import { cloudMediaConfig } from "../../../../lib/cloud-media-store";
 import { startCloudMediaPreparationWorker } from "../../../../lib/cloud-media-preparation-worker";
 import { MediaUploadError } from "../../../../lib/media-processing";
@@ -37,6 +38,6 @@ export async function POST(_request: Request, context: RouteContext) {
       console.error("cloud media prepare failed", error);
     }
 
-    return NextResponse.json({ error: message }, { status });
+    return apiErrorResponse(error, "Could not prepare media for playback.");
   }
 }

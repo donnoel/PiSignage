@@ -7,6 +7,7 @@ import {
   writeDeviceStore,
   writeScreenStore
 } from "../../../lib/local-data-store";
+import { apiErrorResponse } from "../../../lib/api-error-response";
 import { readInventory, updateInventory } from "../../../lib/inventory-store";
 import { readPlaylistStore, readStoredPlaylist, selectPlaylist } from "../../../lib/playlist-store";
 
@@ -178,9 +179,6 @@ export async function POST(request: Request) {
     return assignmentResponse(playlist.playlistId);
   } catch (error) {
     console.error("playlist assignment failed", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Playlist assignment failed." },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Playlist assignment failed.");
   }
 }

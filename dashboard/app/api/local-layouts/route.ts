@@ -7,6 +7,7 @@ import {
   readMediaStore,
   writeLayoutStore
 } from "../../lib/local-data-store";
+import { apiErrorResponse } from "../../lib/api-error-response";
 import {
   defaultLayoutCanvas,
   layoutContractVersion,
@@ -223,9 +224,8 @@ function layoutResponse(store: { items: LayoutTemplate[]; updatedAt: string; ver
 }
 
 function errorResponse(error: unknown, fallback: string) {
-  const message = error instanceof Error ? error.message : fallback;
   const status = error instanceof LayoutApiError ? error.status : 500;
-  return NextResponse.json({ error: message }, { status });
+  return apiErrorResponse(error, fallback, status);
 }
 
 export async function GET(request: Request) {

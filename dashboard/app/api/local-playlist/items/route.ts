@@ -12,6 +12,7 @@ import {
 } from "../../../lib/local-playlist";
 import type { PiPublishResult, Playlist, PlaylistAsset } from "../../../lib/local-playlist";
 import { isCloudPlaylistStoreConfigured, readPlaylistStore, readStoredPlaylist, writeStoredPlaylist } from "../../../lib/playlist-store";
+import { apiErrorResponse } from "../../../lib/api-error-response";
 import { defaultDurationSeconds, playbackPrepProfile, slugify } from "../../../lib/media-processing";
 import { isPlaybackSafeVideoFileName } from "../../../lib/playback-safety";
 
@@ -342,9 +343,6 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("local playlist edit failed", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Playlist edit failed." },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Playlist edit failed.");
   }
 }

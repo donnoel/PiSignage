@@ -143,9 +143,10 @@ Current status: the dashboard has a shared default workspace ID,
 normalization that can attach that workspace to existing records as they are
 read or written, and centralized permission helpers for the first read, write,
 publish, recovery, activity, and admin guardrails. Read paths are scoped through
-the active workspace while it still resolves to the default workspace. This does
-not yet enforce real authenticated memberships or user-driven workspace
-switching.
+the active workspace while it still resolves to the default workspace. Mutation
+API routes that hit workspace authorization now return a structured `403`
+instead of a generic route failure. This does not yet enforce real authenticated
+memberships or user-driven workspace switching.
 
 1. Document the workspace/role model and update product requirements.
 2. Add a default workspace seed/migration for existing local and cloud data.

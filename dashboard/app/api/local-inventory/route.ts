@@ -7,6 +7,7 @@ import {
   removeInventoryScreen,
   updateInventory
 } from "../../lib/inventory-store";
+import { apiErrorResponse } from "../../lib/api-error-response";
 import { readLivePlaylist } from "../../lib/local-playlist";
 
 export const runtime = "nodejs";
@@ -90,10 +91,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unsupported inventory target." }, { status: 400 });
   } catch (error) {
     console.error("inventory create failed", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Inventory create failed." },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Inventory create failed.");
   }
 }
 
@@ -120,10 +118,7 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Unsupported inventory target." }, { status: 400 });
   } catch (error) {
     console.error("inventory remove failed", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Inventory remove failed." },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Inventory remove failed.");
   }
 }
 
@@ -149,9 +144,6 @@ export async function PATCH(request: Request) {
     return getInventoryResponse();
   } catch (error) {
     console.error("inventory update failed", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Inventory update failed." },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Inventory update failed.");
   }
 }

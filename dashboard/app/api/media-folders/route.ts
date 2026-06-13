@@ -6,6 +6,7 @@ import {
   ensureLocalDataFoundation,
   readMediaStore
 } from "../../lib/local-data-store";
+import { apiErrorResponse } from "../../lib/api-error-response";
 import { cloudMediaConfig, readCloudMediaStore } from "../../lib/cloud-media-store";
 import { readMediaFolderStore, writeMediaFolderStore } from "../../lib/media-folder-store";
 import { readPlaylistStore } from "../../lib/playlist-store";
@@ -99,9 +100,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ folder }, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not create folder.";
     console.error("media folder create failed", error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(error, "Could not create folder.");
   }
 }
 
@@ -163,8 +163,7 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json({ assignments, folderId, moved: mediaIds.length });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not move media.";
     console.error("media folder assignment failed", error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(error, "Could not move media.");
   }
 }

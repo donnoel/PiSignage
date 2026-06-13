@@ -4,6 +4,7 @@ import {
   appendActivityRecord,
   ensureLocalDataFoundation
 } from "../../../lib/local-data-store";
+import { apiErrorResponse } from "../../../lib/api-error-response";
 import { readMediaFolderStore, writeMediaFolderStore } from "../../../lib/media-folder-store";
 
 type RouteContext = {
@@ -55,8 +56,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
     return NextResponse.json({ deleted: true, folder });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not remove folder.";
     console.error("media folder delete failed", error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(error, "Could not remove folder.");
   }
 }

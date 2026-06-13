@@ -7,6 +7,7 @@ import {
   writePublishStatus
 } from "../../../lib/local-playlist";
 import { isCloudInventoryConfigured, markCloudPlaylistPublished } from "../../../lib/inventory-store";
+import { apiErrorResponse } from "../../../lib/api-error-response";
 import { readStoredPlaylist } from "../../../lib/playlist-store";
 import { publishPlaylistToPi } from "../../../lib/pi-local";
 import { piConfigForDevice, targetDevicesForRequest } from "../../../lib/pi-targets";
@@ -182,9 +183,6 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("manual playlist publish failed", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Publish failed." },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Publish failed.");
   }
 }

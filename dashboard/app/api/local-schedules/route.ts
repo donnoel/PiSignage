@@ -11,6 +11,7 @@ import {
   writeScheduleStore
 } from "../../lib/local-data-store";
 import { readNormalizedInventory, repairSchedulesForScreens } from "../../lib/local-inventory";
+import { apiErrorResponse } from "../../lib/api-error-response";
 import { readLivePlaylist, readPlaylistStore } from "../../lib/local-playlist";
 import {
   dayOptions,
@@ -237,10 +238,7 @@ export async function POST(request: Request) {
       message: `Saved ${schedule.name}. Publish hours when you are ready to send them to screens.`
     });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Schedule create failed." },
-      { status: 400 }
-    );
+    return apiErrorResponse(error, "Schedule create failed.", 400);
   }
 }
 
@@ -300,10 +298,7 @@ export async function PATCH(request: Request) {
       message: `Saved ${input.name}. Publish hours when you are ready to send them to screens.`
     });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Schedule update failed." },
-      { status: 400 }
-    );
+    return apiErrorResponse(error, "Schedule update failed.", 400);
   }
 }
 
@@ -345,9 +340,6 @@ export async function DELETE(request: Request) {
       message: `Cleared ${schedule.name}. Publish hours when you are ready to update screens.`
     });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Schedule remove failed." },
-      { status: 400 }
-    );
+    return apiErrorResponse(error, "Schedule remove failed.", 400);
   }
 }

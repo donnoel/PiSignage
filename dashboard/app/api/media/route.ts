@@ -19,6 +19,7 @@ import {
   readMediaStore,
   writeMediaStore
 } from "../../lib/local-data-store";
+import { apiErrorResponse } from "../../lib/api-error-response";
 import { readMediaFolderStore, writeMediaFolderStore } from "../../lib/media-folder-store";
 import { sampleAssetsDirectory, writeFileAtomic } from "../../lib/local-playlist";
 import type { PlaylistAsset } from "../../lib/local-playlist";
@@ -659,7 +660,7 @@ export async function POST(request: Request) {
     } else {
       console.warn("media store upload rejected", message);
     }
-    return NextResponse.json({ error: message }, { status });
+    return apiErrorResponse(error, "Media upload failed.");
   }
 }
 
@@ -716,8 +717,7 @@ export async function DELETE(request: Request) {
       deleted: result.deletedIds.length
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Bulk media delete failed.";
     console.error("bulk media delete failed", error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(error, "Bulk media delete failed.");
   }
 }

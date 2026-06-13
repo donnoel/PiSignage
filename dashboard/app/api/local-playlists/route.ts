@@ -14,6 +14,7 @@ import {
 } from "../../lib/local-playlist";
 import type { Playlist } from "../../lib/local-playlist";
 import { isCloudInventoryConfigured, readInventory, updateInventory } from "../../lib/inventory-store";
+import { apiErrorResponse } from "../../lib/api-error-response";
 import { readPlaylistStore, writePlaylistStore } from "../../lib/playlist-store";
 import { slugify } from "../../lib/media-processing";
 
@@ -120,10 +121,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ playlist });
   } catch (error) {
     console.error("playlist create failed", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Playlist create failed." },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Playlist create failed.");
   }
 }
 
@@ -188,10 +186,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ playlist });
   } catch (error) {
     console.error("playlist rename failed", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Playlist rename failed." },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Playlist rename failed.");
   }
 }
 
@@ -300,9 +295,6 @@ export async function DELETE(request: Request) {
     });
   } catch (error) {
     console.error("playlist delete failed", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Playlist delete failed." },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Playlist delete failed.");
   }
 }

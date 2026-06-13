@@ -8,6 +8,7 @@ import {
   type RecoveryStep,
   readRecoveryStore
 } from "../../../lib/local-data-store";
+import { apiErrorResponse } from "../../../lib/api-error-response";
 import { quoteRemoteShell, readPiConfig, runSsh } from "../../../lib/pi-local";
 import type { PiConfig } from "../../../lib/pi-local";
 import { piConfigForDevice, targetDevicesForRequest } from "../../../lib/pi-targets";
@@ -261,9 +262,6 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("local player action failed", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Player action failed." },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Player action failed.");
   }
 }

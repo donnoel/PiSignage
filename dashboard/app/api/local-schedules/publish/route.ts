@@ -6,6 +6,7 @@ import {
   readScheduleStore,
   scheduleStorePath
 } from "../../../lib/local-data-store";
+import { apiErrorResponse } from "../../../lib/api-error-response";
 import { publishScheduleStoreToPi } from "../../../lib/pi-local";
 import { piConfigForDevice, targetDevicesForRequest } from "../../../lib/pi-targets";
 
@@ -81,9 +82,6 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("manual schedule publish failed", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Schedule publish failed." },
-      { status: 500 }
-    );
+    return apiErrorResponse(error, "Schedule publish failed.");
   }
 }
