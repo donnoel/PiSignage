@@ -6,6 +6,7 @@ import {
 } from "../../../lib/local-data-store";
 import { apiErrorResponse } from "../../../lib/api-error-response";
 import { readMediaFolderStore, writeMediaFolderStore } from "../../../lib/media-folder-store";
+import { activeWorkspaceSession, workspaceContextFromSession } from "../../../lib/workspace";
 
 type RouteContext = {
   params: Promise<{
@@ -21,6 +22,8 @@ export async function DELETE(_request: Request, context: RouteContext) {
   const { folderId } = await context.params;
 
   try {
+    const session = activeWorkspaceSession();
+    const workspaceContext = workspaceContextFromSession(session);
     const folderStore = await readMediaFolderStore();
     const folder = folderStore.items.find((candidate) => candidate.id === folderId);
     if (!folder) {
@@ -46,7 +49,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     await appendActivityRecord({
       id: randomUUID(),
       action: "media-folder-delete",
-      actor: "local-operator",
+      actor: workspaceContext.userId,
       entityId: folder.id,
       entityType: "media",
       message: `Removed media folder ${folder.name}.`,

@@ -66,6 +66,8 @@ export async function POST(request: Request) {
   await ensureLocalDataFoundation();
 
   try {
+    const session = activeWorkspaceSession();
+    const context = workspaceContextFromSession(session);
     const body = (await request.json()) as { name?: string };
     const name = normalizeFolderName(body.name);
     if (!name) {
@@ -95,7 +97,7 @@ export async function POST(request: Request) {
     await appendActivityRecord({
       id: randomUUID(),
       action: "media-folder-create",
-      actor: "local-operator",
+      actor: context.userId,
       entityId: folder.id,
       entityType: "media",
       message: `Created media folder ${folder.name}.`,
@@ -114,6 +116,8 @@ export async function PATCH(request: Request) {
   await ensureLocalDataFoundation();
 
   try {
+    const session = activeWorkspaceSession();
+    const context = workspaceContextFromSession(session);
     const body = (await request.json()) as {
       folderId?: string | null;
       mediaIds?: unknown;
@@ -158,7 +162,7 @@ export async function PATCH(request: Request) {
     await appendActivityRecord({
       id: randomUUID(),
       action: "media-folder-move",
-      actor: "local-operator",
+      actor: context.userId,
       entityId: folderId ?? "unfiled",
       entityType: "media",
       message: `Moved ${mediaIds.length} media item${mediaIds.length === 1 ? "" : "s"} to ${folder?.name ?? "Unfiled"}.`,

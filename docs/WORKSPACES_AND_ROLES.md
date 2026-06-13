@@ -154,9 +154,10 @@ future UI integration, and `GET /api/local-inventory` now derives its response
 context from that same active session path. Media library reads also return the
 active session workspace/user context, and playlist assignment reads use that
 same context path. Schedule, media folder, media detail, layout, player action,
-and troubleshooting reads now use the same path as well. This does not yet load
-real authenticated memberships from a login provider or expose user-driven
-workspace switching.
+and troubleshooting reads now use the same path as well. Media folder activity
+records now use the session user ID instead of the old hardcoded local actor.
+This does not yet load real authenticated memberships from a login provider or
+expose user-driven workspace switching.
 
 1. Document the workspace/role model and update product requirements.
 2. Add a default workspace seed/migration for existing local and cloud data.
