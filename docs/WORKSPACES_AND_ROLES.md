@@ -163,8 +163,8 @@ Player restart, recovery step, recovery run, and reboot activity records also
 use the session user ID. Local media bulk-delete activity also uses the session
 user ID. This does not yet load real authenticated memberships from a login
 provider or expose user-driven workspace switching. The dashboard shell now
-shows the current active workspace, role, and user as a read-only session
-indicator.
+shows the current active workspace, role, and user with a read-only session
+details panel.
 
 1. Document the workspace/role model and update product requirements.
 2. Add a default workspace seed/migration for existing local and cloud data.

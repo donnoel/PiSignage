@@ -1750,14 +1750,40 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   Beam
                 </span>
               </div>
-              <div
-                className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-l-2 border-teal-500 pl-3 text-xs text-slate-700"
-                aria-label={`Current workspace session: ${workspaceName}; ${workspaceRoleLabel}; ${workspaceSession.user.displayName}`}
-              >
-                <span className="font-semibold text-slate-950">{workspaceName}</span>
-                <span>{workspaceRoleLabel}</span>
-                <span>{workspaceSession.user.displayName}</span>
-              </div>
+              <details className="group relative mt-3 w-fit max-w-full">
+                <summary
+                  className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 border-l-2 border-teal-500 pl-3 text-xs text-slate-700 outline-none transition hover:text-teal-950 focus-visible:ring-2 focus-visible:ring-teal-500 marker:hidden [&::-webkit-details-marker]:hidden"
+                  aria-label={`Current workspace session: ${workspaceName}; ${workspaceRoleLabel}; ${workspaceSession.user.displayName}`}
+                >
+                  <span className="font-semibold text-slate-950">{workspaceName}</span>
+                  <span>{workspaceRoleLabel}</span>
+                  <span>{workspaceSession.user.displayName}</span>
+                  <span className="text-teal-700 transition group-open:rotate-180" aria-hidden="true">v</span>
+                </summary>
+                <div className="absolute left-0 z-20 mt-3 w-[min(22rem,calc(100vw-2.5rem))] rounded-md border border-cyan-200 bg-white p-4 text-sm shadow-lg">
+                  <dl className="grid gap-3">
+                    <div>
+                      <dt className="text-xs font-semibold uppercase text-zinc-500">Workspace</dt>
+                      <dd className="mt-1 font-semibold text-zinc-950">{workspaceName}</dd>
+                      <dd className="mt-1 break-all text-xs text-zinc-600">{workspaceContext.activeWorkspaceId}</dd>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <dt className="text-xs font-semibold uppercase text-zinc-500">Role</dt>
+                        <dd className="mt-1 text-zinc-800">{workspaceRoleLabel}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-semibold uppercase text-zinc-500">User</dt>
+                        <dd className="mt-1 text-zinc-800">{workspaceSession.user.displayName}</dd>
+                      </div>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-semibold uppercase text-zinc-500">Session</dt>
+                      <dd className="mt-1 break-all text-xs text-zinc-600">{workspaceSession.sessionId}</dd>
+                    </div>
+                  </dl>
+                </div>
+              </details>
             </div>
             <nav aria-label="Beam views" className="grid grid-cols-4 gap-2 text-xs font-medium text-slate-700 sm:grid-cols-7 sm:text-sm xl:flex xl:flex-wrap xl:justify-end">
               {navigationItems.map((item) => {
