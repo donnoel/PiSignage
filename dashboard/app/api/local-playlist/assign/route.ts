@@ -10,6 +10,7 @@ import {
 import { apiErrorResponse } from "../../../lib/api-error-response";
 import { readInventory, updateInventory } from "../../../lib/inventory-store";
 import { readPlaylistStore, readStoredPlaylist, selectPlaylist } from "../../../lib/playlist-store";
+import { activeWorkspaceSession, workspaceContextFromSession } from "../../../lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,14 +26,18 @@ function isCloudMode(): boolean {
 }
 
 async function assignmentResponse(playlistId?: string | null) {
+  const session = activeWorkspaceSession();
+  const context = workspaceContextFromSession(session);
   const store = await readPlaylistStore();
   const playlist = selectPlaylist(store, playlistId);
   const inventory = await readInventory(playlist.playlistId);
 
   return NextResponse.json({
+    activeWorkspaceId: context.activeWorkspaceId,
     devices: inventory.devices.items,
     playlistId: playlist.playlistId,
-    screens: inventory.screens.items
+    screens: inventory.screens.items,
+    userId: context.userId
   });
 }
 
