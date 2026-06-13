@@ -187,7 +187,7 @@ function requestedMediaIds(value: unknown): string[] {
   );
 }
 
-async function deleteMediaRecords(mediaIds: string[]): Promise<BulkDeleteMediaResult> {
+async function deleteMediaRecords(mediaIds: string[], actor: string): Promise<BulkDeleteMediaResult> {
   const mediaStore = await readMediaStore();
   const requestedIds = new Set(mediaIds.filter((id) => !id.startsWith("playlist:")));
   const missingIds = mediaIds.filter((id) => id.startsWith("playlist:"));
@@ -257,7 +257,7 @@ async function deleteMediaRecords(mediaIds: string[]): Promise<BulkDeleteMediaRe
   await appendActivityRecord({
     id: randomUUID(),
     action: "media-bulk-delete",
-    actor: "local-operator",
+    actor,
     entityId: deletedIds.join(","),
     entityType: "media",
     message: `Deleted ${deletedIds.length} media item${deletedIds.length === 1 ? "" : "s"} from media store.`,
@@ -675,6 +675,8 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const session = activeWorkspaceSession();
+    const context = workspaceContextFromSession(session);
     const body = (await request.json().catch(() => ({}))) as {
       mediaIds?: unknown;
     };
@@ -709,7 +711,7 @@ export async function DELETE(request: Request) {
     }
 
     await ensureLocalDataFoundation();
-    const result = await deleteMediaRecords(mediaIds);
+    const result = await deleteMediaRecords(mediaIds, context.userId);
     if (result.deletedIds.length === 0 && result.blockedIds.length > 0) {
       return NextResponse.json(
         {

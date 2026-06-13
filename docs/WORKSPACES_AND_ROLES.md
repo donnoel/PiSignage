@@ -160,8 +160,9 @@ ID instead of the old hardcoded local actor. Playlist library, playlist item,
 playlist assignment, schedule add/update/remove/publish, and layout
 create/update/delete/render activity now use the session user ID as well.
 Player restart, recovery step, recovery run, and reboot activity records also
-use the session user ID. This does not yet load real authenticated memberships
-from a login provider or expose user-driven workspace switching.
+use the session user ID. Local media bulk-delete activity also uses the session
+user ID. This does not yet load real authenticated memberships from a login
+provider or expose user-driven workspace switching.
 
 1. Document the workspace/role model and update product requirements.
 2. Add a default workspace seed/migration for existing local and cloud data.
