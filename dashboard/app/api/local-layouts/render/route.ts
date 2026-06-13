@@ -24,6 +24,7 @@ import {
   slugify,
   uniqueFileName
 } from "../../../lib/media-processing";
+import { activeWorkspaceSession, workspaceContextFromSession } from "../../../lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -166,6 +167,8 @@ export async function POST(request: Request) {
 
   try {
     await ensureLocalDataFoundation();
+    const session = activeWorkspaceSession();
+    const context = workspaceContextFromSession(session);
     const input = await readRenderInput(request);
     const layoutId = normalizeId(input.layoutId);
     if (!layoutId) {
@@ -229,7 +232,7 @@ export async function POST(request: Request) {
     await appendActivityRecord({
       id: randomUUID(),
       action: "layout-render",
-      actor: "local-operator",
+      actor: context.userId,
       entityId: renderedLayout.id,
       entityType: "layout",
       message: `Rendered layout ${renderedLayout.name} to ${playbackFileName}. No playlist or screen publish was changed.`,

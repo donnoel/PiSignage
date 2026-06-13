@@ -266,6 +266,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     await ensureLocalDataFoundation();
+    const session = activeWorkspaceSession();
+    const context = workspaceContextFromSession(session);
     const input = await readLayoutInput(request);
     const store = await readLayoutStore();
     const layout = createTemplate(input, store.items);
@@ -282,7 +284,7 @@ export async function POST(request: Request) {
     await appendActivityRecord({
       id: randomUUID(),
       action: "layout-create",
-      actor: "local-operator",
+      actor: context.userId,
       entityId: layout.id,
       entityType: "layout",
       message: `Created layout ${layout.name}. Saved locally; render before playlist use.`,
@@ -306,6 +308,8 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     await ensureLocalDataFoundation();
+    const session = activeWorkspaceSession();
+    const context = workspaceContextFromSession(session);
     const input = await readLayoutInput(request);
     const layoutId = normalizeId(input.layoutId ?? input.id);
     if (!layoutId) {
@@ -333,7 +337,7 @@ export async function PATCH(request: Request) {
     await appendActivityRecord({
       id: randomUUID(),
       action: "layout-update",
-      actor: "local-operator",
+      actor: context.userId,
       entityId: layout.id,
       entityType: "layout",
       message: `Updated layout ${layout.name}. Saved locally; render before playlist use.`,
@@ -354,6 +358,8 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   try {
     await ensureLocalDataFoundation();
+    const session = activeWorkspaceSession();
+    const context = workspaceContextFromSession(session);
     const input = await readLayoutInput(request);
     const layoutId = normalizeId(input.layoutId ?? input.id);
     if (!layoutId) {
@@ -377,7 +383,7 @@ export async function DELETE(request: Request) {
     await appendActivityRecord({
       id: randomUUID(),
       action: "layout-delete",
-      actor: "local-operator",
+      actor: context.userId,
       entityId: layout.id,
       entityType: "layout",
       message: `Deleted layout ${layout.name}. No playlist or screen publish was changed.`,

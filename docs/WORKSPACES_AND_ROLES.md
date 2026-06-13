@@ -157,9 +157,10 @@ same context path. Schedule, media folder, media detail, layout, player action,
 and troubleshooting reads now use the same path as well. Media folder activity
 records and local media upload/update/delete activity now use the session user
 ID instead of the old hardcoded local actor. Playlist library, playlist item,
-playlist assignment, and schedule add/update/remove/publish activity now use
-the session user ID as well. This does not yet load real authenticated
-memberships from a login provider or expose user-driven workspace switching.
+playlist assignment, schedule add/update/remove/publish, and layout
+create/update/delete/render activity now use the session user ID as well. This
+does not yet load real authenticated memberships from a login provider or
+expose user-driven workspace switching.
 
 1. Document the workspace/role model and update product requirements.
 2. Add a default workspace seed/migration for existing local and cloud data.
