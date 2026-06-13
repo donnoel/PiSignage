@@ -23,7 +23,7 @@ The local proof-of-concept is considered sufficient to begin the AWS alpha based
 
 The first AWS target is not production. The first target is:
 
-- One account.
+- One pilot workspace.
 - One `dev` environment.
 - One dashboard running from AWS instead of the laptop.
 - One or more Raspberry Pi devices that connect outbound to AWS.
@@ -48,7 +48,8 @@ Still outside alpha or partial:
 ## Guardrails
 
 - No fake cloud success states.
-- No remote reboot, OTA update, screenshot capture, analytics, billing, or advanced RBAC in the alpha.
+- No remote reboot, OTA update, screenshot capture, analytics, billing, or enterprise-grade custom RBAC in the alpha.
+- No multi-client production use until workspace ownership and server-side access enforcement are implemented.
 - No real secrets, AWS account IDs, device private keys, signed URLs, or customer media in git.
 - Device cloud behavior must fail safe: keep playing the last known good local cache if AWS is unreachable.
 - Cloud media delivered to the Pi must be playback-safe MP4, even when the operator uploaded JPEG or PNG.

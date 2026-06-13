@@ -297,7 +297,7 @@ Validation:
 
 ## Phase 11: Settings And Local Admin Login
 
-Goal: centralize local configuration and add a simple operator login.
+Goal: centralize local configuration and add a simple operator login while preparing the session shape for future workspace membership.
 
 Acceptance:
 
@@ -305,7 +305,8 @@ Acceptance:
 - Secrets stay in environment variables or ignored local state.
 - Single-admin login protects dashboard operations.
 - Activity entries include actor once login exists.
-- Advanced RBAC remains deferred.
+- The authenticated session shape can later carry `userId`, `memberships`, `activeWorkspaceId`, and role claims without rewriting core dashboard routes.
+- Workspace roles are documented in `docs/WORKSPACES_AND_ROLES.md`, but multi-workspace enforcement is not claimed until implemented.
 
 Validation:
 
@@ -341,6 +342,9 @@ Acceptance:
 
 - AWS resources are created, updated, or destroyed only after approval.
 - Device identity, dashboard auth, media storage, playlist assignment, heartbeat/status, and publish/sync contracts are real.
+- Workspace ownership exists for cloud Screens, Devices, Media, Playlists, Layouts, Schedules, Activity, publish markers, and recovery state before multiple clients share one environment.
+- Users can belong to multiple workspaces, with access enforced from authenticated membership and active workspace.
+- Cross-workspace reads, writes, media URLs, publishes, and recovery actions are rejected server-side.
 - Private media uses least-privilege storage and delivery.
 - Cloud outage does not stop cached local playback.
 - Cloud status never reports success for operations that are not actually wired.
@@ -350,6 +354,7 @@ Validation:
 - Infrastructure plan review before creation.
 - Least-privilege IAM review.
 - Real upload, publish, heartbeat, and playlist fetch smoke against the AWS environment.
+- Cross-workspace isolation smoke: URL editing, media search, signed URL, playlist publish, device fetch, and recovery/reset cannot cross workspace boundaries.
 - Network-outage playback validation against a previously synced device.
 
 ## Phase 14: Playback Options And Transitions

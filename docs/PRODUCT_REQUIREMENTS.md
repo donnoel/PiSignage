@@ -10,10 +10,11 @@ This is being built and tested for real. Do not add placeholder implementation, 
 
 ## Product Direction
 
-- Start local-first with one account and a small number of Raspberry Pi devices.
+- Start local-first with one pilot workspace and a small number of Raspberry Pi devices.
 - Preserve real local behavior and honest validation evidence while hardening toward production.
 - Operate the five real Raspberry Pi signage systems as the pilot surface for playback, control, monitoring, recovery, and outage behavior.
 - Expand the AWS dev alpha only when it preserves local cached playback and manual publish.
+- Evolve production cloud use toward client workspaces, where users can belong to multiple workspaces and each workspace owns its screens, devices, media, playlists, schedules, layouts, settings, and activity.
 - Treat VLC as the default field playback path for appliance mode.
 - Keep each Pi able to continue playback from cached local media and playlist state during network outages.
 - Keep dashboard operations from dirtying tracked source files.
@@ -95,12 +96,22 @@ Near-term requirements:
 - Keep credentials and secrets out of git.
 - Record authenticated user actions in the activity log once login exists.
 
+Production workspace direction:
+
+- Support multiple client workspaces after the local and AWS foundations are ready for scoped access control.
+- Allow a user to participate in multiple workspaces with a separate role per workspace.
+- Keep workspace isolation enforced by the server/API/data layer, not only by hidden UI controls.
+- Require screens, devices, media, playlists, layouts, schedules, settings, activity, publish markers, and recovery state to be owned by a workspace.
+- Derive workspace access from authenticated user membership and active workspace, not from browser-supplied IDs alone.
+- Keep stable IDs authoritative; workspace and client names are editable labels.
+- See `docs/WORKSPACES_AND_ROLES.md` for the role model, access rules, and implementation sequence.
+
 Deferred:
 
-- Multi-tenant organizations.
 - Billing.
-- Advanced RBAC.
 - SSO.
+- Cross-workspace content sharing.
+- Advanced enterprise RBAC beyond the initial workspace roles.
 
 ## What's Playing
 
@@ -320,4 +331,6 @@ Required failure scenarios:
 - Advanced scheduling exceptions and holidays.
 - Analytics.
 - Billing.
-- Advanced RBAC and organizations.
+- SSO.
+- Advanced enterprise RBAC beyond the initial workspace role model.
+- Cross-workspace asset sharing.

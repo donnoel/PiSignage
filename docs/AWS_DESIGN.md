@@ -2,7 +2,7 @@
 
 AWS `dev` alpha work has started. This document records the target design and distinguishes the current scaffold from later production-grade cloud work.
 
-The first cloud alpha still serves the same narrow product: one account, one dashboard, one or more Raspberry Pis, assigned playlists, and reliable offline-capable playback.
+The first cloud alpha still serves the same narrow product: one pilot workspace, one dashboard, one or more Raspberry Pis, assigned playlists, and reliable offline-capable playback. Production multi-client use requires the workspace isolation model in `docs/WORKSPACES_AND_ROLES.md`.
 
 ## Current Dev Alpha
 
@@ -24,7 +24,8 @@ Still not production-ready:
 - No IoT certificates or MQTT command channel.
 - No production device-auth boundary for playlist fetch.
 - No CloudFront distribution or production signed URL strategy.
-- No OTA update system, screenshot capture, analytics, billing, or advanced RBAC.
+- No OTA update system, screenshot capture, analytics, billing, or enterprise-grade custom RBAC.
+- No multi-client production use until workspace ownership and access enforcement are implemented.
 - Cloud schedules and cloud recovery are still partial; local POC paths remain authoritative there.
 
 ## Services
@@ -50,7 +51,7 @@ pisignage-media-{environment}
 pisignage-logs-{environment}
 ```
 
-Media keys:
+Initial alpha media keys:
 
 ```text
 accounts/{accountId}/uploads/original/{assetId}/{fileName}
@@ -58,6 +59,9 @@ accounts/{accountId}/assets/image/{assetId}/{renditionName}
 accounts/{accountId}/assets/video/{assetId}/{renditionName}
 accounts/{accountId}/thumbnails/{assetId}/{thumbnailName}
 ```
+
+Production workspace media keys should move toward the workspace-prefixed shape
+documented in `docs/WORKSPACES_AND_ROLES.md`.
 
 Rules:
 
@@ -104,7 +108,8 @@ Fields:
 - `createdAt`
 - `updatedAt`
 
-Initial scope has one account. Avoid organization hierarchy until needed.
+Initial scope has one pilot workspace. Add workspace membership and server-side
+workspace filtering before multiple clients share one environment.
 
 ### Screens
 
@@ -229,15 +234,18 @@ Initial Cognito scope:
 
 - One user pool for dashboard sign-in.
 - One app client for the dashboard.
-- One account membership per dashboard user.
-- No advanced RBAC initially.
+- Dashboard users can belong to one or more workspaces.
+- Each user/workspace membership carries a role.
+- The dashboard session carries a trusted user ID, allowed workspace memberships, and one active workspace.
+- Start with the role model in `docs/WORKSPACES_AND_ROLES.md`; defer enterprise-grade custom roles until a real workflow requires them.
 
 Rules:
 
 - Browser code never receives AWS access keys.
 - Dashboard calls API Gateway with Cognito-authenticated requests.
-- API handlers derive account access from the authenticated user, not from client-supplied account IDs alone.
-- Billing, organizations, admin roles, and delegated access are deferred.
+- API handlers derive workspace access from the authenticated user and server-side membership, not from client-supplied workspace/account IDs alone.
+- All workspace-owned records include `workspaceId`, and cross-record operations verify every target belongs to the same active workspace.
+- Billing, SSO, and cross-workspace asset sharing are deferred.
 
 ## Device Identity Model
 

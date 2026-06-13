@@ -46,9 +46,9 @@ Expected direction:
 
 ## Dashboard Access
 
-Initial dashboard authentication should stay simple. Cognito or an equivalent authenticated boundary is still required before production cloud use, with one account and one dashboard user first.
+Initial dashboard authentication should stay simple. Cognito or an equivalent authenticated boundary is still required before production cloud use. The first implementation can protect one pilot workspace, but the production direction requires users who can belong to multiple workspaces with server-enforced workspace isolation.
 
-Advanced RBAC is deferred.
+The initial workspace role model is documented in `docs/WORKSPACES_AND_ROLES.md`. Enterprise-grade custom RBAC is deferred.
 
 ## Deferred Sensitive Features
 
@@ -60,4 +60,5 @@ The following are intentionally deferred because they expand the security surfac
 - Fleet command execution.
 - Analytics.
 - Billing.
-- Organization administration.
+- Cross-workspace asset sharing.
+- Enterprise organization administration beyond workspace membership.

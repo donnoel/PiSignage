@@ -2,7 +2,7 @@
 
 PiSignage is a small digital signage operations product with three primary runtime surfaces:
 
-- Dashboard: the operator UI for one account, local screens, media, playlists, scheduling, health, and recovery.
+- Dashboard: the operator UI for the active workspace's local screens, media, playlists, scheduling, health, and recovery.
 - Device agent: the Raspberry Pi background process responsible for local state, heartbeat, cache, optional cloud playlist fetch, and optional cloud heartbeat.
 - Player: the fullscreen playback surface shown on the TV.
 

@@ -2,7 +2,7 @@
 
 This document records the API and MQTT contract direction for Beam. The current repository uses local files, local dashboard routes, and direct Pi SSH/SCP operations for the default local product path, and it also includes a limited AWS `dev` alpha for heartbeat, cloud-backed dashboard data, media cataloging, and device playlist fetch.
 
-These contracts are intentionally scoped to the initial product path: one account, a small fleet, reusable media, playlists, and playback-safe assets. Local behavior must remain testable without AWS credentials.
+These contracts are intentionally scoped to the initial product path: one pilot workspace, a small fleet, reusable media, playlists, and playback-safe assets. Local behavior must remain testable without AWS credentials. Production multi-client use must follow `docs/WORKSPACES_AND_ROLES.md` so users can belong to multiple workspaces without crossing client boundaries.
 
 All examples are illustrative and contain no real secrets.
 
@@ -16,6 +16,7 @@ All examples are illustrative and contain no real secrets.
 - Device clients should treat duplicate commands and repeated playlist versions as idempotent.
 - Devices must keep using the last known good local playlist if cloud requests fail.
 - Signed URLs and credentials must never be logged.
+- Workspace-owned requests must be scoped by authenticated membership and active workspace before multi-client production use.
 - Breaking changes require a new version or an explicit migration note.
 
 ## Shared Types
@@ -60,7 +61,7 @@ Rules:
 
 ## Device Pairing
 
-Pairing creates a relationship between one physical device and one screen. The initial POC does not support organizations, fleet ownership transfer, or advanced RBAC.
+Pairing creates a relationship between one physical device and one screen. The current POC uses one pilot workspace, but production pairing must bind the device and screen to a workspace. Fleet ownership transfer, cross-workspace sharing, and enterprise-grade custom RBAC remain future explicit designs.
 
 Target endpoint:
 

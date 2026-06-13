@@ -105,6 +105,7 @@ Status: partially implemented. The App Runner dashboard and cloud-mode stores ex
 Deliverables:
 
 - Simple Cognito sign-in.
+- Workspace membership and active workspace claims shaped for users who can belong to multiple workspaces.
 - Cloud dashboard data client.
 - Screens, devices, media, playlists, and heartbeat status backed by API data.
 - Local-only SSH recovery controls hidden or marked unavailable in cloud mode.
@@ -114,6 +115,7 @@ Validation:
 - Dashboard can run without `dashboard/local-state`.
 - Dashboard shows stale/offline status honestly.
 - Dashboard does not expose signed URLs, secrets, or raw device credentials.
+- Cross-workspace reads, writes, signed URLs, publishes, device fetches, and recovery/reset actions are rejected before multiple clients share one environment.
 
 ## Phase 6: One Real Pi End-To-End
 

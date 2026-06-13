@@ -1,15 +1,16 @@
 # Beam
 
-Beam is a real local-first Raspberry Pi based digital signage operations console. The target remains intentionally small: one account, one operations dashboard, real Raspberry Pi screens, reusable media and playlists, and reliable fullscreen playback from local content. The local playback path is the product contract even while the AWS dev alpha comes online.
+Beam is a real local-first Raspberry Pi based digital signage operations console. The current working target remains intentionally small: one operations dashboard, real Raspberry Pi screens, reusable media and playlists, and reliable fullscreen playback from local content. The local playback path is the product contract even while the AWS dev alpha comes online. The production direction now includes client workspaces so multiple clients can use the same system without seeing or changing each other's screens, media, playlists, schedules, or settings.
 
 The current repository provides a local-first product foundation plus an opt-in AWS dev alpha scaffold. Running the local dashboard, player, and device agent does not require AWS credentials. AWS work lives behind explicit environment variables and `infra/beam`; it is not production infrastructure and must not be deployed or treated as active unless the operator intentionally runs the AWS commands.
 
 ## What Exists Now
 
-- `dashboard/`: Next.js + TypeScript + Tailwind operations dashboard with What's Playing, Library, Playlists, Screen Health, Screens, Layouts, and Scheduling views. Screen Health currently contains deeper diagnostics and recovery controls.
+- `dashboard/`: Next.js + TypeScript + Tailwind operations dashboard with What's Playing, Library, Playlists, Screens, Layouts, and Scheduling views. Screens now combines inventory, health/status, diagnostics, and recovery controls.
 - `player/`: TypeScript browser playback fallback/experimental app for same-origin local playlist playback.
 - `device-agent/`: Node.js + TypeScript device agent that reads a local playlist or optional cloud playlist endpoint, writes heartbeat JSON, caches the last known good playlist, and can post an optional dev cloud heartbeat.
 - `docs/`: architecture, phase plan, API contract, AWS alpha notes, security notes, and device setup.
+- `docs/WORKSPACES_AND_ROLES.md`: planned client workspace and role model for multi-workspace users and server-enforced tenant isolation.
 - `sample-content/`: tracked seed playlist and local media fixtures.
 - `infra/`: AWS CDK scaffold for the Beam `dev` alpha. It includes App Runner, DynamoDB, S3, API Gateway, Lambda, and log resources when deliberately deployed.
 

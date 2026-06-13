@@ -8,13 +8,13 @@ Beam is a real local-first Raspberry Pi signage operations console. AWS dev alph
 
 The near-term product target is deliberately small:
 
-- One account.
+- One local-first pilot account, evolving toward client workspaces for production cloud use.
 - One local operations dashboard.
 - A small local inventory of Raspberry Pi devices and screens.
 - Reusable media and playlists.
 - Reliable fullscreen playback and recovery.
 
-This is not a full enterprise clone. The project should evolve incrementally from a real local product into a production-ready local-plus-cloud service only as playback, device status, and contracts stay clear.
+This is not a full enterprise clone. The project should evolve incrementally from a real local product into a production-ready local-plus-cloud service only as playback, device status, workspace isolation, and contracts stay clear.
 
 Delivery path:
 
@@ -45,9 +45,9 @@ Current goals:
 
 Do not build these until explicitly approved:
 
-- Multi-tenant organizations.
 - Billing.
-- Advanced RBAC.
+- Advanced enterprise RBAC beyond the documented workspace roles.
+- Cross-workspace asset sharing.
 - Analytics.
 - Screenshot capture.
 - Remote reboot as a default recovery response.
@@ -70,7 +70,7 @@ Target architecture:
 - `infra/`: AWS architecture notes and the `infra/beam` CDK scaffold for the opt-in `dev` alpha.
 - `sample-content/`: tracked seed playlist and local media examples.
 
-The current AWS dev alpha scaffold includes API Gateway, Lambda, DynamoDB, S3, CloudWatch log groups, and App Runner for the dashboard. CloudFront, Cognito, and AWS IoT Core MQTT remain future production-oriented work. Greengrass is a later consideration, not a current requirement.
+The current AWS dev alpha scaffold includes API Gateway, Lambda, DynamoDB, S3, CloudWatch log groups, and App Runner for the dashboard. CloudFront, Cognito, workspace membership enforcement, and AWS IoT Core MQTT remain future production-oriented work. Greengrass is a later consideration, not a current requirement.
 
 ## Behavior Invariants
 
@@ -82,6 +82,7 @@ Do not regress these contracts:
 - A missing network connection must not stop already-cached playback.
 - Heartbeat state must be inspectable as local JSON.
 - Cloud integrations must remain clearly documented, opt-in, and honest about what is wired. They must not weaken local cached playback or manual publish.
+- Future multi-client cloud workflows must enforce workspace isolation server-side. UI hiding is not enough for screens, devices, media, playlists, schedules, settings, activity, publish markers, recovery, or signed media access.
 - Device playback and reboot recovery are first-class behavior contracts.
 
 ## Real Implementation Rules
@@ -113,7 +114,7 @@ Near-term priority order:
 - Use accessible status text for online/offline state.
 - Prefer dense tables and detail panels for screen inventory; map UI is deferred.
 - Keep cloud data behind explicit cloud-mode contracts and honest unavailable states when a workflow is not wired.
-- Avoid advanced account, org, RBAC, billing, or analytics UI.
+- Avoid advanced billing, analytics, enterprise RBAC, or cross-workspace sharing UI until explicitly approved.
 
 ## Player Rules
 
@@ -154,7 +155,7 @@ Heartbeat model starts with:
 - When AWS starts, build real resource-backed behavior rather than placeholder cloud flows.
 - Keep future AWS design least-privilege and easy to reason about.
 - Use signed CloudFront/S3 access patterns for private media in future docs.
-- Keep Cognito boundaries simple: one account first.
+- Keep Cognito boundaries simple first, while preserving the future session shape for user memberships and one active workspace.
 
 ## Security Rules
 
