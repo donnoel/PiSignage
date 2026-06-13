@@ -10,7 +10,7 @@ import {
   selectPlaylist as selectLocalPlaylist
 } from "./local-playlist";
 import type { Playlist, PlaylistAsset, PlaylistStore } from "./local-playlist";
-import { defaultWorkspaceId, withDefaultWorkspace, workspaceIdOrDefault } from "./workspace";
+import { activeWorkspaceId, defaultWorkspaceId, withDefaultWorkspace, workspaceIdOrDefault, workspaceMatches } from "./workspace";
 
 const dynamoDb = new DynamoDBClient({});
 const seedPlaylistId = "playlist-main-playlist";
@@ -129,7 +129,8 @@ async function scanAllItems(tableName: string): Promise<Record<string, Attribute
 }
 
 async function ensureSeedPlaylist(tableName: string, playlists: Playlist[]): Promise<Playlist[]> {
-  if (playlists.some((playlist) => playlist.playlistId === seedPlaylistId)) {
+  const currentWorkspaceId = activeWorkspaceId();
+  if (playlists.some((playlist) => playlist.playlistId === seedPlaylistId && workspaceMatches(playlist, currentWorkspaceId))) {
     return playlists;
   }
 
@@ -139,7 +140,7 @@ async function ensureSeedPlaylist(tableName: string, playlists: Playlist[]): Pro
     playlistId: seedPlaylistId,
     updatedAt: isoNow(),
     version: 1,
-    workspaceId: defaultWorkspaceId
+    workspaceId: currentWorkspaceId
   };
 
   await dynamoDb.send(new PutItemCommand({
@@ -171,7 +172,7 @@ function storeFromPlaylists(playlists: Playlist[]): PlaylistStore {
 async function readCloudPlaylistStore(config: { playlistsTableName: string }): Promise<PlaylistStore> {
   const items = await scanAllItems(config.playlistsTableName);
   const playlists = await ensureSeedPlaylist(config.playlistsTableName, items.map(playlistFromItem));
-  return storeFromPlaylists(playlists);
+  return storeFromPlaylists(playlists.filter((playlist) => workspaceMatches(playlist)));
 }
 
 export async function readPlaylistStore(): Promise<PlaylistStore> {
@@ -211,11 +212,13 @@ export async function writePlaylistStore(store: PlaylistStore): Promise<void> {
     return;
   }
 
+  const currentWorkspaceId = activeWorkspaceId();
   const nextIds = new Set(store.items.map((playlist) => playlist.playlistId));
   const existingItems = await scanAllItems(config.playlistsTableName);
   await Promise.all([
     ...existingItems
       .map(playlistFromItem)
+      .filter((playlist) => workspaceMatches(playlist, currentWorkspaceId))
       .filter((playlist) => !nextIds.has(playlist.playlistId))
       .map((playlist) =>
         dynamoDb.send(new DeleteItemCommand({

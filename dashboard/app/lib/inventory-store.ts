@@ -24,7 +24,7 @@ import {
   writeDeviceStore,
   writeScreenStore
 } from "./local-data-store";
-import { withDefaultWorkspace, workspaceIdOrDefault } from "./workspace";
+import { filterWorkspaceItems, withDefaultWorkspace, workspaceIdOrDefault } from "./workspace";
 
 type InventoryStore = {
   devices: DeviceStore;
@@ -274,8 +274,8 @@ async function readCloudInventory(config: { devicesTableName: string; screensTab
   ]);
 
   return {
-    devices: storeFromItems(deviceItems.map(deviceFromItem)),
-    screens: storeFromItems(screenItems.map(screenFromItem))
+    devices: storeFromItems(filterWorkspaceItems(deviceItems.map(deviceFromItem))),
+    screens: storeFromItems(filterWorkspaceItems(screenItems.map(screenFromItem)))
   };
 }
 

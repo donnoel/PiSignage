@@ -32,7 +32,7 @@ import {
   transcodedVideoFileName
 } from "./media-processing";
 import { isPlaybackSafeVideoFileName } from "./playback-safety";
-import { withDefaultWorkspace, workspaceIdOrDefault } from "./workspace";
+import { activeWorkspaceId, filterWorkspaceItems, withDefaultWorkspace, workspaceIdOrDefault } from "./workspace";
 
 export type CloudMediaConfig = {
   assetsTableName: string;
@@ -190,6 +190,10 @@ function itemRecordType(item: Record<string, AttributeValue>): string {
   return stringOrNull(item.recordType) ?? mediaRecordType;
 }
 
+function itemInActiveWorkspace(item: Record<string, AttributeValue>): boolean {
+  return workspaceIdOrDefault(stringOrNull(item.workspaceId)) === activeWorkspaceId();
+}
+
 function folderAssignmentRecordId(mediaId: string): string {
   return `folder-assignment-${Buffer.from(mediaId).toString("base64url")}`;
 }
@@ -311,9 +315,10 @@ export async function readCloudMediaStore(config: CloudMediaConfig): Promise<Med
   const items = (await scanAllItems(config.assetsTableName))
     .filter((item) => itemRecordType(item) === mediaRecordType)
     .map(mediaFromItem);
+  const workspaceItems = filterWorkspaceItems(items);
   return {
-    items,
-    updatedAt: items.reduce((latest, item) => item.updatedAt > latest ? item.updatedAt : latest, ""),
+    items: workspaceItems,
+    updatedAt: workspaceItems.reduce((latest, item) => item.updatedAt > latest ? item.updatedAt : latest, ""),
     version: 1
   };
 }
@@ -322,17 +327,20 @@ export async function readCloudMediaFolderStore(config: CloudMediaConfig): Promi
   const scannedItems = await scanAllItems(config.assetsTableName);
   const folders = scannedItems
     .filter((item) => itemRecordType(item) === mediaFolderRecordType)
+    .filter(itemInActiveWorkspace)
     .map(mediaFolderFromItem)
     .filter((folder): folder is MediaFolderRecord => folder !== null)
     .sort((a, b) => a.name.localeCompare(b.name));
   const assignments = Object.fromEntries(
     scannedItems
       .filter((item) => itemRecordType(item) === mediaFolderAssignmentRecordType)
+      .filter(itemInActiveWorkspace)
       .map(folderAssignmentFromItem)
       .filter((assignment): assignment is [string, string] => assignment !== null)
   );
   const updatedAt = [...folders.map((folder) => folder.updatedAt), ...scannedItems
     .filter((item) => itemRecordType(item) === mediaFolderAssignmentRecordType)
+    .filter(itemInActiveWorkspace)
     .map((item) => stringOrDefault(item.updatedAt, ""))]
     .reduce((latest, value) => value > latest ? value : latest, "");
 
@@ -347,7 +355,7 @@ export async function readCloudMediaFolderStore(config: CloudMediaConfig): Promi
 export async function writeCloudMediaFolderStore(config: CloudMediaConfig, store: MediaFolderStore): Promise<void> {
   const managedItems = (await scanAllItems(config.assetsTableName)).filter((item) =>
     itemRecordType(item) === mediaFolderRecordType || itemRecordType(item) === mediaFolderAssignmentRecordType
-  );
+  ).filter(itemInActiveWorkspace);
   const folderItems = store.items.map(mediaFolderToItem);
   const assignmentItems = Object.entries(store.assignments)
     .filter((entry): entry is [string, string] => Boolean(entry[1]))

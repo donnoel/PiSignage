@@ -3,7 +3,7 @@ import path from "node:path";
 import { validateLayoutTemplate } from "./layout-contract";
 import { localStateDirectory, writeFileAtomic } from "./local-playlist";
 import type { LayoutStore, LayoutTemplate } from "./layout-contract";
-import { defaultWorkspaceId, withDefaultWorkspace, workspaceIdOrDefault } from "./workspace";
+import { defaultWorkspaceId, filterWorkspaceItems, withDefaultWorkspace, workspaceIdOrDefault } from "./workspace";
 
 export type MediaRecord = {
   id: string;
@@ -352,7 +352,7 @@ export async function readMediaStore(): Promise<MediaStore> {
   const store = await readJsonOrDefaults(paths.media, defaultMediaStore());
   return {
     ...store,
-    items: Array.isArray(store.items) ? store.items.map(withDefaultWorkspace) : []
+    items: Array.isArray(store.items) ? filterWorkspaceItems(store.items) : []
   };
 }
 
@@ -370,7 +370,7 @@ export async function readMediaFolderStore(): Promise<MediaFolderStore> {
   return {
     ...store,
     assignments: store.assignments ?? {},
-    items: Array.isArray(store.items) ? store.items.map(withDefaultWorkspace) : []
+    items: Array.isArray(store.items) ? filterWorkspaceItems(store.items) : []
   };
 }
 
@@ -408,7 +408,7 @@ function normalizeLayoutStore(store: LayoutStore): LayoutStore {
   }
 
   return {
-    items,
+    items: filterWorkspaceItems(items),
     updatedAt: typeof store.updatedAt === "string" ? store.updatedAt : isoNow(),
     version: typeof store.version === "number" ? store.version : 1
   };
@@ -429,7 +429,7 @@ export async function readScreenStore(): Promise<ScreenStore> {
   const store = await readJsonOrDefaults(paths.screens, defaultScreenStore());
   return {
     ...store,
-    items: Array.isArray(store.items) ? store.items.map(withDefaultWorkspace) : []
+    items: Array.isArray(store.items) ? filterWorkspaceItems(store.items) : []
   };
 }
 
@@ -446,7 +446,7 @@ export async function readDeviceStore(): Promise<DeviceStore> {
   const store = await readJsonOrDefaults(paths.devices, defaultDeviceStore());
   return {
     ...store,
-    items: Array.isArray(store.items) ? store.items.map(withDefaultWorkspace) : []
+    items: Array.isArray(store.items) ? filterWorkspaceItems(store.items) : []
   };
 }
 
@@ -463,7 +463,7 @@ export async function readScheduleStore(): Promise<ScheduleStore> {
   const store = await readJsonOrDefaults(paths.schedules, defaultScheduleStore());
   return {
     ...store,
-    items: Array.isArray(store.items) ? store.items.map(withDefaultWorkspace) : []
+    items: Array.isArray(store.items) ? filterWorkspaceItems(store.items) : []
   };
 }
 
@@ -484,7 +484,7 @@ export async function readActivityStore(): Promise<ActivityStore> {
   const store = await readJsonOrDefaults(paths.activity, defaultActivityStore());
   return {
     ...store,
-    items: Array.isArray(store.items) ? store.items.map(withDefaultWorkspace) : []
+    items: Array.isArray(store.items) ? filterWorkspaceItems(store.items) : []
   };
 }
 
@@ -501,7 +501,7 @@ export async function readRecoveryStore(): Promise<RecoveryStore> {
   const store = await readJsonOrDefaults(paths.recovery, defaultRecoveryStore());
   return {
     ...store,
-    runs: Array.isArray(store.runs) ? store.runs.map(withDefaultWorkspace) : []
+    runs: Array.isArray(store.runs) ? filterWorkspaceItems(store.runs) : []
   };
 }
 

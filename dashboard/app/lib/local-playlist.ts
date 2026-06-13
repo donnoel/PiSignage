@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { defaultWorkspaceId, withDefaultWorkspace } from "./workspace";
+import { defaultWorkspaceId, filterWorkspaceItems, withDefaultWorkspace } from "./workspace";
 
 export type PlaylistAsset = {
   assetId: string;
@@ -114,7 +114,7 @@ function normalizePlaylist(playlist: Playlist): Playlist {
 function normalizePlaylistStore(store: PlaylistStore): PlaylistStore {
   return {
     ...store,
-    items: store.items.map(normalizePlaylist),
+    items: filterWorkspaceItems(store.items.map(normalizePlaylist)),
     updatedAt: typeof store.updatedAt === "string" ? store.updatedAt : isoNow(),
     version: typeof store.version === "number" ? store.version : 1
   };
