@@ -3,7 +3,7 @@ import path from "node:path";
 import { validateLayoutTemplate } from "./layout-contract";
 import { localStateDirectory, writeFileAtomic } from "./local-playlist";
 import type { LayoutStore, LayoutTemplate } from "./layout-contract";
-import { defaultWorkspaceId, filterWorkspaceItems, withDefaultWorkspace, workspaceIdOrDefault } from "./workspace";
+import { defaultWorkspaceId, filterWorkspaceItems, requireActiveWorkspacePermission, withDefaultWorkspace, workspaceIdOrDefault } from "./workspace";
 
 export type MediaRecord = {
   id: string;
@@ -357,6 +357,7 @@ export async function readMediaStore(): Promise<MediaStore> {
 }
 
 export async function writeMediaStore(value: MediaStore): Promise<void> {
+  requireActiveWorkspacePermission("write");
   const paths = jsonStorePaths();
   await writeJsonStore(paths.media, {
     ...value,
@@ -375,6 +376,7 @@ export async function readMediaFolderStore(): Promise<MediaFolderStore> {
 }
 
 export async function writeMediaFolderStore(value: MediaFolderStore): Promise<void> {
+  requireActiveWorkspacePermission("write");
   const paths = jsonStorePaths();
   await writeJsonStore(paths.mediaFolders, {
     ...value,
@@ -420,6 +422,7 @@ export async function readLayoutStore(): Promise<LayoutStore> {
 }
 
 export async function writeLayoutStore(value: LayoutStore): Promise<void> {
+  requireActiveWorkspacePermission("write");
   const paths = jsonStorePaths();
   await writeJsonStore(paths.layouts, normalizeLayoutStore(value));
 }
@@ -434,6 +437,7 @@ export async function readScreenStore(): Promise<ScreenStore> {
 }
 
 export async function writeScreenStore(value: ScreenStore): Promise<void> {
+  requireActiveWorkspacePermission("write");
   const paths = jsonStorePaths();
   await writeJsonStore(paths.screens, {
     ...value,
@@ -451,6 +455,7 @@ export async function readDeviceStore(): Promise<DeviceStore> {
 }
 
 export async function writeDeviceStore(value: DeviceStore): Promise<void> {
+  requireActiveWorkspacePermission("write");
   const paths = jsonStorePaths();
   await writeJsonStore(paths.devices, {
     ...value,
@@ -472,6 +477,7 @@ export function scheduleStorePath(): string {
 }
 
 export async function writeScheduleStore(value: ScheduleStore): Promise<void> {
+  requireActiveWorkspacePermission("write");
   const paths = jsonStorePaths();
   await writeJsonStore(paths.schedules, {
     ...value,
@@ -489,6 +495,7 @@ export async function readActivityStore(): Promise<ActivityStore> {
 }
 
 export async function writeActivityStore(value: ActivityStore): Promise<void> {
+  requireActiveWorkspacePermission("activity");
   const paths = jsonStorePaths();
   await writeJsonStore(paths.activity, {
     ...value,
@@ -506,6 +513,7 @@ export async function readRecoveryStore(): Promise<RecoveryStore> {
 }
 
 export async function writeRecoveryStore(value: RecoveryStore): Promise<void> {
+  requireActiveWorkspacePermission("recover");
   const paths = jsonStorePaths();
   await writeJsonStore(paths.recovery, {
     ...value,
@@ -542,6 +550,7 @@ export async function readSettingsRecord(): Promise<SettingsRecord> {
 }
 
 export async function writeSettingsRecord(value: SettingsRecord): Promise<void> {
+  requireActiveWorkspacePermission("admin");
   const paths = jsonStorePaths();
   await writeJsonStore(paths.settings, withDefaultWorkspace(value));
 }

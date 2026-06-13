@@ -24,7 +24,7 @@ import {
   writeDeviceStore,
   writeScreenStore
 } from "./local-data-store";
-import { filterWorkspaceItems, withDefaultWorkspace, workspaceIdOrDefault } from "./workspace";
+import { filterWorkspaceItems, requireActiveWorkspacePermission, withDefaultWorkspace, workspaceIdOrDefault } from "./workspace";
 
 type InventoryStore = {
   devices: DeviceStore;
@@ -561,6 +561,7 @@ export async function markCloudPlaylistPublished(input: {
   playlistVersion: number;
   screenId?: string | null;
 }): Promise<InventoryPublishTarget[]> {
+  requireActiveWorkspacePermission("publish");
   const config = cloudInventoryConfig();
   if (!config) {
     return [];
@@ -627,6 +628,7 @@ export function resetCommandForDevice(device: DeviceRecord, statusUrl?: string):
 }
 
 export async function requestDeviceReset(deviceId: string): Promise<DeviceRecord> {
+  requireActiveWorkspacePermission("recover");
   const config = cloudInventoryConfig();
   if (!config) {
     throw new Error("Cloud inventory is required for remote Pi reset.");
@@ -667,6 +669,7 @@ export async function updateDeviceResetStatus(input: {
   startedAt?: string | null;
   status: DeviceResetStatus;
 }): Promise<DeviceRecord> {
+  requireActiveWorkspacePermission("recover");
   const config = cloudInventoryConfig();
   if (!config) {
     throw new Error("Cloud inventory is required for remote Pi reset.");
@@ -738,6 +741,7 @@ export async function updateDeviceResetStatus(input: {
 }
 
 export async function createInventoryScreen(input: CreateScreenInput): Promise<void> {
+  requireActiveWorkspacePermission("write");
   const config = cloudInventoryConfig();
   if (config) {
     await createCloudScreen(config, input);
@@ -779,6 +783,7 @@ export async function createInventoryScreen(input: CreateScreenInput): Promise<v
 }
 
 export async function createInventoryDevice(input: CreateDeviceInput): Promise<void> {
+  requireActiveWorkspacePermission("write");
   const config = cloudInventoryConfig();
   if (config) {
     await createCloudDevice(config, input);
@@ -789,6 +794,7 @@ export async function createInventoryDevice(input: CreateDeviceInput): Promise<v
 }
 
 export async function removeInventoryScreen(screenId: string): Promise<void> {
+  requireActiveWorkspacePermission("write");
   const config = cloudInventoryConfig();
   if (config) {
     await removeCloudScreen(config, screenId);
@@ -799,6 +805,7 @@ export async function removeInventoryScreen(screenId: string): Promise<void> {
 }
 
 export async function removeInventoryDevice(deviceId: string): Promise<void> {
+  requireActiveWorkspacePermission("write");
   const config = cloudInventoryConfig();
   if (config) {
     await removeCloudDevice(config, deviceId);
@@ -809,6 +816,7 @@ export async function removeInventoryDevice(deviceId: string): Promise<void> {
 }
 
 export async function updateInventory(input: InventoryUpdateInput): Promise<void> {
+  requireActiveWorkspacePermission("write");
   const config = cloudInventoryConfig();
   if (config) {
     await updateCloudInventory(config, input);

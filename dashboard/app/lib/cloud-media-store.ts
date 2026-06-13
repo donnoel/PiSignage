@@ -32,7 +32,13 @@ import {
   transcodedVideoFileName
 } from "./media-processing";
 import { isPlaybackSafeVideoFileName } from "./playback-safety";
-import { activeWorkspaceId, filterWorkspaceItems, withDefaultWorkspace, workspaceIdOrDefault } from "./workspace";
+import {
+  activeWorkspaceId,
+  filterWorkspaceItems,
+  requireActiveWorkspacePermission,
+  withDefaultWorkspace,
+  workspaceIdOrDefault
+} from "./workspace";
 
 export type CloudMediaConfig = {
   assetsTableName: string;
@@ -353,6 +359,7 @@ export async function readCloudMediaFolderStore(config: CloudMediaConfig): Promi
 }
 
 export async function writeCloudMediaFolderStore(config: CloudMediaConfig, store: MediaFolderStore): Promise<void> {
+  requireActiveWorkspacePermission("write");
   const managedItems = (await scanAllItems(config.assetsTableName)).filter((item) =>
     itemRecordType(item) === mediaFolderRecordType || itemRecordType(item) === mediaFolderAssignmentRecordType
   ).filter(itemInActiveWorkspace);
@@ -397,6 +404,7 @@ export async function writeCloudMediaFolderStore(config: CloudMediaConfig, store
 }
 
 export async function createCloudMediaUpload(config: CloudMediaConfig, input: CloudMediaUploadInput): Promise<MediaRecord> {
+  requireActiveWorkspacePermission("write");
   const safeFileName = sanitizeMediaFileName(input.fileName);
   const sourceType = mediaSourceTypeFromFileName(safeFileName);
   const now = isoNow();
@@ -463,6 +471,7 @@ async function s3BodyToBuffer(body: unknown): Promise<Buffer> {
 }
 
 export async function prepareCloudMediaForPlayback(config: CloudMediaConfig, mediaId: string): Promise<MediaRecord | null> {
+  requireActiveWorkspacePermission("write");
   const mediaStore = await readCloudMediaStore(config);
   const current = mediaStore.items.find((item) => item.id === mediaId);
   if (!current) {
@@ -557,6 +566,7 @@ export async function updateCloudMediaPreparationStatus(
     status: MediaRecord["status"];
   }
 ): Promise<MediaRecord | null> {
+  requireActiveWorkspacePermission("write");
   const mediaStore = await readCloudMediaStore(config);
   const current = mediaStore.items.find((item) => item.id === mediaId);
   if (!current) {
@@ -584,6 +594,7 @@ export async function deleteCloudMediaRecords(
   mediaIds: string[],
   blockedIds: Set<string> = new Set()
 ): Promise<CloudMediaDeleteResult> {
+  requireActiveWorkspacePermission("write");
   const mediaStore = await readCloudMediaStore(config);
   const requestedIds = new Set(mediaIds.filter((id) => !id.startsWith("playlist:")));
   const deletedIds: string[] = [];
@@ -647,6 +658,7 @@ export async function updateCloudMediaMetadata(
   mediaId: string,
   input: { description?: string; tags?: string[]; title?: string }
 ): Promise<MediaRecord | null> {
+  requireActiveWorkspacePermission("write");
   const mediaStore = await readCloudMediaStore(config);
   const current = mediaStore.items.find((item) => item.id === mediaId);
   if (!current) {

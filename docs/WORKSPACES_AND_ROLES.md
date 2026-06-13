@@ -139,11 +139,13 @@ That area is separate from the normal workspace operations console.
 ## Implementation Sequence
 
 Current status: the dashboard has a shared default workspace ID,
-`workspace-beam-dev`, an active workspace context helper, and local/cloud store
+`workspace-beam-dev`, an active workspace context helper, local/cloud store
 normalization that can attach that workspace to existing records as they are
-read or written. Read paths are scoped through the active workspace while it
-still resolves to the default workspace. This does not yet enforce real
-multi-workspace permissions or user-driven workspace switching.
+read or written, and centralized permission helpers for the first read, write,
+publish, recovery, activity, and admin guardrails. Read paths are scoped through
+the active workspace while it still resolves to the default workspace. This does
+not yet enforce real authenticated memberships or user-driven workspace
+switching.
 
 1. Document the workspace/role model and update product requirements.
 2. Add a default workspace seed/migration for existing local and cloud data.

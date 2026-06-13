@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { defaultWorkspaceId, filterWorkspaceItems, withDefaultWorkspace } from "./workspace";
+import { defaultWorkspaceId, filterWorkspaceItems, requireActiveWorkspacePermission, withDefaultWorkspace } from "./workspace";
 
 export type PlaylistAsset = {
   assetId: string;
@@ -194,6 +194,7 @@ export async function readPlaylistStore(): Promise<PlaylistStore> {
 }
 
 export async function writePlaylistStore(store: PlaylistStore): Promise<void> {
+  requireActiveWorkspacePermission("write");
   const normalizedStore = normalizePlaylistStore(store);
   if (normalizedStore.items.length === 0) {
     throw new Error("Playlist library must contain at least one playlist.");
@@ -245,6 +246,7 @@ export async function writeStoredPlaylist(playlist: Playlist): Promise<PlaylistS
 }
 
 export async function writePlaylist(playlistPath: string, playlist: Playlist): Promise<void> {
+  requireActiveWorkspacePermission("write");
   await writeFileAtomic(playlistPath, `${JSON.stringify(normalizePlaylist(playlist), null, 2)}\n`);
 }
 
@@ -254,6 +256,7 @@ export async function writePublishStatus(
   piPublish: PiPublishResult,
   targets: PublishStatusTarget[] = []
 ): Promise<void> {
+  requireActiveWorkspacePermission("publish");
   await writeFileAtomic(
     publishStatusPath(),
     `${JSON.stringify(

@@ -10,7 +10,7 @@ import {
   selectPlaylist as selectLocalPlaylist
 } from "./local-playlist";
 import type { Playlist, PlaylistAsset, PlaylistStore } from "./local-playlist";
-import { activeWorkspaceId, defaultWorkspaceId, withDefaultWorkspace, workspaceIdOrDefault, workspaceMatches } from "./workspace";
+import { activeWorkspaceId, defaultWorkspaceId, requireActiveWorkspacePermission, withDefaultWorkspace, workspaceIdOrDefault, workspaceMatches } from "./workspace";
 
 const dynamoDb = new DynamoDBClient({});
 const seedPlaylistId = "playlist-main-playlist";
@@ -205,6 +205,7 @@ export function selectPlaylist(store: PlaylistStore, playlistId?: string | null)
 }
 
 export async function writePlaylistStore(store: PlaylistStore): Promise<void> {
+  requireActiveWorkspacePermission("write");
   const config = cloudPlaylistConfig();
   if (!config) {
     const { writePlaylistStore: writeLocalPlaylistStore } = await import("./local-playlist");
