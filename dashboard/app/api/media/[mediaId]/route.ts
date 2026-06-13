@@ -24,6 +24,7 @@ import {
   playlistUsesMediaRecord
 } from "../../../lib/media-playlist-usage";
 import { readPlaylistStore } from "../../../lib/playlist-store";
+import { activeWorkspaceSession, workspaceContextFromSession } from "../../../lib/workspace";
 
 type RouteContext = {
   params: Promise<{
@@ -89,6 +90,8 @@ async function playlistAssetForMediaId(mediaId: string): Promise<PlaylistAsset |
 }
 
 export async function GET(_request: Request, context: RouteContext) {
+  const session = activeWorkspaceSession();
+  const workspaceContext = workspaceContextFromSession(session);
   const cloudConfig = cloudMediaConfig();
   if (cloudConfig) {
     const { mediaId } = await context.params;
@@ -99,7 +102,11 @@ export async function GET(_request: Request, context: RouteContext) {
       return NextResponse.json({ error: "Media item not found." }, { status: 404 });
     }
 
-    return NextResponse.json({ item });
+    return NextResponse.json({
+      activeWorkspaceId: workspaceContext.activeWorkspaceId,
+      item,
+      userId: workspaceContext.userId
+    });
   }
 
   await ensureLocalDataFoundation();
@@ -111,7 +118,11 @@ export async function GET(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Media item not found." }, { status: 404 });
   }
 
-  return NextResponse.json({ item });
+  return NextResponse.json({
+    activeWorkspaceId: workspaceContext.activeWorkspaceId,
+    item,
+    userId: workspaceContext.userId
+  });
 }
 
 export async function PATCH(request: Request, context: RouteContext) {

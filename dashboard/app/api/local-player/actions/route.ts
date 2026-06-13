@@ -12,6 +12,7 @@ import { apiErrorResponse } from "../../../lib/api-error-response";
 import { quoteRemoteShell, readPiConfig, runSsh } from "../../../lib/pi-local";
 import type { PiConfig } from "../../../lib/pi-local";
 import { piConfigForDevice, targetDevicesForRequest } from "../../../lib/pi-targets";
+import { activeWorkspaceSession, workspaceContextFromSession } from "../../../lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -168,9 +169,13 @@ async function requestPiReboot(config: PiConfig): Promise<void> {
 }
 
 export async function GET() {
+  const session = activeWorkspaceSession();
+  const context = workspaceContextFromSession(session);
   const store = await readRecoveryStore();
   return NextResponse.json({
-    latestRun: store.runs[0] ?? null
+    activeWorkspaceId: context.activeWorkspaceId,
+    latestRun: store.runs[0] ?? null,
+    userId: context.userId
   });
 }
 

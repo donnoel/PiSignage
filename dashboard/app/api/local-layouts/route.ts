@@ -16,6 +16,7 @@ import {
 import type { LayoutLayer, LayoutTemplate } from "../../lib/layout-contract";
 import { readPlaylistStore } from "../../lib/local-playlist";
 import { slugify } from "../../lib/media-processing";
+import { activeWorkspaceSession, workspaceContextFromSession } from "../../lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -215,10 +216,15 @@ function updateTemplate(previous: LayoutTemplate, input: LayoutInput, storeLayou
   return template as LayoutTemplate;
 }
 
-function layoutResponse(store: { items: LayoutTemplate[]; updatedAt: string; version: number }) {
+function layoutResponse(
+  store: { items: LayoutTemplate[]; updatedAt: string; version: number },
+  context: { activeWorkspaceId: string; userId: string }
+) {
   return {
+    activeWorkspaceId: context.activeWorkspaceId,
     layouts: store.items,
     updatedAt: store.updatedAt,
+    userId: context.userId,
     version: store.version
   };
 }
@@ -231,6 +237,8 @@ function errorResponse(error: unknown, fallback: string) {
 export async function GET(request: Request) {
   try {
     await ensureLocalDataFoundation();
+    const session = activeWorkspaceSession();
+    const context = workspaceContextFromSession(session);
     const store = await readLayoutStore();
     const searchParams = new URL(request.url).searchParams;
     const layoutId = searchParams.get("layoutId") ?? searchParams.get("id");
@@ -241,10 +249,14 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: "Layout was not found." }, { status: 404 });
       }
 
-      return NextResponse.json({ layout });
+      return NextResponse.json({
+        activeWorkspaceId: context.activeWorkspaceId,
+        layout,
+        userId: context.userId
+      });
     }
 
-    return NextResponse.json(layoutResponse(store));
+    return NextResponse.json(layoutResponse(store, context));
   } catch (error) {
     console.error("layout read failed", error);
     return errorResponse(error, "Layout read failed.");

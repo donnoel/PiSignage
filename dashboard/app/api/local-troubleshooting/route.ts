@@ -5,6 +5,7 @@ import {
   readRecoveryStore
 } from "../../lib/local-data-store";
 import { readPiConfig, runSsh } from "../../lib/pi-local";
+import { activeWorkspaceSession, workspaceContextFromSession } from "../../lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -157,6 +158,8 @@ async function readPiDiagnostics() {
 
 export async function GET() {
   await ensureLocalDataFoundation();
+  const session = activeWorkspaceSession();
+  const context = workspaceContextFromSession(session);
   const [activityStore, recoveryStore, pi] = await Promise.all([
     readActivityStore(),
     readRecoveryStore(),
@@ -164,8 +167,10 @@ export async function GET() {
   ]);
 
   return NextResponse.json({
+    activeWorkspaceId: context.activeWorkspaceId,
     activity: activityStore.items.slice(0, 20),
     pi,
-    recoveryRuns: recoveryStore.runs.slice(0, 10)
+    recoveryRuns: recoveryStore.runs.slice(0, 10),
+    userId: context.userId
   });
 }
