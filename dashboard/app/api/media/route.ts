@@ -47,6 +47,7 @@ import {
   transcodedVideoFileName,
   uniqueFileName
 } from "../../lib/media-processing";
+import { activeWorkspaceSession, workspaceContextFromSession } from "../../lib/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -391,6 +392,8 @@ async function cloudPlaylistBlockedMediaIds(mediaStoreItems: MediaRecord[]): Pro
 }
 
 export async function GET(request: Request) {
+  const session = activeWorkspaceSession();
+  const context = workspaceContextFromSession(session);
   const cloudConfig = cloudMediaConfig();
   if (cloudConfig) {
     const [mediaStore, folderStore] = await Promise.all([readCloudMediaStore(cloudConfig), readMediaFolderStore()]);
@@ -423,10 +426,12 @@ export async function GET(request: Request) {
     const items = sortedItems.slice(cursor, nextCursorValue);
 
     return NextResponse.json({
+      activeWorkspaceId: context.activeWorkspaceId,
       folders: folderStore.items,
       items,
       version: mediaStore.version,
       updatedAt: mediaStore.updatedAt,
+      userId: context.userId,
       pagination: {
         cursor,
         hasMore: nextCursorValue < sortedItems.length,
@@ -472,10 +477,12 @@ export async function GET(request: Request) {
   const items = sortedItems.slice(cursor, nextCursorValue);
 
   return NextResponse.json({
+    activeWorkspaceId: context.activeWorkspaceId,
     folders: folderStore.items,
     items,
     version: mediaStore.version,
     updatedAt: mediaStore.updatedAt,
+    userId: context.userId,
     pagination: {
       cursor,
       hasMore: nextCursorValue < sortedItems.length,
