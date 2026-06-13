@@ -22,8 +22,13 @@ vm.runInNewContext(outputText, moduleContext, { filename: workspaceSourcePath })
 
 const {
   WorkspaceAuthorizationError,
+  WorkspaceSessionError,
+  activeWorkspaceContext,
+  activeWorkspaceSession,
   canUseWorkspace,
   defaultWorkspaceId,
+  localDevWorkspaceSession,
+  normalizeWorkspaceSession,
   requireWorkspacePermission
 } = moduleContext.module.exports;
 
@@ -54,6 +59,17 @@ function assertDenied(label, permission, context, workspaceId = defaultWorkspace
   }
 }
 
+function assertInvalidSession(label, session) {
+  try {
+    normalizeWorkspaceSession(session);
+    failures.push(`${label}: expected session normalization to fail`);
+  } catch (error) {
+    assert(error instanceof WorkspaceSessionError, `${label}: expected WorkspaceSessionError`);
+    assert(error.status === 401, `${label}: expected status 401`);
+    assert(error.code === "workspace_session_invalid", `${label}: expected workspace_session_invalid code`);
+  }
+}
+
 const viewer = contextFor("viewer");
 assert(canUseWorkspace("read", defaultWorkspaceId, viewer), "viewer can read");
 assert(!canUseWorkspace("write", defaultWorkspaceId, viewer), "viewer cannot write");
@@ -79,6 +95,54 @@ for (const permission of ["activity", "admin", "publish", "read", "recover", "wr
 
 assert(!canUseWorkspace("read", "workspace-other", viewer), "membership does not cross workspaces");
 assertDenied("cross-workspace read", "read", viewer, "workspace-other");
+
+const localSession = localDevWorkspaceSession();
+assert(localSession.activeWorkspaceId === defaultWorkspaceId, "local session uses default workspace");
+assert(localSession.user.userId === "local-dev-operator", "local session has stable user id");
+assert(localSession.workspaces.some((workspace) => workspace.workspaceId === defaultWorkspaceId), "local session lists default workspace");
+
+const normalizedSession = normalizeWorkspaceSession({
+  activeWorkspaceId: "  workspace-client-a  ",
+  memberships: [
+    { role: "viewer", workspaceId: "workspace-client-a" },
+    { role: "not-a-role", workspaceId: "workspace-client-b" }
+  ],
+  sessionId: " session-a ",
+  user: {
+    displayName: " Test User ",
+    email: " test@example.com ",
+    userId: " user-a "
+  },
+  workspaces: [
+    { name: " Client A ", workspaceId: "workspace-client-a" },
+    { name: " Client B ", workspaceId: "workspace-client-b" }
+  ]
+});
+assert(normalizedSession.activeWorkspaceId === "workspace-client-a", "session normalizes active workspace");
+assert(normalizedSession.memberships.length === 1, "session drops invalid roles");
+assert(normalizedSession.user.email === "test@example.com", "session normalizes email");
+assert(normalizedSession.workspaces[0]?.name === "Client A", "session keeps workspace display name");
+
+const activeSession = activeWorkspaceSession();
+const activeContext = activeWorkspaceContext(activeSession);
+assert(activeContext.activeWorkspaceId === defaultWorkspaceId, "active context preserves session workspace");
+assert(activeContext.userId === activeSession.user.userId, "active context preserves session user");
+assert(canUseWorkspace("admin", defaultWorkspaceId, activeContext), "local session can administer default workspace");
+
+assertInvalidSession("missing user", {
+  activeWorkspaceId: defaultWorkspaceId,
+  memberships: [{ role: "viewer", workspaceId: defaultWorkspaceId }]
+});
+assertInvalidSession("missing membership", {
+  activeWorkspaceId: defaultWorkspaceId,
+  memberships: [],
+  user: { displayName: "Viewer", userId: "viewer" }
+});
+assertInvalidSession("active workspace outside membership", {
+  activeWorkspaceId: "workspace-other",
+  memberships: [{ role: "viewer", workspaceId: defaultWorkspaceId }],
+  user: { displayName: "Viewer", userId: "viewer" }
+});
 
 if (failures.length > 0) {
   console.error("Workspace auth smoke failed:");

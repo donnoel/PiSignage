@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { WorkspaceAuthorizationError } from "./workspace";
+import { WorkspaceAuthorizationError, WorkspaceSessionError } from "./workspace";
 
 type ErrorWithStatus = Error & {
   code?: string;
@@ -8,6 +8,9 @@ type ErrorWithStatus = Error & {
 
 function statusFromError(error: unknown, fallbackStatus: number): number {
   if (error instanceof WorkspaceAuthorizationError) {
+    return error.status;
+  }
+  if (error instanceof WorkspaceSessionError) {
     return error.status;
   }
 
@@ -24,7 +27,10 @@ function statusFromError(error: unknown, fallbackStatus: number): number {
 export function apiErrorResponse(error: unknown, fallback: string, fallbackStatus = 500): NextResponse {
   const message = error instanceof Error ? error.message : fallback;
   const status = statusFromError(error, fallbackStatus);
-  const code = error instanceof WorkspaceAuthorizationError ? error.code : undefined;
+  const code =
+    error instanceof WorkspaceAuthorizationError || error instanceof WorkspaceSessionError
+      ? error.code
+      : undefined;
 
   return NextResponse.json(
     code ? { code, error: message } : { error: message },

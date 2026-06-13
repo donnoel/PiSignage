@@ -139,14 +139,18 @@ That area is separate from the normal workspace operations console.
 ## Implementation Sequence
 
 Current status: the dashboard has a shared default workspace ID,
-`workspace-beam-dev`, an active workspace context helper, local/cloud store
-normalization that can attach that workspace to existing records as they are
-read or written, and centralized permission helpers for the first read, write,
-publish, recovery, activity, and admin guardrails. Read paths are scoped through
-the active workspace while it still resolves to the default workspace. Mutation
-API routes that hit workspace authorization now return a structured `403`
-instead of a generic route failure. This does not yet enforce real authenticated
-memberships or user-driven workspace switching.
+`workspace-beam-dev`, a typed user session shape with memberships and a local
+dev session adapter, session normalization that rejects invalid roles or an
+active workspace outside the user's memberships, an active workspace context
+helper, local/cloud store normalization that can attach that workspace to
+existing records as they are read or written, and centralized permission helpers
+for the first read, write, publish, recovery, activity, and admin guardrails.
+Read paths are scoped through the active workspace while it still resolves to
+the default workspace. Mutation API routes that hit workspace authorization now
+return a structured `403` instead of a generic route failure, and invalid
+workspace sessions can return a structured `401`. This does not yet load real
+authenticated memberships from a login provider or expose user-driven workspace
+switching.
 
 1. Document the workspace/role model and update product requirements.
 2. Add a default workspace seed/migration for existing local and cloud data.
@@ -181,5 +185,6 @@ Current local smoke:
 npm run test:workspace-auth
 ```
 
-This checks the centralized role-to-permission helper, including denied
-viewer/operator/content-manager actions and cross-workspace membership denial.
+This checks the centralized role-to-permission helper, session normalization,
+and local session adapter, including denied viewer/operator/content-manager
+actions, invalid session rejection, and cross-workspace membership denial.
