@@ -495,6 +495,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const session = activeWorkspaceSession();
+    const context = workspaceContextFromSession(session);
     let formData: FormData;
     try {
       formData = await request.formData();
@@ -650,7 +652,7 @@ export async function POST(request: Request) {
     await appendActivityRecord({
       id: randomUUID(),
       action: "media-upload",
-      actor: "local-operator",
+      actor: context.userId,
       entityId: item.id,
       entityType: "media",
       message: `Uploaded ${item.playbackFileName} to media store.`,

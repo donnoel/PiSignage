@@ -129,6 +129,8 @@ export async function PATCH(request: Request, context: RouteContext) {
   const { mediaId } = await context.params;
 
   try {
+    const session = activeWorkspaceSession();
+    const workspaceContext = workspaceContextFromSession(session);
     const body = (await request.json()) as {
       description?: string;
       tags?: string;
@@ -213,7 +215,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     await appendActivityRecord({
       id: randomUUID(),
       action: "media-update",
-      actor: "local-operator",
+      actor: workspaceContext.userId,
       entityId: updated.id,
       entityType: "media",
       message: `Updated metadata for ${updated.playbackFileName}.`,
@@ -239,6 +241,8 @@ export async function DELETE(_request: Request, context: RouteContext) {
   }
 
   try {
+    const session = activeWorkspaceSession();
+    const workspaceContext = workspaceContextFromSession(session);
     const cloudConfig = cloudMediaConfig();
     if (cloudConfig) {
       const mediaStore = await readCloudMediaStore(cloudConfig);
@@ -306,7 +310,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     await appendActivityRecord({
       id: randomUUID(),
       action: "media-delete",
-      actor: "local-operator",
+      actor: workspaceContext.userId,
       entityId: current.id,
       entityType: "media",
       message: `Deleted ${current.playbackFileName} from media store.`,
