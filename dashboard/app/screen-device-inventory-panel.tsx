@@ -271,6 +271,10 @@ function piLabel(device: DeviceRecord | null, screen?: ScreenRecord): string {
   return screen ? `${screen.name} Pi` : device.name;
 }
 
+function screenNameFromDeviceName(value: string): string {
+  return value.trim().replace(/(?:\s+pi)+$/i, "").trim() || value.trim();
+}
+
 export function ScreenDeviceInventoryPanel({
   deviceStatuses,
   playlistId,
@@ -888,7 +892,7 @@ export function ScreenDeviceInventoryPanel({
       return;
     }
 
-    const suggestedName = device.name.replace(/^Unassigned Pi\s+/i, "").trim() || device.id;
+    const suggestedName = screenNameFromDeviceName(device.name.replace(/^Unassigned Pi\s+/i, "")) || device.id;
     const nextName = window.prompt("Screen name", suggestedName)?.trim();
     if (!nextName) {
       return;
