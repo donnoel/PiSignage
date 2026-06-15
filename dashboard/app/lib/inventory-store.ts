@@ -763,16 +763,8 @@ export async function updateDeviceResetStatus(input: {
 
   if (resetSucceeded && linkedScreen) {
     writes.push(
-      dynamoDb.send(new PutItemCommand({
-        Item: screenToItem({
-          ...linkedScreen,
-          deviceId: null,
-          playlistId: null,
-          publishedAt: null,
-          publishedPlaylistId: null,
-          publishedPlaylistVersion: null,
-          updatedAt: timestamp
-        }),
+      dynamoDb.send(new DeleteItemCommand({
+        Key: { screenId: stringAttribute(linkedScreen.id) },
         TableName: config.screensTableName
       }))
     );
