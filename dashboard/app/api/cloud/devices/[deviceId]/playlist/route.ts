@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { readInventory, resetCommandForDevice } from "../../../../../lib/inventory-store";
 import type { PlaylistAsset } from "../../../../../lib/local-playlist";
 import { readPlaylistStore, selectPlaylist } from "../../../../../lib/playlist-store";
+import { publicUrlForRequest } from "../../../../../lib/public-origin";
 
 type RouteContext = {
   params: Promise<{
@@ -70,7 +71,10 @@ export async function GET(request: Request, context: RouteContext) {
   const screen = inventory.screens.items.find((candidate) =>
     candidate.deviceId === device.id || candidate.id === device.screenId
   );
-  const resetStatusUrl = new URL(`/api/cloud/devices/${encodeURIComponent(deviceId)}/reset-result`, request.url).toString();
+  const resetStatusUrl = publicUrlForRequest(
+    request,
+    `/api/cloud/devices/${encodeURIComponent(deviceId)}/reset-result`
+  );
   const command = resetCommandForDevice(device, resetStatusUrl);
   const publishedPlaylistId = screen?.publishedPlaylistId ?? device.publishedPlaylistId ?? null;
   const publishedPlaylistVersion = screen?.publishedPlaylistVersion ?? device.publishedPlaylistVersion ?? null;

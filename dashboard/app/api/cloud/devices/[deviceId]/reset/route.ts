@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiErrorResponse } from "../../../../../lib/api-error-response";
 import { requestDeviceReset, resetCommandForDevice } from "../../../../../lib/inventory-store";
+import { publicUrlForRequest } from "../../../../../lib/public-origin";
 
 type RouteContext = {
   params: Promise<{
@@ -16,7 +17,10 @@ export async function POST(request: Request, context: RouteContext) {
 
   try {
     const device = await requestDeviceReset(deviceId);
-    const statusUrl = new URL(`/api/cloud/devices/${encodeURIComponent(deviceId)}/reset-result`, request.url).toString();
+    const statusUrl = publicUrlForRequest(
+      request,
+      `/api/cloud/devices/${encodeURIComponent(deviceId)}/reset-result`
+    );
     const command = resetCommandForDevice(device, statusUrl);
 
     return NextResponse.json({

@@ -224,6 +224,10 @@ export class BeamFoundationStack extends Stack {
                 value: "cloud"
               },
               {
+                name: "BEAM_PUBLIC_DASHBOARD_URL",
+                value: "https://rgkjsjxwec.us-west-2.awsapprunner.com"
+              },
+              {
                 name: "BEAM_DEVICES_TABLE_NAME",
                 value: devicesTable.tableName
               },
