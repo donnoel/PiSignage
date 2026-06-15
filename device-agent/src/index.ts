@@ -294,6 +294,14 @@ function resetScriptPath(root: string): string {
   return process.env.PISIGNAGE_RESET_SCRIPT_PATH?.trim() || path.join(root, "device", "pi", "bin", "pisignage-reset-device.sh");
 }
 
+function resetRebootEnabled(): boolean {
+  return process.env.PISIGNAGE_RESET_REBOOT_AFTER_SUCCESS?.trim().toLowerCase() !== "false";
+}
+
+function shutdownBinaryPath(): string {
+  return process.env.PISIGNAGE_RESET_SHUTDOWN_PATH?.trim() || "/usr/sbin/shutdown";
+}
+
 function summarizeOutput(stdout: string | undefined, stderr: string | undefined): string {
   const lines = `${stdout ?? ""}\n${stderr ?? ""}`
     .split("\n")
@@ -338,6 +346,27 @@ async function postResetStatus(
   }
 }
 
+async function assertResetRebootPermission(): Promise<void> {
+  const shutdownPath = shutdownBinaryPath();
+  await execFileAsync("/usr/bin/sudo", ["-n", "-l", shutdownPath], {
+    timeout: 10_000
+  });
+}
+
+async function requestResetReboot(): Promise<string> {
+  const shutdownPath = shutdownBinaryPath();
+  await execFileAsync("/usr/bin/sudo", [
+    "-n",
+    shutdownPath,
+    "-r",
+    "+1",
+    "Beam deployment reset complete"
+  ], {
+    timeout: 10_000
+  });
+  return "reboot_requested=true reboot_delay=1m";
+}
+
 async function runResetCommand(root: string, cacheDirectory: string, command: DeviceCommand): Promise<void> {
   const startedAt = new Date().toISOString();
   const commandPath = commandStatusPath(cacheDirectory, command.id);
@@ -360,6 +389,11 @@ async function runResetCommand(root: string, cacheDirectory: string, command: De
   });
 
   try {
+    const rebootAfterSuccess = resetRebootEnabled();
+    if (rebootAfterSuccess) {
+      await assertResetRebootPermission();
+    }
+
     const result = await execFileAsync(
       scriptPath,
       ["--repo-root", root, "--source", "git-head", "--agent-safe", "--apply"],
@@ -369,7 +403,9 @@ async function runResetCommand(root: string, cacheDirectory: string, command: De
       }
     );
     const finishedAt = new Date().toISOString();
-    const message = summarizeOutput(result.stdout, result.stderr);
+    const outputMessage = summarizeOutput(result.stdout, result.stderr);
+    const rebootMessage = rebootAfterSuccess ? await requestResetReboot() : "reboot_requested=false";
+    const message = `${outputMessage} ${rebootMessage}`;
     await writeJsonAtomic(commandPath, {
       commandId: command.id,
       finishedAt,

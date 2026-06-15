@@ -101,6 +101,37 @@ function stringOrDefault(value: string | undefined | null, fallback: string): st
   return trimmed ? trimmed : fallback;
 }
 
+function normalizedScreenName(value: string | undefined | null): string {
+  return (value ?? "")
+    .trim()
+    .replace(/\s+pi$/i, "")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+function displayScreenNameFromLink(value: string): string {
+  return value.trim().replace(/\s+pi$/i, "").trim() || value.trim();
+}
+
+function screenMatchesDeviceLink(screen: ScreenRecord, input: CreateScreenInput, existingDevice: DeviceRecord): boolean {
+  if (screen.deviceId && screen.deviceId !== existingDevice.id) {
+    return false;
+  }
+
+  if (existingDevice.screenId && screen.id === existingDevice.screenId) {
+    return true;
+  }
+
+  const inputName = normalizedScreenName(input.name);
+  const deviceName = normalizedScreenName(existingDevice.name);
+  const screenName = normalizedScreenName(screen.name);
+  if (!screenName) {
+    return false;
+  }
+
+  return screenName === inputName || screenName === deviceName;
+}
+
 function nullableString(value: string | undefined | null): AttributeValue {
   const trimmed = typeof value === "string" ? value.trim() : value;
   return trimmed ? { S: trimmed } : { NULL: true };
@@ -317,13 +348,16 @@ async function createCloudScreen(config: { devicesTableName: string; screensTabl
     const existingDevice = input.deviceId
       ? inventory.devices.items.find((device) => device.id === input.deviceId)
       : null;
-    const screenId = `screen-${randomUUID()}`;
+    const existingScreen = existingDevice
+      ? inventory.screens.items.find((screen) => screenMatchesDeviceLink(screen, input, existingDevice)) ?? null
+      : null;
+    const screenId = existingScreen?.id ?? `screen-${randomUUID()}`;
+    const screenName = existingScreen?.name ?? displayScreenNameFromLink(input.name);
     const deviceId =
       existingDevice?.id ??
       input.deviceId?.trim() ??
       trimmedEnv("BEAM_CLOUD_DEVICE_ID") ??
       `device-${randomUUID()}`;
-    const screenName = input.name.trim();
     const group = stringOrDefault(input.group, "General");
     const location = stringOrDefault(input.location, "Unassigned");
     const screen: ScreenRecord = {
@@ -360,13 +394,21 @@ async function createCloudScreen(config: { devicesTableName: string; screensTabl
 
     await dynamoDb.send(new TransactWriteItemsCommand({
       TransactItems: [
-        {
-          Put: {
-            ConditionExpression: "attribute_not_exists(screenId)",
-            Item: screenToItem(screen),
-            TableName: config.screensTableName
-          }
-        },
+        existingScreen
+          ? {
+              Put: {
+                ConditionExpression: "attribute_exists(screenId)",
+                Item: screenToItem(screen),
+                TableName: config.screensTableName
+              }
+            }
+          : {
+              Put: {
+                ConditionExpression: "attribute_not_exists(screenId)",
+                Item: screenToItem(screen),
+                TableName: config.screensTableName
+              }
+            },
         {
           Put: {
             ConditionExpression: existingDevice ? undefined : "attribute_not_exists(deviceId)",
