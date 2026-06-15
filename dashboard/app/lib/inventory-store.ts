@@ -104,13 +104,13 @@ function stringOrDefault(value: string | undefined | null, fallback: string): st
 function normalizedScreenName(value: string | undefined | null): string {
   return (value ?? "")
     .trim()
-    .replace(/\s+pi$/i, "")
+    .replace(/(?:\s+pi)+$/i, "")
     .replace(/\s+/g, " ")
     .toLowerCase();
 }
 
 function displayScreenNameFromLink(value: string): string {
-  return value.trim().replace(/\s+pi$/i, "").trim() || value.trim();
+  return value.trim().replace(/(?:\s+pi)+$/i, "").trim() || value.trim();
 }
 
 function screenMatchesDeviceLink(screen: ScreenRecord, input: CreateScreenInput, existingDevice: DeviceRecord): boolean {
@@ -122,14 +122,51 @@ function screenMatchesDeviceLink(screen: ScreenRecord, input: CreateScreenInput,
     return true;
   }
 
-  const inputName = normalizedScreenName(input.name);
-  const deviceName = normalizedScreenName(existingDevice.name);
   const screenName = normalizedScreenName(screen.name);
   if (!screenName) {
     return false;
   }
 
-  return screenName === inputName || screenName === deviceName;
+  return screenName === normalizedScreenName(input.name);
+}
+
+function screenIsLinkedToDevice(screen: ScreenRecord, device: DeviceRecord): boolean {
+  return screen.deviceId === device.id || Boolean(device.screenId && screen.id === device.screenId);
+}
+
+function unlinkedScreenMatchesName(screen: ScreenRecord, name: string): boolean {
+  if (screen.deviceId) {
+    return false;
+  }
+
+  return Boolean(normalizedScreenName(name)) && normalizedScreenName(screen.name) === normalizedScreenName(name);
+}
+
+function screenMatchesDeviceIdentity(screen: ScreenRecord, device: DeviceRecord): boolean {
+  if (screen.deviceId && screen.deviceId !== device.id) {
+    return false;
+  }
+
+  return screenIsLinkedToDevice(screen, device);
+}
+
+function preferredScreenForDeviceLink(
+  screens: ScreenRecord[],
+  input: CreateScreenInput,
+  existingDevice: DeviceRecord
+): ScreenRecord | null {
+  const candidates = screens.filter((screen) => screenMatchesDeviceLink(screen, input, existingDevice));
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const inputName = normalizedScreenName(input.name);
+  return (
+    candidates.find((screen) => normalizedScreenName(screen.name) === inputName) ??
+    candidates.find((screen) => existingDevice.screenId && screen.id === existingDevice.screenId) ??
+    candidates[0] ??
+    null
+  );
 }
 
 function nullableString(value: string | undefined | null): AttributeValue {
@@ -349,8 +386,14 @@ async function createCloudScreen(config: { devicesTableName: string; screensTabl
       ? inventory.devices.items.find((device) => device.id === input.deviceId)
       : null;
     const existingScreen = existingDevice
-      ? inventory.screens.items.find((screen) => screenMatchesDeviceLink(screen, input, existingDevice)) ?? null
+      ? preferredScreenForDeviceLink(inventory.screens.items, input, existingDevice)
       : null;
+    const staleScreens = existingDevice
+      ? inventory.screens.items.filter((screen) =>
+          screen.id !== existingScreen?.id &&
+          unlinkedScreenMatchesName(screen, input.name)
+        )
+      : [];
     const screenId = existingScreen?.id ?? `screen-${randomUUID()}`;
     const screenName = existingScreen?.name ?? displayScreenNameFromLink(input.name);
     const deviceId =
@@ -415,7 +458,13 @@ async function createCloudScreen(config: { devicesTableName: string; screensTabl
             Item: deviceToItem(device),
             TableName: config.devicesTableName
           }
-        }
+        },
+        ...staleScreens.map((staleScreen) => ({
+          Delete: {
+            Key: { screenId: stringAttribute(staleScreen.id) },
+            TableName: config.screensTableName
+          }
+        }))
       ]
     }));
     return;
@@ -727,10 +776,10 @@ export async function updateDeviceResetStatus(input: {
   }
 
   const timestamp = isoNow();
-  const linkedScreen = inventory.screens.items.find((screen) =>
-    screen.deviceId === device.id || screen.id === device.screenId
-  ) ?? null;
   const resetSucceeded = input.status === "succeeded";
+  const staleResetScreens = resetSucceeded
+    ? inventory.screens.items.filter((screen) => screenMatchesDeviceIdentity(screen, device))
+    : [];
   const nextDevice: DeviceRecord = {
     ...device,
     playlistId: resetSucceeded ? null : device.playlistId,
@@ -761,12 +810,14 @@ export async function updateDeviceResetStatus(input: {
     }))
   ];
 
-  if (resetSucceeded && linkedScreen) {
+  if (staleResetScreens.length > 0) {
     writes.push(
-      dynamoDb.send(new DeleteItemCommand({
-        Key: { screenId: stringAttribute(linkedScreen.id) },
-        TableName: config.screensTableName
-      }))
+      ...staleResetScreens.map((screen) =>
+        dynamoDb.send(new DeleteItemCommand({
+          Key: { screenId: stringAttribute(screen.id) },
+          TableName: config.screensTableName
+        }))
+      )
     );
   }
 
