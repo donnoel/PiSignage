@@ -27,6 +27,7 @@ const {
   activeWorkspaceSession,
   canUseWorkspace,
   defaultWorkspaceId,
+  demoWorkspaceId,
   localDevWorkspaceSession,
   normalizeWorkspaceSession,
   requireWorkspacePermission
@@ -100,6 +101,8 @@ const localSession = localDevWorkspaceSession();
 assert(localSession.activeWorkspaceId === defaultWorkspaceId, "local session uses default workspace");
 assert(localSession.user.userId === "local-dev-operator", "local session has stable user id");
 assert(localSession.workspaces.some((workspace) => workspace.workspaceId === defaultWorkspaceId), "local session lists default workspace");
+assert(localSession.workspaces.some((workspace) => workspace.workspaceId === demoWorkspaceId), "local session lists demo workspace");
+assert(localSession.memberships.some((membership) => membership.workspaceId === demoWorkspaceId), "local session has demo workspace membership");
 
 const normalizedSession = normalizeWorkspaceSession({
   activeWorkspaceId: "  workspace-client-a  ",

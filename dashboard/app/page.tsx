@@ -1299,6 +1299,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const activeMembership = workspaceMembershipFor(workspaceContext.activeWorkspaceId, workspaceContext);
   const workspaceName = activeWorkspace?.name ?? workspaceContext.activeWorkspaceId;
   const workspaceRoleLabel = roleLabel(activeMembership?.role);
+  const workspaceRoles = new Map(workspaceContext.memberships.map((membership) => [membership.workspaceId, membership.role]));
   const resolvedSearchParams = await searchParams;
   const selectedView = dashboardViewFrom(resolvedSearchParams?.view);
   const selectedPlaylistParam = scalarSearchParam(resolvedSearchParams?.playlist);
@@ -1780,6 +1781,29 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     <div>
                       <dt className="text-xs font-semibold uppercase text-zinc-500">Session</dt>
                       <dd className="mt-1 break-all text-xs text-zinc-600">{workspaceSession.sessionId}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-semibold uppercase text-zinc-500">Available workspaces</dt>
+                      <dd className="mt-2">
+                        <ul className="grid gap-2">
+                          {workspaceSession.workspaces.map((workspace) => {
+                            const role = workspaceRoles.get(workspace.workspaceId);
+                            const active = workspace.workspaceId === workspaceContext.activeWorkspaceId;
+
+                            return (
+                              <li key={workspace.workspaceId} className="rounded-md border border-zinc-200 p-2">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <span className="font-medium text-zinc-950">{workspace.name}</span>
+                                  <span className={active ? "text-xs font-semibold text-teal-700" : "text-xs text-zinc-500"}>
+                                    {active ? "Active" : roleLabel(role)}
+                                  </span>
+                                </div>
+                                <p className="mt-1 break-all text-xs text-zinc-500">{workspace.workspaceId}</p>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </dd>
                     </div>
                   </dl>
                 </div>

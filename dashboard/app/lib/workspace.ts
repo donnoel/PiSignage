@@ -1,4 +1,5 @@
 export const defaultWorkspaceId = "workspace-beam-dev";
+export const demoWorkspaceId = "workspace-demo-client";
 
 export type WorkspaceOwned = {
   workspaceId: string;
@@ -96,6 +97,10 @@ export function localDevWorkspaceSession(): WorkspaceUserSession {
       {
         role: "platform-admin",
         workspaceId: defaultWorkspaceId
+      },
+      {
+        role: "workspace-admin",
+        workspaceId: demoWorkspaceId
       }
     ],
     sessionId: "local-dev-session",
@@ -107,6 +112,10 @@ export function localDevWorkspaceSession(): WorkspaceUserSession {
       {
         name: "Beam Dev",
         workspaceId: defaultWorkspaceId
+      },
+      {
+        name: "Demo Client",
+        workspaceId: demoWorkspaceId
       }
     ]
   };
