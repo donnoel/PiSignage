@@ -161,9 +161,11 @@ function preferredScreenForDeviceLink(
   }
 
   const inputName = normalizedScreenName(input.name);
+  const exactCandidates = candidates.filter((screen) => normalizedScreenName(screen.name) === inputName);
   return (
-    candidates.find((screen) => normalizedScreenName(screen.name) === inputName) ??
+    exactCandidates.find((screen) => !screen.deviceId) ??
     candidates.find((screen) => existingDevice.screenId && screen.id === existingDevice.screenId) ??
+    exactCandidates[0] ??
     candidates[0] ??
     null
   );
@@ -391,7 +393,7 @@ async function createCloudScreen(config: { devicesTableName: string; screensTabl
     const staleScreens = existingDevice
       ? inventory.screens.items.filter((screen) =>
           screen.id !== existingScreen?.id &&
-          unlinkedScreenMatchesName(screen, input.name)
+          (screenIsLinkedToDevice(screen, existingDevice) || unlinkedScreenMatchesName(screen, input.name))
         )
       : [];
     const screenId = existingScreen?.id ?? `screen-${randomUUID()}`;
