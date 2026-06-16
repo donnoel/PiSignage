@@ -394,15 +394,14 @@ async function runResetCommand(root: string, cacheDirectory: string, command: De
       await assertResetRebootPermission();
     }
 
-    const resetArgs = ["--repo-root", root, "--source", "git-head", "--agent-safe", "--apply"];
-    if (rebootAfterSuccess) {
-      resetArgs.push("--keep-playback-until-reboot");
-    }
-
-    const result = await execFileAsync(scriptPath, resetArgs, {
-      maxBuffer: 1024 * 1024,
-      timeout: 5 * 60_000
-    });
+    const result = await execFileAsync(
+      scriptPath,
+      ["--repo-root", root, "--source", "git-head", "--agent-safe", "--apply"],
+      {
+        maxBuffer: 1024 * 1024,
+        timeout: 5 * 60_000
+      }
+    );
     const finishedAt = new Date().toISOString();
     const outputMessage = summarizeOutput(result.stdout, result.stderr);
     const rebootMessage = rebootAfterSuccess ? await requestResetReboot() : "reboot_requested=false";
