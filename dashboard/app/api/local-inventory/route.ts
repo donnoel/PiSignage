@@ -130,7 +130,9 @@ export async function DELETE(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const body = (await request.json()) as {
+      group?: string;
       id?: string;
+      location?: string;
       name?: string;
       playlistId?: string | null;
       targetType?: "screen" | "device";
@@ -141,7 +143,9 @@ export async function PATCH(request: Request) {
     }
 
     await updateInventory({
+      group: body.group,
       id: body.id,
+      location: body.location,
       name: body.name,
       playlistId: body.playlistId,
       targetType: body.targetType

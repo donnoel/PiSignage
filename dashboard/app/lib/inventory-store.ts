@@ -52,7 +52,9 @@ type CreateDeviceInput = {
 };
 
 type InventoryUpdateInput = {
+  group?: string;
   id: string;
+  location?: string;
   name?: string;
   playlistId?: string | null;
   targetType: "screen" | "device";
@@ -563,6 +565,8 @@ async function updateCloudInventory(config: { devicesTableName: string; screensT
     await dynamoDb.send(new PutItemCommand({
       Item: screenToItem({
         ...screen,
+        group: input.group === undefined ? screen.group : stringOrDefault(input.group, "General"),
+        location: input.location === undefined ? screen.location : stringOrDefault(input.location, "Unassigned"),
         name: input.name?.trim() ?? screen.name,
         playlistId: input.playlistId === undefined ? screen.playlistId : input.playlistId,
         updatedAt: timestamp
@@ -921,10 +925,14 @@ export async function updateInventory(input: InventoryUpdateInput): Promise<void
     if (input.name !== undefined && !nextName) {
       throw new Error("Screen name is required.");
     }
+    const nextGroup = input.group === undefined ? undefined : stringOrDefault(input.group, "General");
+    const nextLocation = input.location === undefined ? undefined : stringOrDefault(input.location, "Unassigned");
     const nextItems = [...store.items];
     const previous = nextItems[index];
     nextItems[index] = {
       ...previous,
+      group: nextGroup ?? previous.group,
+      location: nextLocation ?? previous.location,
       name: nextName ?? previous.name,
       playlistId: input.playlistId === undefined ? previous.playlistId : input.playlistId,
       updatedAt: timestamp
@@ -935,14 +943,19 @@ export async function updateInventory(input: InventoryUpdateInput): Promise<void
       updatedAt: timestamp,
       version: store.version + 1
     });
-    if (nextName && nextName !== previous.name) {
+    const detailChanges = [
+      nextName && nextName !== previous.name ? `name ${previous.name} to ${nextName}` : null,
+      nextGroup && nextGroup !== previous.group ? `group ${previous.group} to ${nextGroup}` : null,
+      nextLocation && nextLocation !== previous.location ? `location ${previous.location} to ${nextLocation}` : null
+    ].filter((item): item is string => Boolean(item));
+    if (detailChanges.length > 0) {
       await appendActivityRecord({
         id: randomUUID(),
-        action: "screen-rename",
+        action: nextName && nextName !== previous.name ? "screen-rename" : "screen-update",
         actor: "local-operator",
         entityId: previous.id,
         entityType: "screen",
-        message: `Renamed screen ${previous.name} to ${nextName}.`,
+        message: `Updated screen ${previous.name}: ${detailChanges.join("; ")}.`,
         result: "success",
         timestamp
       });

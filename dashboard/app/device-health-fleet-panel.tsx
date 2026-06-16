@@ -20,6 +20,7 @@ type DeviceRecord = {
   location: string;
   name: string;
   playlistId: string | null;
+  sshUser?: string;
   resetFinishedAt?: string | null;
   resetRequestedAt?: string | null;
   resetStartedAt?: string | null;
@@ -39,6 +40,7 @@ type FleetDeviceHealthPanelProps = {
   liveHost: string | null;
   livePlayerUrl: string | null;
   playlists: Array<{
+    assetCount?: number;
     name: string;
     playlistId: string;
     version: number;
@@ -62,11 +64,13 @@ type DeviceLiveStatus = {
 
 type FilterKey = "all" | "attention" | "offline" | "online" | "stale" | "sync" | "waiting";
 type SortDirection = "asc" | "desc";
-type SortKey = "action" | "lastSeen" | "playlist" | "screen" | "status";
+type SortKey = "action" | "device" | "lastSeen" | "playback" | "playlist" | "screen" | "status" | "sync";
 
 type RowState = {
   assignedPlaylistId: string | null;
+  assignedPlaylistAssetCount: number | null;
   assignedPlaylistName: string;
+  assignedPlaylistVersion: number | null;
   attentionReason: string;
   device: DeviceRecord;
   nextActionDetail: string;
@@ -104,6 +108,67 @@ type ActionResponse = {
   };
   playlistVersion?: number;
 };
+
+type InventoryResponse = {
+  error?: string;
+};
+
+type ScreenActionTone = "danger" | "neutral" | "primary";
+
+function screenActionClass(tone: ScreenActionTone): string {
+  if (tone === "danger") {
+    return "border-rose-200 text-rose-700 hover:bg-rose-50";
+  }
+  if (tone === "primary") {
+    return "border-teal-200 text-teal-800 hover:bg-teal-50";
+  }
+
+  return "border-zinc-200 text-zinc-800 hover:bg-zinc-50";
+}
+
+function ScreenActionIcon({ name }: { name: "details" | "link" | "playlist" | "remove" | "rename" }) {
+  if (name === "playlist") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8">
+        <rect x="4" y="5" width="16" height="14" rx="3" />
+        <path d="M8 9.5h8M8 13h8M8 16.5h5" />
+      </svg>
+    );
+  }
+
+  if (name === "rename") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8">
+        <path d="M5 18.5 6.2 14 15.8 4.4a2 2 0 0 1 2.8 2.8L9 16.8 4.5 18l.5.5Z" />
+        <path d="m14.5 5.8 3.7 3.7" />
+      </svg>
+    );
+  }
+
+  if (name === "link") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8">
+        <path d="M10 13a5 5 0 0 0 7.1 0l1.4-1.4a5 5 0 0 0-7.1-7.1L10.6 5.3" />
+        <path d="M14 11a5 5 0 0 0-7.1 0l-1.4 1.4a5 5 0 0 0 7.1 7.1l.8-.8" />
+      </svg>
+    );
+  }
+
+  if (name === "remove") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8">
+        <path d="M5 7h14M10 11v6M14 11v6M8 7l.6 12a2 2 0 0 0 2 1.9h2.8a2 2 0 0 0 2-1.9L16 7M9.5 7l.4-2h4.2l.4 2" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8">
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 11v5M12 8h.01" />
+    </svg>
+  );
+}
 
 function compareText(left: string, right: string): number {
   return left.localeCompare(right, undefined, { sensitivity: "base" });
@@ -157,6 +222,10 @@ function plainPlaybackLabel(value: string): string {
 
 function piLabel(device: DeviceRecord, linkedScreen: ScreenRecord | null): string {
   return linkedScreen ? `${linkedScreen.name} Pi` : device.name;
+}
+
+function screenNameFromDeviceName(value: string): string {
+  return value.trim().replace(/(?:\s+pi)+$/i, "").trim() || value.trim();
 }
 
 function playerUrlFor(row: RowState, liveHost: string | null, livePlayerUrl: string | null): string | null {
@@ -224,6 +293,18 @@ function compareRows(left: RowState, right: RowState, sortKey: SortKey): number 
     );
   }
 
+  if (sortKey === "device") {
+    return compareText(left.device.host, right.device.host) || compareText(screenName(left), screenName(right));
+  }
+
+  if (sortKey === "playback") {
+    return compareText(left.playbackLabel, right.playbackLabel) || compareText(screenName(left), screenName(right));
+  }
+
+  if (sortKey === "sync") {
+    return compareText(left.syncLabel, right.syncLabel) || compareText(screenName(left), screenName(right));
+  }
+
   if (sortKey === "action") {
     return (
       actionSortRank(left) - actionSortRank(right) ||
@@ -246,6 +327,7 @@ function rowActionFor(input: {
   isOffline: boolean;
   isStale: boolean;
   rowPlaybackHealthy: boolean;
+  screenLinked: boolean;
   syncLabel: string;
   syncTone: Tone;
 }): { detail: string; label: string; tone: Tone } {
@@ -253,6 +335,14 @@ function rowActionFor(input: {
     return {
       detail: "Add the Pi address in Screens before Beam can check it.",
       label: "Add Pi address",
+      tone: "warn"
+    };
+  }
+
+  if (!input.screenLinked) {
+    return {
+      detail: "Link this called-home Pi to a screen name before field use.",
+      label: "Link screen",
       tone: "warn"
     };
   }
@@ -373,7 +463,7 @@ export function DeviceHealthFleetPanel({
   const [sortKey, setSortKey] = useState<SortKey>("screen");
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(devices[0]?.id ?? null);
   const [message, setMessage] = useState("");
-  const [busyAction, setBusyAction] = useState<"publish" | "reboot" | "recover" | "refresh" | "reset" | "restart" | null>(null);
+  const [busyAction, setBusyAction] = useState<"assign" | "inventory" | "publish" | "reboot" | "recover" | "refresh" | "reset" | "restart" | null>(null);
   const [rebootWatch, setRebootWatch] = useState<{
     baselineStatusUpdatedAt: string | null;
     deviceId: string;
@@ -404,7 +494,6 @@ export function DeviceHealthFleetPanel({
 
   const rows = useMemo<RowState[]>(() => {
     return devices
-      .filter((device) => screensByDeviceId.has(device.id))
       .slice()
       .sort(
         (a, b) =>
@@ -494,6 +583,7 @@ export function DeviceHealthFleetPanel({
         const isOffline = isLive && !reachable;
         const isStale = isLive && rowStale;
         const needsAttention =
+          !linkedScreen ||
           !hostConfigured ||
           isOffline ||
           isStale ||
@@ -501,6 +591,8 @@ export function DeviceHealthFleetPanel({
           (isLive && !rowPlaybackHealthy);
         const attentionReason = !hostConfigured
           ? "setup needed"
+          : !linkedScreen
+            ? "screen link needed"
           : isOffline
             ? "screen offline"
             : isStale
@@ -518,6 +610,7 @@ export function DeviceHealthFleetPanel({
           isOffline,
           isStale,
           rowPlaybackHealthy,
+          screenLinked: Boolean(linkedScreen),
           syncLabel,
           syncTone
         });
@@ -526,7 +619,9 @@ export function DeviceHealthFleetPanel({
         return {
           device,
           assignedPlaylistId: assignedPlaylistId ?? null,
+          assignedPlaylistAssetCount: assignedPlaylist?.assetCount ?? null,
           assignedPlaylistName: assignedPlaylist?.name ?? "No playlist assigned",
+          assignedPlaylistVersion: assignedPlaylist?.version ?? null,
           attentionReason,
           nextActionDetail: nextAction.detail,
           nextActionLabel: nextAction.label,
@@ -694,6 +789,196 @@ export function DeviceHealthFleetPanel({
     return result;
   }
 
+  async function postInventory(body: unknown): Promise<void> {
+    const response = await fetch("/api/local-inventory", {
+      body: JSON.stringify(body),
+      headers: {
+        "Content-Type": "application/json"
+      },
+      method: "POST"
+    });
+    const result = (await response.json()) as InventoryResponse;
+    if (!response.ok || result.error) {
+      throw new Error(result.error ?? "Inventory update failed.");
+    }
+  }
+
+  async function savePlaylistAssignment(row: RowState, nextPlaylistId: string | null) {
+    if (isBusy) {
+      return;
+    }
+
+    const targetType = row.linkedScreen ? "screen" : "device";
+    const targetId = row.linkedScreen?.id ?? row.device.id;
+    setBusyAction("assign");
+    setMessage(nextPlaylistId ? `Assigning playlist to ${screenName(row)}...` : `Removing playlist from ${screenName(row)}...`);
+    try {
+      const response = await fetch("/api/local-playlist/assign", {
+        body: JSON.stringify({
+          assigned: Boolean(nextPlaylistId),
+          playlistId: nextPlaylistId,
+          targetId,
+          targetType
+        }),
+        headers: {
+          "Content-Type": "application/json"
+        },
+        method: "POST"
+      });
+      const result = (await response.json()) as InventoryResponse;
+      if (!response.ok || result.error) {
+        throw new Error(result.error ?? "Could not save playlist assignment.");
+      }
+      setMessage("Playlist assignment saved.");
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save playlist assignment.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function editScreen(row: RowState) {
+    const screen = row.linkedScreen;
+    if (!screen || isBusy) {
+      return;
+    }
+
+    const nameInput = window.prompt("Screen name", screen.name);
+    if (nameInput === null) {
+      return;
+    }
+    const nextName = nameInput.trim();
+    if (!nextName) {
+      setMessage("Screen name is required.");
+      return;
+    }
+
+    const locationInput = window.prompt("Location", screen.location);
+    if (locationInput === null) {
+      return;
+    }
+    const nextLocation = locationInput.trim() || "Unassigned";
+
+    const groupInput = window.prompt("Group", screen.group);
+    if (groupInput === null) {
+      return;
+    }
+    const nextGroup = groupInput.trim() || "General";
+
+    if (nextName === screen.name && nextLocation === screen.location && nextGroup === screen.group) {
+      setMessage("No screen changes to save.");
+      return;
+    }
+
+    setBusyAction("inventory");
+    setMessage(`Updating ${screen.name}...`);
+    try {
+      const response = await fetch("/api/local-inventory", {
+        body: JSON.stringify({
+          group: nextGroup,
+          id: screen.id,
+          location: nextLocation,
+          name: nextName,
+          targetType: "screen"
+        }),
+        headers: {
+          "Content-Type": "application/json"
+        },
+        method: "PATCH"
+      });
+      const result = (await response.json()) as InventoryResponse;
+      if (!response.ok || result.error) {
+        throw new Error(result.error ?? "Could not update this screen.");
+      }
+      setMessage(`${nextName} updated.`);
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update this screen.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function linkDeviceToScreen(row: RowState) {
+    if (row.linkedScreen || isBusy) {
+      return;
+    }
+
+    const suggestedName = screenNameFromDeviceName(row.device.name.replace(/^Unassigned Pi\s+/i, "")) || row.device.id;
+    const nextName = window.prompt("Screen name", suggestedName)?.trim();
+    if (!nextName) {
+      return;
+    }
+
+    const nextHost = window.prompt("Pi local address or IP", row.device.host)?.trim();
+    if (!nextHost) {
+      setMessage("Pi address is required to link this check-in.");
+      return;
+    }
+
+    setBusyAction("inventory");
+    setMessage(`Linking ${nextName} to ${row.device.name}...`);
+    try {
+      await postInventory({
+        deviceId: row.device.id,
+        group: row.device.group,
+        host: nextHost,
+        location: row.device.location,
+        name: nextName,
+        playlistId: row.assignedPlaylistId,
+        sshUser: row.device.sshUser,
+        targetType: "screen"
+      });
+      setMessage(`${nextName} linked to ${row.device.name}.`);
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not link this Pi.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function removeInventory(row: RowState) {
+    if (isBusy) {
+      return;
+    }
+
+    const targetType = row.linkedScreen ? "screen" : "device";
+    const targetId = row.linkedScreen?.id ?? row.device.id;
+    const label = row.linkedScreen?.name ?? row.device.name;
+    const confirmed = window.confirm(
+      targetType === "screen"
+        ? `Remove ${label}? Its linked Pi record will be removed too. Media and playlists stay saved.`
+        : `Remove ${label}? Screens, media, and playlists stay saved.`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setBusyAction("inventory");
+    setMessage(`Removing ${label}...`);
+    try {
+      const response = await fetch("/api/local-inventory", {
+        body: JSON.stringify({ id: targetId, targetType }),
+        headers: {
+          "Content-Type": "application/json"
+        },
+        method: "DELETE"
+      });
+      const result = (await response.json()) as InventoryResponse;
+      if (!response.ok || result.error) {
+        throw new Error(result.error ?? "Could not remove this item.");
+      }
+      setMessage(`${label} removed.`);
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not remove this item.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   async function runAction(action: "publish" | "reboot" | "recover" | "reset" | "restart", row: RowState) {
     if ((action !== "reset" && !row.isLive) || isBusy || (action === "reset" && row.resetActive)) {
       return;
@@ -828,8 +1113,11 @@ export function DeviceHealthFleetPanel({
   const summaryCards = summaryCardOptions.filter((item) => !item.hideWhenZero || item.count > 0);
   const sortOptions: Array<{ label: string; value: SortKey }> = [
     { label: "Screen", value: "screen" },
+    { label: "Device", value: "device" },
     { label: "Status", value: "status" },
+    { label: "Playback", value: "playback" },
     { label: "Playlist", value: "playlist" },
+    { label: "Sync", value: "sync" },
     { label: "Next action", value: "action" },
     { label: "Last check-in", value: "lastSeen" }
   ];
@@ -847,9 +1135,9 @@ export function DeviceHealthFleetPanel({
       <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
         <div className="border-b border-zinc-200 p-5">
           <div>
-            <h2 id="fleet-health-heading" className="text-xl font-semibold">Screen status</h2>
+            <h2 id="fleet-health-heading" className="text-xl font-semibold">Device list</h2>
             <p className="mt-1 text-sm text-zinc-600">
-              See which screens are up, which are down, and the next action for each Pi.
+              One row per called-home Pi or linked screen, with playlist, recovery, reset, and inventory controls.
             </p>
           </div>
         </div>
@@ -900,9 +1188,9 @@ export function DeviceHealthFleetPanel({
         <div className="border-t border-zinc-200 p-5">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <h3 className="text-base font-semibold text-zinc-950">Device list</h3>
+              <h3 className="text-base font-semibold text-zinc-950">Screens and Pis</h3>
               <p className="mt-1 text-sm text-zinc-600">
-                Select a screen to see details and controls below.
+                Select details, assign playlists, publish updates, rename or link screens, and remove stale records.
               </p>
             </div>
             <div className="grid w-full gap-3 xl:max-w-3xl xl:grid-cols-[minmax(240px,1fr)_180px_auto] xl:items-end">
@@ -952,44 +1240,152 @@ export function DeviceHealthFleetPanel({
             Showing {formatCount(sortedVisibleRows.length, "screen")} from {formatCount(rows.length, "screen")}.
           </p>
 
-          <div className="mt-4 max-h-[520px] overflow-auto rounded-md border border-zinc-200">
+          <div className="mt-4 max-h-[620px] overflow-auto rounded-md border border-zinc-200">
+            <div className="grid min-w-[1180px] grid-cols-[minmax(170px,1fr)_260px_110px_120px_150px_150px_190px] gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-3 text-xs font-semibold uppercase text-zinc-500">
+              <span>Screen</span>
+              <span>Playlist</span>
+              <span>Status</span>
+              <span>Playback</span>
+              <span>Sync</span>
+              <span>Device</span>
+              <span>Actions</span>
+            </div>
             <ol className="divide-y divide-zinc-200">
               {sortedVisibleRows.map((row) => {
                 const isSelected = selectedRow?.device.id === row.device.id;
 
                 return (
                   <li key={row.device.id}>
-                    <button
-                      type="button"
-                      aria-pressed={isSelected}
-                      onClick={() => setSelectedDeviceId(row.device.id)}
-                      className={`grid w-full gap-3 px-4 py-3 text-left text-sm lg:grid-cols-[minmax(0,1fr)_150px_90px_minmax(180px,1fr)_140px] lg:items-center ${
+                    <div
+                      className={`grid min-w-[1180px] gap-3 px-4 py-3 text-left text-sm lg:grid-cols-[minmax(170px,1fr)_260px_110px_120px_150px_150px_190px] lg:items-center ${
                         isSelected ? "bg-teal-50" : "bg-white hover:bg-zinc-50"
                       }`}
                     >
-                      <span className="min-w-0">
+                      <button
+                        type="button"
+                        aria-pressed={isSelected}
+                        onClick={() => setSelectedDeviceId(row.device.id)}
+                        className="min-w-0 rounded-md text-left focus:outline-none focus:ring-2 focus:ring-teal-600"
+                      >
                         <span className="block truncate font-semibold text-zinc-950">
                           {row.linkedScreen?.name ?? "No screen linked"}
                         </span>
                         <span className="mt-1 block truncate text-xs text-zinc-600">
-                          {row.linkedScreen?.location ?? row.device.location} · {row.assignedPlaylistName}
+                          {row.linkedScreen?.location ?? row.device.location} · {row.linkedScreen?.group ?? row.device.group}
                         </span>
+                      </button>
+                      <span className="min-w-0 text-left lg:w-full">
+                        <label htmlFor={`device-playlist-${row.device.id}`} className="sr-only">
+                          Playlist for {screenName(row)}
+                        </label>
+                        <select
+                          id={`device-playlist-${row.device.id}`}
+                          value={row.assignedPlaylistId ?? ""}
+                          disabled={isBusy}
+                          onChange={(event) => {
+                            void savePlaylistAssignment(row, event.currentTarget.value || null);
+                          }}
+                          className="min-h-10 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-950 disabled:cursor-not-allowed disabled:bg-zinc-100"
+                        >
+                          <option value="">No playlist</option>
+                          {row.assignedPlaylistId && !playlistsById.has(row.assignedPlaylistId) ? (
+                            <option value={row.assignedPlaylistId}>Playlist not found</option>
+                          ) : null}
+                          {playlists.map((option) => (
+                            <option key={option.playlistId} value={option.playlistId}>
+                              {option.name}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="mt-1 block truncate text-xs text-zinc-600">
+                          {row.assignedPlaylistAssetCount !== null && row.assignedPlaylistVersion !== null
+                            ? `${formatCount(row.assignedPlaylistAssetCount, "item")} · update ${row.assignedPlaylistVersion}`
+                            : "Choose a saved playlist."}
+                        </span>
+                      </span>
+                      <span className="lg:justify-self-start">
+                        <StatusPill label={row.healthLabel} tone={row.healthTone} />
+                      </span>
+                      <span className="lg:justify-self-start" title={row.playbackDetail}>
+                        <StatusPill label={row.playbackLabel} tone={row.playbackTone} />
+                      </span>
+                      <span className="lg:justify-self-start">
+                        {row.syncLabel === "Publish required" && row.assignedPlaylistId ? (
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => void runAction("publish", row)}
+                            title={row.syncDetail}
+                            aria-label={`Publish ${row.assignedPlaylistName} to ${screenName(row)}`}
+                            className="inline-flex whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {busyAction === "publish" ? "Publishing..." : row.syncLabel}
+                          </button>
+                        ) : (
+                          <span title={row.syncDetail}>
+                            <StatusPill label={row.syncLabel} tone={row.syncTone} />
+                          </span>
+                        )}
                       </span>
                       <span className="min-w-0 text-left lg:w-full">
                         <span className="block truncate font-semibold text-zinc-800">{piLabel(row.device, row.linkedScreen)}</span>
                         <span className="mt-1 block truncate text-xs text-zinc-600">{row.device.host}</span>
                       </span>
-                      <span className="lg:justify-self-start">
-                        <StatusPill label={row.healthLabel} tone={row.healthTone} />
+                      <span className="flex min-w-[172px] flex-nowrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDeviceId(row.device.id)}
+                          title="Details"
+                          aria-label={`Show details for ${screenName(row)}`}
+                          className={`inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white text-base font-semibold ${screenActionClass("neutral")}`}
+                        >
+                          <ScreenActionIcon name="details" />
+                        </button>
+                        {row.assignedPlaylistId ? (
+                          <a
+                            href={`/?view=playlist&playlist=${encodeURIComponent(row.assignedPlaylistId)}`}
+                            title="Playlist"
+                            aria-label={`Open playlist for ${screenName(row)}`}
+                            className={`inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white text-base font-semibold ${screenActionClass("primary")}`}
+                          >
+                            <ScreenActionIcon name="playlist" />
+                          </a>
+                        ) : null}
+                        {row.linkedScreen ? (
+                          <button
+                            type="button"
+                            onClick={() => void editScreen(row)}
+                            disabled={isBusy}
+                            title="Edit screen"
+                            aria-label={`Edit name, group, and location for ${screenName(row)}`}
+                            className={`inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white text-base font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${screenActionClass("neutral")}`}
+                          >
+                            <ScreenActionIcon name="rename" />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => void linkDeviceToScreen(row)}
+                            disabled={isBusy}
+                            title="Link screen"
+                            aria-label={`Link ${row.device.name} to a screen`}
+                            className={`inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white text-base font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${screenActionClass("primary")}`}
+                          >
+                            <ScreenActionIcon name="link" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => void removeInventory(row)}
+                          disabled={isBusy}
+                          title="Remove"
+                          aria-label={`Remove ${screenName(row)}`}
+                          className={`inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white text-lg font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${screenActionClass("danger")}`}
+                        >
+                          <ScreenActionIcon name="remove" />
+                        </button>
                       </span>
-                      <span className="min-w-0">
-                        <span className="block truncate font-semibold text-zinc-900">{row.assignedPlaylistName}</span>
-                        <span className="mt-1 block truncate text-xs text-zinc-600">{row.syncLabel}</span>
-                      </span>
-                      <span className="flex flex-wrap items-center gap-2 lg:justify-self-end">
-                        <StatusPill label={row.nextActionLabel} tone={row.nextActionTone} />
-                      </span>
-                    </button>
+                    </div>
                   </li>
                 );
               })}

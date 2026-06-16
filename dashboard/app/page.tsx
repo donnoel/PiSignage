@@ -32,7 +32,6 @@ import { LocalPlaylistSwitcher } from "./local-playlist-switcher";
 import { LocalPublishForm } from "./local-publish-form";
 import { LocalPlaylistSequence } from "./local-playlist-sequence";
 import { LocalPlaylistTimeline } from "./local-playlist-timeline";
-import { ScreenDeviceInventoryPanel } from "./screen-device-inventory-panel";
 import { SchedulingPanel } from "./scheduling-panel";
 import { TroubleshootingPanel } from "./troubleshooting-panel";
 
@@ -2049,6 +2048,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               liveHost={pi.host}
               livePlayerUrl={piPlayerUrl}
               playlists={playlistStore.items.map((item) => ({
+                assetCount: item.assets.length,
                 name: item.name,
                 playlistId: item.playlistId,
                 version: item.version
@@ -2173,26 +2173,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 playlistId: item.playlistId
               }))}
             />
-          </section>
-
-          <section
-            id="screens"
-            aria-labelledby="screens-heading"
-            className={selectedView === "screens" ? "mt-6" : "hidden"}
-          >
-            <h2 id="screens-heading" className="sr-only">Screens</h2>
-            <div>
-              <ScreenDeviceInventoryPanel
-                deviceStatuses={deviceStatuses}
-                playlistId={playlist.playlistId}
-                playlists={playlistStore.items.map((item) => ({
-                  assetCount: item.assets.length,
-                  name: item.name,
-                  playlistId: item.playlistId,
-                  version: item.version
-                }))}
-              />
-            </div>
           </section>
 
           <section
