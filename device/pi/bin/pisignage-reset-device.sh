@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  pisignage-reset-device.sh [--repo-root PATH] [--source git-head|current] [--agent-safe] [--dry-run|--apply]
+  pisignage-reset-device.sh [--repo-root PATH] [--source git-head|current] [--agent-safe] [--keep-playback-until-reboot] [--dry-run|--apply]
 
 Restores a Beam Pi appliance to the repo-backed first-run state while preserving
 device identity, network settings, SSH access, hostname, and OS users.
@@ -15,6 +15,9 @@ Options:
                      Use current after a controller has staged files into repo.
   --agent-safe       Do not stop/restart the device-agent service while the
                      agent is running this reset and still needs to report back.
+  --keep-playback-until-reboot
+                     Do not stop/restart active playback services during a
+                     reset that will immediately reboot after reporting.
   --dry-run          Show planned reset work without changing files. Default.
   --apply            Perform the reset.
   --help             Show this help.
@@ -31,6 +34,7 @@ repo_root="$(cd -- "${script_dir}/../../.." && pwd)"
 mode="dry-run"
 source_mode="git-head"
 agent_safe="false"
+keep_playback_until_reboot="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -52,6 +56,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --agent-safe)
       agent_safe="true"
+      shift
+      ;;
+    --keep-playback-until-reboot)
+      keep_playback_until_reboot="true"
       shift
       ;;
     --help)
@@ -77,6 +85,7 @@ local_bin_dir="${HOME}/.local/bin"
 state_dir="${HOME}/.local/state/pisignage"
 agent_cache_dir="${HOME}/.local/cache/pisignage/device-agent"
 config_dir="${HOME}/.config/pisignage"
+reset_reboot_marker_path="${state_dir}/reset-reboot-pending"
 
 managed_bin_sources=(
   "device/pi/bin/pisignage-enforce-schedule.mjs"
@@ -168,6 +177,7 @@ echo "  repo root: ${repo_root}"
 echo "  mode: ${mode}"
 echo "  source: ${source_mode}"
 echo "  agent safe: ${agent_safe}"
+echo "  keep playback until reboot: ${keep_playback_until_reboot}"
 echo "  preserves: ${config_dir}, hostname, network, SSH, OS users"
 echo "  clears: playlist publish state, stale media, schedules, player status, heartbeat, device-agent cache"
 
@@ -182,8 +192,23 @@ else
   print_step "device identity file is not present; reset will not create one"
 fi
 
+if [[ "$keep_playback_until_reboot" == "true" ]]; then
+  print_step "marking playback reload suppression until reboot"
+  if [[ "$mode" == "apply" ]]; then
+    mkdir -p "$state_dir"
+    cat /proc/sys/kernel/random/boot_id > "$reset_reboot_marker_path"
+  else
+    echo "dry-run: mkdir -p ${state_dir}"
+    echo "dry-run: cat /proc/sys/kernel/random/boot_id > ${reset_reboot_marker_path}"
+  fi
+fi
+
 print_step "stopping managed services"
 for unit in pisignage-schedule.timer pisignage-schedule.service pisignage-kiosk.service pisignage-player.service pisignage-vlc.service pisignage-device-agent.service; do
+  if [[ "$keep_playback_until_reboot" == "true" ]]; then
+    print_step "leaving ${unit} running until reboot"
+    continue
+  fi
   if [[ "$agent_safe" == "true" && "$unit" == "pisignage-device-agent.service" ]]; then
     print_step "leaving ${unit} running for cloud reset reporting"
     continue
@@ -226,7 +251,12 @@ fi
 
 print_step "clearing schedules, runtime status, and agent cache"
 apply_or_print rm -f "$schedules_path"
-apply_or_print rm -rf "$state_dir"
+if [[ "$keep_playback_until_reboot" == "true" ]]; then
+  print_step "preserving active player state until reboot"
+  apply_or_print mkdir -p "$state_dir"
+else
+  apply_or_print rm -rf "$state_dir"
+fi
 apply_or_print rm -rf "$agent_cache_dir"
 apply_or_print mkdir -p "$state_dir"
 
@@ -244,10 +274,17 @@ done
 
 print_step "reloading and enabling field services"
 apply_or_print systemctl --user daemon-reload
-apply_or_print systemctl --user disable --now pisignage-kiosk.service
-apply_or_print systemctl --user disable --now pisignage-player.service
-apply_or_print systemctl --user enable --now pisignage-vlc.service
-apply_or_print systemctl --user enable --now pisignage-schedule.timer
+if [[ "$keep_playback_until_reboot" == "true" ]]; then
+  apply_or_print systemctl --user disable pisignage-kiosk.service
+  apply_or_print systemctl --user disable pisignage-player.service
+  apply_or_print systemctl --user enable pisignage-vlc.service
+  apply_or_print systemctl --user enable pisignage-schedule.timer
+else
+  apply_or_print systemctl --user disable --now pisignage-kiosk.service
+  apply_or_print systemctl --user disable --now pisignage-player.service
+  apply_or_print systemctl --user enable --now pisignage-vlc.service
+  apply_or_print systemctl --user enable --now pisignage-schedule.timer
+fi
 if [[ -f "${repo_root}/device-agent/dist/index.js" ]]; then
   if [[ "$agent_safe" == "true" ]]; then
     apply_or_print systemctl --user enable pisignage-device-agent.service

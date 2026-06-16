@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { constants as fsConstants } from "node:fs";
-import { access, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -25,6 +25,10 @@ const vlcWaylandDisplay =
 const statusPath = path.resolve(
   process.env.PISIGNAGE_STATUS_PATH ??
     path.join(process.env.HOME ?? repoRoot, ".local/state/pisignage/player-status.json")
+);
+const resetRebootPendingPath = path.resolve(
+  process.env.PISIGNAGE_RESET_REBOOT_PENDING_PATH ??
+    path.join(path.dirname(statusPath), "reset-reboot-pending")
 );
 const displayReadyTimeoutMs = Number.parseInt(
   process.env.PISIGNAGE_DISPLAY_READY_TIMEOUT_MS ?? "60000",
@@ -52,6 +56,7 @@ const assetQuarantineWindowMs = Number.parseInt(
 );
 
 let stopping = false;
+let resetReloadSuppressionLogged = false;
 const activePlayers = new Set();
 let lastLoadedPlaylistSignature = null;
 const assetQuarantine = new Map();
@@ -318,8 +323,36 @@ async function waitForDisplay() {
 }
 
 async function playlistHasChanged(playlist) {
+  if (await resetRebootPendingOnCurrentBoot()) {
+    if (!resetReloadSuppressionLogged) {
+      log("reset reboot pending; keeping current playback until reboot");
+      resetReloadSuppressionLogged = true;
+    }
+    return false;
+  }
+
   const rawPlaylist = await readFile(playlistPath, "utf8");
   return playlistSignature(rawPlaylist) !== playlist.signature;
+}
+
+async function currentBootId() {
+  return (await readFile("/proc/sys/kernel/random/boot_id", "utf8")).trim();
+}
+
+async function resetRebootPendingOnCurrentBoot() {
+  try {
+    const [markerBootId, bootId] = await Promise.all([
+      readFile(resetRebootPendingPath, "utf8"),
+      currentBootId()
+    ]);
+    if (markerBootId.trim() === bootId) {
+      return true;
+    }
+    await unlink(resetRebootPendingPath).catch(() => {});
+  } catch {
+    return false;
+  }
+  return false;
 }
 
 function vlcBaseArgs() {
