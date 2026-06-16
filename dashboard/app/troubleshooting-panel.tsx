@@ -404,7 +404,7 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
     : "Inventory only";
   const selectedStatusTone: "muted" | "warn" = selectedHasLiveDiagnostics && !data?.pi.reachable ? "warn" : "muted";
   return (
-    <div className="mt-6 space-y-4">
+    <div className="space-y-4">
       <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
         <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 xl:flex-row xl:items-start xl:justify-between">
           <div>

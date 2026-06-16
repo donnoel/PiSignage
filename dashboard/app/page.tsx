@@ -163,7 +163,8 @@ type DashboardView =
   | "layouts"
   | "playlist"
   | "screens"
-  | "scheduling";
+  | "scheduling"
+  | "troubleshooting";
 
 type DashboardPageProps = {
   searchParams?: Promise<{
@@ -178,6 +179,7 @@ const navigationItems: Array<{ label: string; view: DashboardView }> = [
   { label: "Library", view: "media-store" },
   { label: "Playlists", view: "playlist" },
   { label: "Screens", view: "screens" },
+  { label: "Troubleshooting", view: "troubleshooting" },
   { label: "Layouts", view: "layouts" },
   { label: "Scheduling", view: "scheduling" }
 ];
@@ -206,18 +208,23 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
   screens: {
     eyebrow: "Operations",
     title: "Screens",
-    description: "Screen inventory, health, assigned playlists, recovery tools, and Pi evidence."
+    description: "Screen inventory, health, assigned playlists, and recovery tools."
   },
   scheduling: {
     eyebrow: "Hours",
     title: "Scheduling"
+  },
+  troubleshooting: {
+    eyebrow: "Support",
+    title: "Troubleshooting",
+    description: "Pi evidence, setup details, logs, and recovery history for deeper troubleshooting."
   }
 };
 
 function dashboardViewFrom(value: string | string[] | undefined): DashboardView {
   const candidate = Array.isArray(value) ? value[0] : value;
-  if (candidate === "device-health" || candidate === "troubleshooting") {
-    return "screens";
+  if (candidate === "device-health") {
+    return "troubleshooting";
   }
 
   return navigationItems.some((item) => item.view === candidate) ? (candidate as DashboardView) : "dashboard";
@@ -1808,7 +1815,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 </div>
               </details>
             </div>
-            <nav aria-label="Beam views" className="grid grid-cols-4 gap-2 text-xs font-medium text-slate-700 sm:grid-cols-7 sm:text-sm xl:flex xl:flex-wrap xl:justify-end">
+            <nav aria-label="Beam views" className="grid grid-cols-4 gap-2 text-xs font-medium text-slate-700 sm:text-sm lg:grid-cols-8 xl:flex xl:flex-wrap xl:justify-end">
               {navigationItems.map((item) => {
                 const selected = item.view === selectedView;
 
@@ -2057,16 +2064,17 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </section>
 
           <section
-            id="screen-health-diagnostics"
-            aria-labelledby="screen-health-diagnostics-heading"
-            className={selectedView === "screens" ? "mt-6 rounded-lg border border-zinc-200 bg-white shadow-sm" : "hidden"}
+            id="troubleshooting"
+            aria-labelledby="troubleshooting-heading"
+            className={selectedView === "troubleshooting" ? "mt-6 space-y-6" : "hidden"}
           >
-            <details>
-              <summary className="flex cursor-pointer list-none flex-col gap-2 p-5 marker:hidden sm:flex-row sm:items-center sm:justify-between [&::-webkit-details-marker]:hidden">
+            <h2 id="troubleshooting-heading" className="sr-only">Troubleshooting</h2>
+            <section aria-labelledby="recovery-history-heading" className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+              <div className="flex flex-col gap-2 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <h2 id="screen-health-diagnostics-heading" className="text-xl font-semibold">Advanced diagnostics</h2>
+                  <h3 id="recovery-history-heading" className="text-xl font-semibold">Playback evidence</h3>
                   <p className="mt-1 text-sm text-zinc-600">
-                    Pi evidence, setup details, logs, and recovery history for deeper troubleshooting.
+                    Detailed local evidence from the connected Pi. Items that need attention appear first.
                   </p>
                 </div>
                 <StatusPill
@@ -2077,15 +2085,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   }
                   tone={supportAttentionCount === 0 ? "good" : "warn"}
                 />
-              </summary>
-              <div className="border-t border-zinc-200">
-                <section aria-labelledby="recovery-history-heading">
-                  <div className="border-b border-zinc-200 px-5 pb-2 pt-4">
-                    <h3 id="recovery-history-heading" className="text-lg font-semibold">Playback evidence</h3>
-                    <p className="mt-1 text-sm text-zinc-600">
-                      Detailed local evidence from the connected Pi. Items that need attention appear first.
-                    </p>
-                  </div>
+              </div>
                   <ol className="divide-y divide-zinc-200">
                     {supportEvidence.map((item) => (
                       <li key={item.label} className="grid gap-3 px-5 py-4 text-sm md:grid-cols-[180px_1fr_auto] md:items-start">
@@ -2105,9 +2105,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   </ol>
                 </section>
 
-                <section id="field-setup" aria-labelledby="field-setup-heading" className="border-t border-zinc-200">
+                <section id="field-setup" aria-labelledby="field-setup-heading" className="rounded-lg border border-zinc-200 bg-white shadow-sm">
                   <div className="border-b border-zinc-200 p-5">
-                    <h3 id="field-setup-heading" className="text-lg font-semibold">Setup and Pi details</h3>
+                    <h3 id="field-setup-heading" className="text-xl font-semibold">Setup and Pi details</h3>
                   </div>
                   <div className="grid gap-4 p-5 xl:grid-cols-[1.1fr_0.9fr]">
                     <div className="rounded-md border border-zinc-200 bg-zinc-50">
@@ -2147,8 +2147,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 </section>
 
                 <TroubleshootingPanel screens={troubleshootingScreens} />
-              </div>
-            </details>
           </section>
 
           <section

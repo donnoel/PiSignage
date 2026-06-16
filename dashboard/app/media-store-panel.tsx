@@ -484,6 +484,11 @@ function removeTagText(currentText: string, tag: string): string {
   return tagString(tagsFromText(currentText).filter((entry) => normalizeTag(entry) !== normalized));
 }
 
+function toggleTagText(currentText: string, tag: string): string {
+  const selected = tagsFromText(currentText).some((entry) => normalizeTag(entry) === normalizeTag(tag));
+  return selected ? removeTagText(currentText, tag) : appendTagText(currentText, tag);
+}
+
 function canDeleteMedia(item: MediaItem): boolean {
   return item.origin !== "playlist" && !isInPlaylist(item);
 }
@@ -536,6 +541,7 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
   const [preparingMediaId, setPreparingMediaId] = useState<string | null>(null);
   const [deletingMediaId, setDeletingMediaId] = useState<string | null>(null);
   const [editingTagMediaId, setEditingTagMediaId] = useState<string | null>(null);
+  const [editingTagDraft, setEditingTagDraft] = useState("");
   const [editingTags, setEditingTags] = useState("");
   const [updatingTagMediaId, setUpdatingTagMediaId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -1142,7 +1148,18 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
 
   function startEditingTags(item: MediaItem) {
     setEditingTagMediaId(item.id);
+    setEditingTagDraft("");
     setEditingTags(tagString(item.tags));
+  }
+
+  function addEditingTagDraft() {
+    const draft = editingTagDraft.trim();
+    if (!draft) {
+      return;
+    }
+
+    setEditingTags((current) => appendTagText(current, draft));
+    setEditingTagDraft("");
   }
 
   async function handleSaveTags(item: MediaItem) {
@@ -1170,6 +1187,7 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
       }
 
       setEditingTagMediaId(null);
+      setEditingTagDraft("");
       setEditingTags("");
       await loadMedia(true);
       setMessage(`Updated tags for ${result.item.title}.`);
@@ -1685,6 +1703,10 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
                 const primaryFileName = mediaPrimaryFileName(item);
                 const secondaryFileName = mediaSecondaryFileName(item);
                 const processingText = processingFeedback(item, nowMs);
+                const currentEditingTags = tagsFromText(editingTags);
+                const suggestedTags = availableTags.filter(
+                  (tag) => !currentEditingTags.some((entry) => normalizeTag(entry) === normalizeTag(tag))
+                );
                 return (
                   <tr key={item.id} className="bg-white hover:bg-zinc-50">
                     <td className="px-4 py-3">
@@ -1707,53 +1729,83 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
                         <p className="mt-2 max-w-[420px] text-xs leading-5 text-amber-800" title={processingText}>{processingText}</p>
                       ) : null}
                       {editingTagMediaId === item.id ? (
-                        <div className="mt-3 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+                        <div className="mt-3 max-w-[520px] rounded-md border border-zinc-200 bg-zinc-50 p-2.5">
                           <label className="sr-only" htmlFor={`tags-${item.id}`}>Tags for {item.title}</label>
-                          <input
-                            id={`tags-${item.id}`}
-                            value={editingTags}
-                            onChange={(event) => setEditingTags(event.currentTarget.value)}
-                            disabled={isBusy}
-                            className="min-h-10 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-                          />
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {cannedTags.map((tag) => {
-                              const selected = tagsFromText(editingTags).some((entry) => normalizeTag(entry) === normalizeTag(tag));
-                              return (
-                                <button
-                                  key={tag}
-                                  type="button"
-                                  onClick={() =>
-                                    setEditingTags((current) => selected ? removeTagText(current, tag) : appendTagText(current, tag))
-                                  }
-                                  disabled={isBusy}
-                                  aria-pressed={selected}
-                                  className={`min-h-8 rounded-md px-2 py-1 text-xs font-semibold ring-1 disabled:cursor-not-allowed disabled:bg-zinc-100 ${
-                                    selected ? "bg-teal-50 text-teal-950 ring-teal-200" : "bg-white text-zinc-700 ring-zinc-300"
-                                  }`}
-                                >
-                                  {tag}
-                                </button>
-                              );
-                            })}
+                          <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2 py-1.5">
+                            {currentEditingTags.length > 0 ? currentEditingTags.map((tag) => (
+                              <button
+                                key={tag}
+                                type="button"
+                                onClick={() => setEditingTags((current) => removeTagText(current, tag))}
+                                disabled={isBusy}
+                                title={`Remove ${tag}`}
+                                aria-label={`Remove ${tag} tag from ${item.title}`}
+                                className="inline-flex min-h-7 items-center gap-1 rounded-md bg-teal-50 px-2 py-1 text-xs font-semibold text-teal-950 ring-1 ring-teal-200 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {tag}
+                                <span aria-hidden="true" className="text-teal-700">x</span>
+                              </button>
+                            )) : (
+                              <span className="text-xs font-medium text-zinc-500">No tags yet</span>
+                            )}
                           </div>
-                          <div className="mt-2 flex flex-wrap gap-2">
+                          <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(140px,1fr)_auto_auto]">
+                            <input
+                              id={`tags-${item.id}`}
+                              value={editingTagDraft}
+                              onChange={(event) => setEditingTagDraft(event.currentTarget.value)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  addEditingTagDraft();
+                                }
+                              }}
+                              disabled={isBusy}
+                              placeholder="Add tag"
+                              className="min-h-9 w-full min-w-0 rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm text-zinc-950 placeholder:text-zinc-400"
+                            />
+                            <button
+                              type="button"
+                              onClick={addEditingTagDraft}
+                              disabled={isBusy || !editingTagDraft.trim()}
+                              className="min-h-9 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400"
+                            >
+                              Add
+                            </button>
                             <button
                               type="button"
                               onClick={() => void handleSaveTags(item)}
                               disabled={isBusy}
                               className="min-h-9 rounded-md bg-teal-700 px-3 py-1.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-zinc-400"
                             >
-                              {updatingTagMediaId === item.id ? "Saving" : "Save tags"}
+                              {updatingTagMediaId === item.id ? "Saving" : "Save"}
                             </button>
+                          </div>
+                          {suggestedTags.length > 0 ? (
+                            <div className="mt-2 flex flex-wrap gap-1.5" aria-label={`Suggested tags for ${item.title}`}>
+                              {suggestedTags.map((tag) => (
+                                <button
+                                  key={tag}
+                                  type="button"
+                                  onClick={() => setEditingTags((current) => toggleTagText(current, tag))}
+                                  disabled={isBusy}
+                                  className="min-h-7 rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs font-semibold text-zinc-700 hover:border-teal-200 hover:bg-teal-50 hover:text-teal-950 disabled:cursor-not-allowed disabled:bg-zinc-100"
+                                >
+                                  {tag}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                          <div className="mt-2 flex justify-end">
                             <button
                               type="button"
                               onClick={() => {
                                 setEditingTagMediaId(null);
+                                setEditingTagDraft("");
                                 setEditingTags("");
                               }}
                               disabled={isBusy}
-                              className="min-h-9 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100"
+                              className="min-h-8 rounded-md px-2.5 py-1 text-xs font-semibold text-zinc-600 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
                             >
                               Cancel
                             </button>
