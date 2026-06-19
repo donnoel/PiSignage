@@ -13,6 +13,7 @@ The helper:
 - Seeds the last-known-good playlist cache.
 - Runs the agent with a missing playlist path and expects cache fallback.
 - Runs the agent with a malformed playlist and expects cache fallback.
+- Runs the agent with an unreachable cloud playlist URL and expects the last-known-good cache, not the first-run fallback asset.
 - Checks that the sample playlist asset exists locally.
 - Creates a temporary stale heartbeat fixture for inspection.
 

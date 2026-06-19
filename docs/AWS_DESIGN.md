@@ -14,8 +14,9 @@ Implemented or scaffolded now:
 - DynamoDB tables for accounts, devices, screens, playlists, assets, heartbeats, and activity.
 - API Gateway and Lambda routes for latest-device heartbeat write/read.
 - Dashboard cloud mode for Screens, Devices, playlist catalog, media source upload/cataloging, manual playlist publish markers, and heartbeat reads.
-- Device-agent cloud playlist fetch and heartbeat post when provisioned with ignored local environment variables.
+- Device-agent cloud release checks, publish-gated manifest sync, cached media verification, and heartbeat post when provisioned with ignored local environment variables.
 - Dev device playlist endpoint at `/api/cloud/devices/{deviceId}/playlist`.
+- Dev release manifest, per-asset URL, and sync-result endpoints under `/api/cloud/devices/{deviceId}/releases/{releaseId}/...`.
 - Cloud reset queue/result endpoints for deployment reset workflows.
 
 Still not production-ready:
@@ -71,6 +72,26 @@ Rules:
 - JPEG, PNG, and MOV source uploads can be stored and marked processing until playback-safe MP4 preparation is available.
 - Device cache keys should use `assetId` plus checksum/version, not raw file name.
 - S3 lifecycle rules can clean failed uploads and obsolete processed renditions later.
+- Playback-safe MP4 renditions should live in the playback media bucket when `BEAM_PLAYBACK_MEDIA_BUCKET_NAME` is configured; originals remain in source media.
+
+## Publish-Gated Release Sync
+
+Cloud playlist edits remain drafts until the operator presses manual publish.
+Manual publish creates an immutable release manifest for the target devices and
+stamps that release ID onto the linked screen/device records.
+
+Device traffic rules:
+
+- Heartbeat/status JSON may continue on its normal interval.
+- The normal device playlist check returns only desired release metadata.
+- If the release ID and manifest checksum are unchanged, the device downloads nothing.
+- A device fetches the release manifest only after a new manual publish.
+- Signed S3 URLs are generated one asset at a time only after the device reports a missing or changed cached asset.
+- AWS, monitor, or playlist-check failure must keep the last known good local cache. The first-run fallback playlist is used only when no valid cache exists.
+
+Each sync result records downloaded bytes, skipped cached bytes, failed asset IDs,
+release ID, and device ID so Beam can explain daily transfer instead of relying
+only on AWS billing rollups.
 
 ## CloudFront Signed URL Approach
 
@@ -81,6 +102,7 @@ Expected approach:
 - Use CloudFront Origin Access Control for private S3 access.
 - Generate signed URLs server-side from Lambda/API code.
 - Keep signed URLs long enough for intermittent Pi connectivity, but not permanent.
+- Generate signed media URLs only from per-asset release sync requests, not from routine playlist checks.
 - Do not store signed URLs in DynamoDB.
 - Do not log signed URLs in dashboard, Lambda, device-agent, or player logs.
 - Device should continue playback after URL expiry if the asset is already cached.

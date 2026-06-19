@@ -20,8 +20,10 @@ export type MediaRecord = {
   cloudStatusDetail?: string;
   playbackProfile?: string;
   playbackObjectKey?: string;
+  playbackStorageBucket?: string;
   preparedAt?: string;
   sourceObjectKey?: string;
+  sourceStorageBucket?: string;
   storageBucket?: string;
   storageProvider?: "local" | "s3";
   width?: number | null;
@@ -67,6 +69,8 @@ export type ScreenRecord = {
   name: string;
   notes: string;
   playlistId: string | null;
+  desiredReleaseId?: string | null;
+  desiredReleaseManifestChecksum?: string | null;
   publishedAt?: string | null;
   publishedPlaylistId?: string | null;
   publishedPlaylistVersion?: number | null;
@@ -94,6 +98,8 @@ export type DeviceRecord = {
   rootPath: string;
   screenId: string | null;
   sshUser: string;
+  desiredReleaseId?: string | null;
+  desiredReleaseManifestChecksum?: string | null;
   publishedAt?: string | null;
   publishedPlaylistId?: string | null;
   publishedPlaylistVersion?: number | null;

@@ -219,6 +219,8 @@ function screenToItem(screen: ScreenRecord): Record<string, AttributeValue> {
   const normalizedScreen = withDefaultWorkspace(screen);
   return {
     deviceId: nullableString(normalizedScreen.deviceId),
+    desiredReleaseId: nullableString(normalizedScreen.desiredReleaseId),
+    desiredReleaseManifestChecksum: nullableString(normalizedScreen.desiredReleaseManifestChecksum),
     group: stringAttribute(normalizedScreen.group),
     id: stringAttribute(normalizedScreen.id),
     location: stringAttribute(normalizedScreen.location),
@@ -238,6 +240,8 @@ function deviceToItem(device: DeviceRecord): Record<string, AttributeValue> {
   const normalizedDevice = withDefaultWorkspace(device);
   return {
     deviceId: stringAttribute(normalizedDevice.id),
+    desiredReleaseId: nullableString(normalizedDevice.desiredReleaseId),
+    desiredReleaseManifestChecksum: nullableString(normalizedDevice.desiredReleaseManifestChecksum),
     group: stringAttribute(normalizedDevice.group),
     host: stringAttribute(normalizedDevice.host),
     id: stringAttribute(normalizedDevice.id),
@@ -268,6 +272,8 @@ function screenFromItem(item: Record<string, AttributeValue>): ScreenRecord {
   const id = stringAttributeOrDefault(item.id ?? item.screenId, "screen-unknown");
   return {
     deviceId: stringOrNullAttribute(item.deviceId),
+    desiredReleaseId: stringOrNullAttribute(item.desiredReleaseId),
+    desiredReleaseManifestChecksum: stringOrNullAttribute(item.desiredReleaseManifestChecksum),
     group: stringAttributeOrDefault(item.group, "General"),
     id,
     location: stringAttributeOrDefault(item.location, "Unassigned"),
@@ -291,6 +297,8 @@ function deviceFromItem(item: Record<string, AttributeValue>): DeviceRecord {
     location: stringAttributeOrDefault(item.location, "Unassigned"),
     name: stringAttributeOrDefault(item.name, "Unnamed Device"),
     notes: stringAttributeOrDefault(item.notes, ""),
+    desiredReleaseId: stringOrNullAttribute(item.desiredReleaseId),
+    desiredReleaseManifestChecksum: stringOrNullAttribute(item.desiredReleaseManifestChecksum),
     playlistId: stringOrNullAttribute(item.playlistId),
     playerType: "vlc",
     publishedAt: stringOrNullAttribute(item.publishedAt),
@@ -601,6 +609,20 @@ export function isCloudInventoryConfigured(): boolean {
   return cloudInventoryConfig() !== null;
 }
 
+export async function resolveCloudPlaylistPublishTargets(input: {
+  deviceId?: string | null;
+  playlistId?: string | null;
+  screenId?: string | null;
+}): Promise<InventoryPublishTarget[]> {
+  const config = cloudInventoryConfig();
+  if (!config) {
+    return [];
+  }
+
+  const inventory = await readCloudInventory(config);
+  return publishTargetsForInventory(inventory, input);
+}
+
 function configuredDevice(device: DeviceRecord): boolean {
   return Boolean(device.host.trim()) && device.host !== "Not configured";
 }
@@ -653,6 +675,8 @@ function publishTargetsForInventory(
 }
 
 export async function markCloudPlaylistPublished(input: {
+  desiredReleaseId?: string | null;
+  desiredReleaseManifestChecksum?: string | null;
   deviceId?: string | null;
   playlistId: string;
   playlistVersion: number;
@@ -676,6 +700,8 @@ export async function markCloudPlaylistPublished(input: {
           dynamoDb.send(new PutItemCommand({
             Item: screenToItem({
               ...target.screen,
+              desiredReleaseId: input.desiredReleaseId ?? target.screen.desiredReleaseId ?? null,
+              desiredReleaseManifestChecksum: input.desiredReleaseManifestChecksum ?? target.screen.desiredReleaseManifestChecksum ?? null,
               publishedAt: timestamp,
               publishedPlaylistId: input.playlistId,
               publishedPlaylistVersion: input.playlistVersion,
@@ -690,6 +716,8 @@ export async function markCloudPlaylistPublished(input: {
           dynamoDb.send(new PutItemCommand({
             Item: deviceToItem({
               ...target.device,
+              desiredReleaseId: input.desiredReleaseId ?? target.device.desiredReleaseId ?? null,
+              desiredReleaseManifestChecksum: input.desiredReleaseManifestChecksum ?? target.device.desiredReleaseManifestChecksum ?? null,
               publishedAt: timestamp,
               publishedPlaylistId: input.playlistId,
               publishedPlaylistVersion: input.playlistVersion,
@@ -788,6 +816,8 @@ export async function updateDeviceResetStatus(input: {
     : [];
   const nextDevice: DeviceRecord = {
     ...device,
+    desiredReleaseId: resetSucceeded ? null : device.desiredReleaseId,
+    desiredReleaseManifestChecksum: resetSucceeded ? null : device.desiredReleaseManifestChecksum,
     playlistId: resetSucceeded ? null : device.playlistId,
     publishedAt: resetSucceeded ? null : device.publishedAt,
     publishedPlaylistId: resetSucceeded ? null : device.publishedPlaylistId,

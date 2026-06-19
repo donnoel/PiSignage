@@ -54,6 +54,14 @@ const malformedPlaylistResult = runAgent({
 requireSuccess("malformed playlist fallback", malformedPlaylistResult);
 requireOutput("malformed playlist fallback", malformedPlaylistResult, '"source":"cache"');
 
+console.log("Checking cloud-offline cache priority...");
+const cloudOfflineResult = runAgent({
+  PISIGNAGE_CLOUD_PLAYLIST_URL: "http://127.0.0.1:65534/api/cloud/devices/device-local-smoke/playlist",
+  PISIGNAGE_DEVICE_ID: "device-local-smoke"
+});
+requireSuccess("cloud-offline cache priority", cloudOfflineResult);
+requireOutput("cloud-offline cache priority", cloudOfflineResult, '"source":"cache"');
+
 console.log("Checking sample playlist asset references...");
 const playlistPath = path.join(repoRoot, "sample-content", "playlist.local.json");
 const playlist = JSON.parse(await readFile(playlistPath, "utf8"));

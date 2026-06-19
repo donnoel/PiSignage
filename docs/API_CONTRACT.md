@@ -188,7 +188,10 @@ Expected failures:
 
 ## Playlist Fetch
 
-Playlist fetch gives the device the current screen assignment and asset list. It must be safe for the device to call repeatedly.
+Playlist fetch is now the device's cheap release check. It must be safe for the
+device to call repeatedly without moving media bytes. Normal checks return only
+release metadata; assets are downloaded only after a manual publish creates a
+new desired release and the device finds missing or changed cached assets.
 
 Implemented for the dashboard-hosted dev device playlist bridge:
 
@@ -200,21 +203,19 @@ Response:
 
 ```json
 {
-  "screenId": "screen-lobby",
-  "playlistId": "playlist-local-demo",
-  "name": "Local Demo Playlist",
-  "version": 1,
-  "updatedAt": "2026-05-20T00:00:00.000Z",
-  "assets": [
-    {
-      "assetId": "asset-welcome",
-      "type": "image",
-      "uri": "https://example.cloudfront.net/assets/welcome.png",
-      "durationSeconds": 10,
-      "altText": "Beam title card",
-      "checksumSha256": "example-checksum"
-    }
-  ]
+  "deviceId": "device-local-demo",
+  "playlist": null,
+  "release": {
+    "releaseId": "release-playlist-local-demo-v2-abc123",
+    "manifestChecksum": "example-checksum",
+    "manifestUrl": "https://dashboard.example/api/cloud/devices/device-local-demo/releases/release-playlist-local-demo-v2-abc123/manifest",
+    "plannedBytes": 123456789,
+    "playlistId": "playlist-local-demo",
+    "playlistName": "Local Demo Playlist",
+    "playlistVersion": 2,
+    "publishedAt": "2026-05-20T20:20:00.000Z"
+  },
+  "unchanged": false
 }
 ```
 
@@ -226,9 +227,37 @@ Expected failures:
 
 Device behavior:
 
-- If the response version is unchanged, the device may keep its current cache.
-- If fetch fails, the device must keep playing the last known good cached playlist.
-- If a new playlist references assets that fail to download, the device must not delete the current working asset set.
+- If `unchanged` is true, the device must keep its current cache and download nothing.
+- If fetch fails, the device must keep playing the last known good cached playlist before trying any first-run fallback.
+- The tracked first-run fallback asset is only for a device with no valid local cache.
+- If a new release references assets that fail to download or verify, the device must not delete or replace the current working asset set.
+
+### Release Manifest And Asset URL
+
+Release manifests are fetched only after the release check reports a new desired
+release. Manifests contain metadata, checksums, sizes, and app endpoints for
+missing assets; they do not contain signed S3 media URLs.
+
+```http
+GET /v1/devices/{deviceId}/releases/{releaseId}/manifest
+```
+
+The device compares each asset by `assetId`, `fileName`, `sizeBytes`, and
+`checksumSha256`. Only missing or changed assets call:
+
+```http
+GET /v1/devices/{deviceId}/releases/{releaseId}/assets/{assetId}/url
+```
+
+That endpoint returns one short-lived signed URL for one asset. After syncing,
+the device posts:
+
+```http
+POST /v1/devices/{deviceId}/releases/{releaseId}/sync-result
+```
+
+with `downloadedBytes`, `skippedBytes`, `failedAssetIds`, and result status so
+Beam can explain daily transfer.
 
 ## Asset Upload
 

@@ -5,6 +5,7 @@ import { Metric, StatusPill } from "./dashboard-ui";
 import { DeviceHealthFleetPanel } from "./device-health-fleet-panel";
 import { readCloudHeartbeat, readCloudHeartbeats } from "./lib/cloud-heartbeat";
 import type { CloudHeartbeatState } from "./lib/cloud-heartbeat";
+import { readCloudTransferSummary, type CloudTransferSummary } from "./lib/cloud-release-store";
 import { ensureLocalDataFoundation } from "./lib/local-data-store";
 import type { DeviceRecord, DeviceStore, ScreenRecord, ScreenStore } from "./lib/local-data-store";
 import { readInventory } from "./lib/inventory-store";
@@ -92,6 +93,7 @@ type LastKnownPlayback = {
 type DashboardState = {
   cloudHeartbeat: CloudHeartbeatState;
   cloudHeartbeats: Record<string, CloudHeartbeatState>;
+  cloudTransfer: CloudTransferSummary;
   deviceStatuses: Record<string, DeviceLiveStatus>;
   heartbeat: Heartbeat | null;
   inventory: {
@@ -925,16 +927,17 @@ async function loadDashboardState(selectedPlaylistId?: string | null): Promise<D
     readInventory(seedPlaylistId),
     readJsonFile<PublishStatus>(publishStatusPath())
   ]);
-  const [cloudHeartbeat, cloudHeartbeats] = await Promise.all([
+  const [cloudHeartbeat, cloudHeartbeats, cloudTransfer] = await Promise.all([
     readCloudHeartbeat(),
-    readCloudHeartbeats(inventory.devices.items.map((device) => device.id))
+    readCloudHeartbeats(inventory.devices.items.map((device) => device.id)),
+    readCloudTransferSummary()
   ]);
   const primaryPiConfig = piConfigFromInventory(inventory, playlist.playlistId);
   const pi = loadCachedPiProbe(primaryPiConfig);
   const deviceStatuses = await loadDeviceStatuses(inventory, cloudHeartbeats);
   const lastKnownPlayback = await resolveLastKnownPlayback(pi);
 
-  return { cloudHeartbeat, cloudHeartbeats, deviceStatuses, heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi };
+  return { cloudHeartbeat, cloudHeartbeats, cloudTransfer, deviceStatuses, heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi };
 }
 
 function syncState(localVersion: number, piVersion: number | undefined, piReachable: boolean): PlaylistSyncState {
@@ -1310,7 +1313,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const selectedView = dashboardViewFrom(resolvedSearchParams?.view);
   const selectedPlaylistParam = scalarSearchParam(resolvedSearchParams?.playlist);
   const currentViewCopy = viewCopy[selectedView];
-  const { cloudHeartbeat, deviceStatuses, heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi } =
+  const { cloudHeartbeat, cloudTransfer, deviceStatuses, heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi } =
     await loadDashboardState(selectedPlaylistParam);
   const selectedScreenParam = scalarSearchParam(resolvedSearchParams?.screen);
   const playerStatus = pi.playerStatus;
@@ -1339,6 +1342,24 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     cloudHeartbeat.ok && cloudHeartbeat.heartbeat
       ? `${cloudHeartbeat.heartbeat.deviceId ?? cloudHeartbeat.deviceId} · ${formatStatusAge(cloudHeartbeatTimestamp)} · ${cloudHeartbeat.heartbeat.currentPlaylistId ?? "playlist not reported"}`
       : cloudHeartbeat.message;
+  const cloudTransferTone: "good" | "warn" | "muted" =
+    !isCloudDashboard || !cloudTransfer.latestRelease
+      ? "muted"
+      : cloudTransfer.unexpectedBytesToday > 0
+        ? "warn"
+        : "good";
+  const cloudTransferLabel =
+    !isCloudDashboard
+      ? "Local mode"
+      : cloudTransfer.latestRelease
+        ? formatBytes(cloudTransfer.downloadedBytesToday)
+        : "No releases";
+  const cloudTransferDetail =
+    !isCloudDashboard
+      ? "AWS transfer ledger is only active in cloud mode."
+      : cloudTransfer.latestRelease
+        ? `Planned ${formatBytes(cloudTransfer.plannedBytesToday)} today from ${cloudTransfer.releasesToday} publish release${cloudTransfer.releasesToday === 1 ? "" : "s"}; ${formatBytes(cloudTransfer.unexpectedBytesToday)} unexpected by Beam ledger.`
+        : "No cloud release has been manually published today.";
   const playbackHealthy = isPlaying && isPlayerStatusFresh;
   const playbackLabel = playbackHealthy ? "Playing" : isPlaying ? "Stale" : playbackState;
   const playerFreshnessDetail = statusFreshnessDetail(pi, playerStatus, isPlayerStatusFresh);
@@ -1863,7 +1884,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 {systemStatusLabel}
               </p>
             </div>
-            <dl className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <dl className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
               <div className={`rounded-lg border p-4 shadow-sm ${onlineDeviceCount > 0 ? "border-emerald-200 bg-emerald-50" : "border-zinc-200 bg-white"}`}>
                 <dt className="text-xs font-semibold uppercase text-emerald-800">Online</dt>
                 <dd className="mt-2 text-2xl font-semibold text-zinc-950">{onlineDeviceCount}</dd>
@@ -1885,6 +1906,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   {cloudHeartbeatLabel}
                 </dd>
                 <dd className="mt-1 break-words text-sm text-zinc-600">{cloudHeartbeatDetail}</dd>
+              </div>
+              <div className={`rounded-lg border p-4 shadow-sm ${cloudTransferTone === "good" ? "border-emerald-200 bg-emerald-50" : cloudTransferTone === "warn" ? "border-amber-200 bg-amber-50" : "border-zinc-200 bg-white"}`}>
+                <dt className="text-xs font-semibold uppercase text-zinc-600">AWS transfer</dt>
+                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{cloudTransferLabel}</dd>
+                <dd className="mt-1 break-words text-sm text-zinc-600">{cloudTransferDetail}</dd>
               </div>
             </dl>
           </section>

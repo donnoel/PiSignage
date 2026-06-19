@@ -6,8 +6,13 @@ import {
   writePlaylist,
   writePublishStatus
 } from "../../../lib/local-playlist";
-import { isCloudInventoryConfigured, markCloudPlaylistPublished } from "../../../lib/inventory-store";
+import {
+  isCloudInventoryConfigured,
+  markCloudPlaylistPublished,
+  resolveCloudPlaylistPublishTargets
+} from "../../../lib/inventory-store";
 import { apiErrorResponse } from "../../../lib/api-error-response";
+import { buildCloudReleaseManifest, writeCloudRelease } from "../../../lib/cloud-release-store";
 import { readStoredPlaylist } from "../../../lib/playlist-store";
 import { publishPlaylistToPi } from "../../../lib/pi-local";
 import { piConfigForDevice, targetDevicesForRequest } from "../../../lib/pi-targets";
@@ -71,7 +76,17 @@ export async function POST(request: Request) {
     }
 
     if (isCloudInventoryConfigured()) {
+      const resolvedTargets = await resolveCloudPlaylistPublishTargets({
+        deviceId: body.deviceId,
+        playlistId: playlist.playlistId,
+        screenId: body.screenId
+      });
+      const release = resolvedTargets.length > 0
+        ? await writeCloudRelease(buildCloudReleaseManifest(playlist, resolvedTargets))
+        : null;
       const targets = await markCloudPlaylistPublished({
+        desiredReleaseId: release?.releaseId,
+        desiredReleaseManifestChecksum: release?.manifestChecksum,
         deviceId: body.deviceId,
         playlistId: playlist.playlistId,
         playlistVersion: playlist.version,
@@ -83,7 +98,7 @@ export async function POST(request: Request) {
         enabled: true,
         host: target.device?.host ?? null,
         message: target.device
-          ? `Published ${playlist.name} v${playlist.version} to ${target.device.name}.`
+          ? `Published ${playlist.name} v${playlist.version} release ${release?.releaseId ?? "pending"} to ${target.device.name}.`
           : `Published ${playlist.name} v${playlist.version} to assigned screen.`,
         ok: Boolean(target.device),
         screenId: target.screen?.id ?? null
@@ -105,6 +120,10 @@ export async function POST(request: Request) {
       return NextResponse.json({
         playlistVersion: playlist.version,
         assetCount: playlist.assets.length,
+        release,
+        releaseId: release?.releaseId ?? null,
+        manifestChecksum: release?.manifestChecksum ?? null,
+        plannedBytes: release?.plannedBytes ?? 0,
         piPublish,
         publishResults: publishTargets,
         publishTargets

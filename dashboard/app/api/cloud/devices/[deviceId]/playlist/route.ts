@@ -1,10 +1,10 @@
-import path from "node:path";
-import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { NextResponse } from "next/server";
+import {
+  readCloudRelease,
+  releaseTargetsDevice,
+  type CloudReleaseRecord
+} from "../../../../../lib/cloud-release-store";
 import { readInventory, resetCommandForDevice } from "../../../../../lib/inventory-store";
-import type { PlaylistAsset } from "../../../../../lib/local-playlist";
-import { readPlaylistStore, selectPlaylist } from "../../../../../lib/playlist-store";
 import { publicUrlForRequest } from "../../../../../lib/public-origin";
 
 type RouteContext = {
@@ -13,56 +13,32 @@ type RouteContext = {
   }>;
 };
 
-type DevicePlaylistAsset = PlaylistAsset & {
-  downloadUrl?: string;
-  fileName: string;
-};
-
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const s3 = new S3Client({});
-const signedUrlExpiresInSeconds = 15 * 60;
-
-function fileNameForAsset(asset: PlaylistAsset): string {
-  const explicitPath = asset.playbackObjectKey ?? asset.sourceObjectKey ?? asset.uri;
-  return path.basename(explicitPath);
-}
-
-async function signedAsset(asset: PlaylistAsset): Promise<DevicePlaylistAsset> {
-  const bucket = asset.storageBucket;
-  const key = asset.playbackObjectKey ?? asset.sourceObjectKey;
-  const fileName = fileNameForAsset(asset);
-
-  if (!bucket || !key || asset.storageProvider !== "s3") {
-    return {
-      ...asset,
-      fileName
-    };
-  }
-
-  const downloadUrl = await getSignedUrl(
-    s3,
-    new GetObjectCommand({
-      Bucket: bucket,
-      Key: key
-    }),
-    { expiresIn: signedUrlExpiresInSeconds }
-  );
-
+function releaseSummary(request: Request, deviceId: string, release: CloudReleaseRecord) {
   return {
-    ...asset,
-    downloadUrl,
-    fileName
+    assetCount: release.assetCount,
+    manifestChecksum: release.manifestChecksum,
+    manifestUrl: publicUrlForRequest(
+      request,
+      `/api/cloud/devices/${encodeURIComponent(deviceId)}/releases/${encodeURIComponent(release.releaseId)}/manifest`
+    ),
+    plannedBytes: release.plannedBytes,
+    playlistId: release.playlistId,
+    playlistName: release.playlistName,
+    playlistVersion: release.playlistVersion,
+    publishedAt: release.publishedAt,
+    releaseId: release.releaseId
   };
 }
 
 export async function GET(request: Request, context: RouteContext) {
   const { deviceId } = await context.params;
-  const [inventory, playlistStore] = await Promise.all([
-    readInventory("playlist-main-playlist"),
-    readPlaylistStore()
-  ]);
+  const { searchParams } = new URL(request.url);
+  const currentReleaseId = searchParams.get("currentReleaseId");
+  const currentManifestChecksum = searchParams.get("manifestChecksum");
+  const inventory = await readInventory("playlist-main-playlist");
   const device = inventory.devices.items.find((candidate) => candidate.id === deviceId);
   if (!device) {
     return NextResponse.json({ error: "Device was not found." }, { status: 404 });
@@ -76,59 +52,53 @@ export async function GET(request: Request, context: RouteContext) {
     `/api/cloud/devices/${encodeURIComponent(deviceId)}/reset-result`
   );
   const command = resetCommandForDevice(device, resetStatusUrl);
-  const publishedPlaylistId = screen?.publishedPlaylistId ?? device.publishedPlaylistId ?? null;
-  const publishedPlaylistVersion = screen?.publishedPlaylistVersion ?? device.publishedPlaylistVersion ?? null;
-  const playlistId = publishedPlaylistId;
-  if (!playlistId) {
+  const desiredReleaseId = screen?.desiredReleaseId ?? device.desiredReleaseId ?? null;
+  const desiredManifestChecksum =
+    screen?.desiredReleaseManifestChecksum ?? device.desiredReleaseManifestChecksum ?? null;
+
+  if (!desiredReleaseId) {
     if (command) {
       return NextResponse.json({
         command,
         deviceId,
         playlist: null,
-        serverTime: new Date().toISOString()
-      });
-    }
-
-    return NextResponse.json({ error: "No playlist has been manually published to this device." }, { status: 404 });
-  }
-
-  const playlist = selectPlaylist(playlistStore, playlistId);
-  if (typeof publishedPlaylistVersion === "number" && playlist.version !== publishedPlaylistVersion) {
-    if (command) {
-      return NextResponse.json({
-        command,
-        deviceId,
-        playlist: null,
-        playlistError: {
-          error: "A newer playlist draft exists, but it has not been manually published to this device.",
-          publishedPlaylistId: playlistId,
-          publishedPlaylistVersion,
-          savedPlaylistVersion: playlist.version
-        },
+        release: null,
         serverTime: new Date().toISOString()
       });
     }
 
     return NextResponse.json(
       {
-        error: "A newer playlist draft exists, but it has not been manually published to this device.",
-        publishedPlaylistId: playlistId,
-        publishedPlaylistVersion,
-        savedPlaylistVersion: playlist.version
+        error: "No release has been manually published to this device. Keep using the last known good local cache.",
+        localFirst: true
       },
-      { status: 409 }
+      { status: 404 }
     );
   }
-  const assets = await Promise.all(playlist.assets.map(signedAsset));
+
+  const release = await readCloudRelease(desiredReleaseId);
+  if (!release || !releaseTargetsDevice(release, deviceId)) {
+    return NextResponse.json(
+      {
+        error: "The published release is unavailable for this device. Keep using the last known good local cache.",
+        localFirst: true,
+        releaseId: desiredReleaseId
+      },
+      { status: 404 }
+    );
+  }
+
+  const unchanged =
+    currentReleaseId === release.releaseId &&
+    currentManifestChecksum === release.manifestChecksum &&
+    desiredManifestChecksum === release.manifestChecksum;
 
   return NextResponse.json({
     command,
     deviceId,
-    playlist: {
-      ...playlist,
-      assets
-    },
-    publishedAt: screen?.publishedAt ?? device.publishedAt ?? null,
-    serverTime: new Date().toISOString()
+    playlist: null,
+    release: releaseSummary(request, deviceId, release),
+    serverTime: new Date().toISOString(),
+    unchanged
   });
 }

@@ -98,6 +98,7 @@ Rules:
 - Do not commit cloud API keys to git.
 - `PISIGNAGE_DEVICE_ID` is required when cloud playlist or heartbeat settings are configured.
 - A cloud playlist fetch failure must fall back to the local playlist or last cached playlist.
+- In cloud mode, the last known good cache takes priority over the tracked first-run fallback playlist. Turning off AWS, cloud monitors, or network access must not replace valid cached playback with the fallback asset.
 - A cloud heartbeat failure must not fail the local heartbeat write.
 - A failed loop cycle should log and retry instead of stopping playback supervision.
 - Local playback and cached playlist behavior must not depend on the cloud heartbeat.

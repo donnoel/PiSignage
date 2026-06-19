@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,10 +9,13 @@ type PlaylistAsset = {
   assetId: string;
   type: "image" | "video";
   uri: string;
-  durationSeconds: number;
+  durationSeconds?: number;
   altText?: string;
+  assetUrlEndpoint?: string;
+  checksumSha256?: string;
   downloadUrl?: string;
   fileName?: string;
+  sizeBytes?: number;
 };
 
 type Playlist = {
@@ -51,6 +55,47 @@ type CloudHeartbeatConfig = {
 type CloudPlaylistResponse = {
   command?: DeviceCommand | null;
   playlist?: Playlist | null;
+  release?: CloudReleaseCheck | null;
+  unchanged?: boolean;
+};
+
+type CloudReleaseCheck = {
+  assetCount: number;
+  manifestChecksum: string;
+  manifestUrl: string;
+  plannedBytes: number;
+  playlistId: string;
+  playlistName: string;
+  playlistVersion: number;
+  publishedAt: string;
+  releaseId: string;
+};
+
+type CloudReleaseManifestResponse = {
+  assets: PlaylistAsset[];
+  manifestChecksum: string;
+  playlist: Playlist;
+  releaseId: string;
+  syncResultUrl?: string;
+};
+
+type CachedReleaseState = {
+  manifestChecksum: string;
+  releaseId: string;
+  syncedAt: string;
+};
+
+type ReleaseSyncStats = {
+  downloadedBytes: number;
+  failedAssetIds: string[];
+  skippedBytes: number;
+};
+
+type AssetUrlResponse = {
+  checksumSha256?: string | null;
+  fileName: string;
+  sizeBytes?: number;
+  url: string;
 };
 
 type DeviceCommand = {
@@ -65,6 +110,7 @@ type ResetStatus = "failed" | "running" | "succeeded";
 
 const appVersion = "0.1.0";
 const currentPlaylistFileName = "current.json";
+const currentReleaseFileName = "current-release.json";
 const execFileAsync = promisify(execFile);
 let stopping = false;
 
@@ -148,6 +194,10 @@ function currentPlaylistCachePath(cacheDirectory: string): string {
   return path.join(cacheDirectory, "playlists", currentPlaylistFileName);
 }
 
+function currentReleaseStatePath(cacheDirectory: string): string {
+  return path.join(cacheDirectory, "releases", currentReleaseFileName);
+}
+
 function commandStatusPath(cacheDirectory: string, commandId: string): string {
   const safeCommandId = commandId.replace(/[^A-Za-z0-9_.-]/g, "_");
   return path.join(cacheDirectory, "commands", `${safeCommandId}.json`);
@@ -168,6 +218,31 @@ function localIpAddress(): string | null {
 async function cachePlaylist(cacheDirectory: string, playlist: Playlist): Promise<void> {
   await writeJsonAtomic(playlistCachePath(cacheDirectory, playlist.playlistId), playlist);
   await writeJsonAtomic(currentPlaylistCachePath(cacheDirectory), playlist);
+}
+
+async function readCachedPlaylist(cacheDirectory: string): Promise<Playlist> {
+  return readPlaylist(currentPlaylistCachePath(cacheDirectory));
+}
+
+async function readCurrentReleaseState(cacheDirectory: string): Promise<CachedReleaseState | null> {
+  try {
+    const parsed = JSON.parse(await fs.readFile(currentReleaseStatePath(cacheDirectory), "utf8")) as Partial<CachedReleaseState>;
+    if (
+      typeof parsed.releaseId === "string" &&
+      typeof parsed.manifestChecksum === "string" &&
+      typeof parsed.syncedAt === "string"
+    ) {
+      return parsed as CachedReleaseState;
+    }
+  } catch {
+    // Missing or malformed release state should not block cached playback.
+  }
+
+  return null;
+}
+
+async function writeCurrentReleaseState(cacheDirectory: string, value: CachedReleaseState): Promise<void> {
+  await writeJsonAtomic(currentReleaseStatePath(cacheDirectory), value);
 }
 
 function safeRelativeAssetPath(uri: string): string | null {
@@ -268,19 +343,69 @@ function assetFileName(asset: PlaylistAsset): string {
   return path.basename(candidate);
 }
 
+function cloudPlaylistUrlWithReleaseState(baseUrl: string, state: CachedReleaseState | null): string {
+  if (!state) {
+    return baseUrl;
+  }
+
+  const url = new URL(baseUrl);
+  url.searchParams.set("currentReleaseId", state.releaseId);
+  url.searchParams.set("manifestChecksum", state.manifestChecksum);
+  return url.toString();
+}
+
+async function sha256ForFile(filePath: string): Promise<string> {
+  return createHash("sha256").update(await fs.readFile(filePath)).digest("hex");
+}
+
+function sha256ForBuffer(value: Buffer): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+async function cachedAssetMatches(filePath: string, asset: PlaylistAsset): Promise<boolean> {
+  try {
+    const stat = await fs.stat(filePath);
+    if (typeof asset.sizeBytes === "number" && asset.sizeBytes > 0 && stat.size !== asset.sizeBytes) {
+      return false;
+    }
+    if (asset.checksumSha256 && (await sha256ForFile(filePath)) !== asset.checksumSha256) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function downloadCloudAsset(cacheDirectory: string, asset: PlaylistAsset): Promise<PlaylistAsset> {
   if (!asset.downloadUrl) {
     return asset;
   }
 
   const fileName = assetFileName(asset);
+  const targetPath = path.join(cacheDirectory, "assets", fileName);
+  if (await cachedAssetMatches(targetPath, { ...asset, fileName })) {
+    return {
+      ...asset,
+      downloadUrl: undefined,
+      fileName,
+      uri: `assets/${fileName}`
+    };
+  }
+
   const response = await fetch(asset.downloadUrl);
   if (!response.ok) {
     throw new Error(`Asset ${asset.assetId} returned ${response.status}.`);
   }
 
   const bytes = Buffer.from(await response.arrayBuffer());
-  await writeBufferAtomic(path.join(cacheDirectory, "assets", fileName), bytes);
+  if (typeof asset.sizeBytes === "number" && asset.sizeBytes > 0 && bytes.byteLength !== asset.sizeBytes) {
+    throw new Error(`Asset ${asset.assetId} returned ${bytes.byteLength} bytes, expected ${asset.sizeBytes}.`);
+  }
+  if (asset.checksumSha256 && sha256ForBuffer(bytes) !== asset.checksumSha256) {
+    throw new Error(`Asset ${asset.assetId} checksum did not match the release manifest.`);
+  }
+  await writeBufferAtomic(targetPath, bytes);
 
   return {
     ...asset,
@@ -288,6 +413,110 @@ async function downloadCloudAsset(cacheDirectory: string, asset: PlaylistAsset):
     fileName,
     uri: `assets/${fileName}`
   };
+}
+
+async function signedAssetUrl(asset: PlaylistAsset): Promise<AssetUrlResponse> {
+  if (!asset.assetUrlEndpoint) {
+    throw new Error(`Release asset ${asset.assetId} did not include an asset URL endpoint.`);
+  }
+
+  const response = await fetch(asset.assetUrlEndpoint);
+  if (!response.ok) {
+    throw new Error(`Asset URL endpoint for ${asset.assetId} returned ${response.status}.`);
+  }
+
+  const body = (await response.json()) as Partial<AssetUrlResponse>;
+  if (typeof body.url !== "string" || typeof body.fileName !== "string") {
+    throw new Error(`Asset URL endpoint for ${asset.assetId} returned an invalid response.`);
+  }
+
+  return body as AssetUrlResponse;
+}
+
+async function syncReleaseAsset(
+  cacheDirectory: string,
+  asset: PlaylistAsset
+): Promise<{ asset: PlaylistAsset; downloadedBytes: number; skippedBytes: number }> {
+  const fileName = assetFileName(asset);
+  const targetPath = path.join(cacheDirectory, "assets", fileName);
+  const normalizedAsset = { ...asset, fileName };
+
+  if (await cachedAssetMatches(targetPath, normalizedAsset)) {
+    return {
+      asset: {
+        ...normalizedAsset,
+        assetUrlEndpoint: undefined,
+        downloadUrl: undefined,
+        uri: `assets/${fileName}`
+      },
+      downloadedBytes: 0,
+      skippedBytes: asset.sizeBytes ?? 0
+    };
+  }
+
+  const signed = await signedAssetUrl(asset);
+  const response = await fetch(signed.url);
+  if (!response.ok) {
+    throw new Error(`Asset ${asset.assetId} returned ${response.status}.`);
+  }
+
+  const bytes = Buffer.from(await response.arrayBuffer());
+  const expectedSize = asset.sizeBytes ?? signed.sizeBytes;
+  const expectedChecksum = asset.checksumSha256 ?? signed.checksumSha256 ?? undefined;
+  if (typeof expectedSize === "number" && expectedSize > 0 && bytes.byteLength !== expectedSize) {
+    throw new Error(`Asset ${asset.assetId} returned ${bytes.byteLength} bytes, expected ${expectedSize}.`);
+  }
+  if (expectedChecksum && sha256ForBuffer(bytes) !== expectedChecksum) {
+    throw new Error(`Asset ${asset.assetId} checksum did not match the release manifest.`);
+  }
+
+  await writeBufferAtomic(targetPath, bytes);
+  return {
+    asset: {
+      ...normalizedAsset,
+      assetUrlEndpoint: undefined,
+      downloadUrl: undefined,
+      uri: `assets/${fileName}`
+    },
+    downloadedBytes: bytes.byteLength,
+    skippedBytes: 0
+  };
+}
+
+async function postReleaseSyncResult(
+  manifest: CloudReleaseManifestResponse,
+  stats: ReleaseSyncStats,
+  result: "error" | "success" | "warning",
+  message: string
+): Promise<void> {
+  if (!manifest.syncResultUrl) {
+    return;
+  }
+
+  try {
+    const response = await fetch(manifest.syncResultUrl, {
+      body: JSON.stringify({
+        assetCount: manifest.assets.length,
+        downloadedBytes: stats.downloadedBytes,
+        failedAssetIds: stats.failedAssetIds,
+        message,
+        result,
+        skippedBytes: stats.skippedBytes
+      }),
+      headers: {
+        "content-type": "application/json"
+      },
+      method: "POST"
+    });
+    if (!response.ok) {
+      throw new Error(`Sync result returned ${response.status}.`);
+    }
+  } catch (error) {
+    log("error", "cloud.release.sync_result.failed", {
+      message: error instanceof Error ? error.message : String(error),
+      releaseId: manifest.releaseId
+    });
+  }
 }
 
 function resetScriptPath(root: string): string {
@@ -448,14 +677,15 @@ async function runResetCommand(root: string, cacheDirectory: string, command: De
 
 async function fetchCloudPlaylist(cacheDirectory: string): Promise<{
   playlist: Playlist;
-  source: "cloud";
+  source: "cache" | "cloud";
 }> {
   const url = cloudPlaylistUrl();
   if (!url) {
     throw new Error("Cloud playlist URL is not configured.");
   }
 
-  const response = await fetch(url);
+  const currentReleaseState = await readCurrentReleaseState(cacheDirectory);
+  const response = await fetch(cloudPlaylistUrlWithReleaseState(url, currentReleaseState));
   if (!response.ok) {
     throw new Error(`Cloud playlist returned ${response.status}.`);
   }
@@ -463,6 +693,80 @@ async function fetchCloudPlaylist(cacheDirectory: string): Promise<{
   const body = (await response.json()) as CloudPlaylistResponse;
   if (body.command?.type === "reset-device" && body.command.status === "pending") {
     await runResetCommand(repoRoot(), cacheDirectory, body.command);
+  }
+
+  if (body.unchanged && body.release) {
+    const playlist = await readCachedPlaylist(cacheDirectory);
+    log("info", "cloud.release.unchanged", {
+      manifestChecksum: body.release.manifestChecksum,
+      releaseId: body.release.releaseId
+    });
+    return {
+      playlist,
+      source: "cache"
+    };
+  }
+
+  if (body.release) {
+    const manifestResponse = await fetch(body.release.manifestUrl);
+    if (!manifestResponse.ok) {
+      throw new Error(`Cloud release manifest returned ${manifestResponse.status}.`);
+    }
+
+    const manifest = (await manifestResponse.json()) as CloudReleaseManifestResponse;
+    const stats: ReleaseSyncStats = {
+      downloadedBytes: 0,
+      failedAssetIds: [],
+      skippedBytes: 0
+    };
+    const syncedAssets: PlaylistAsset[] = [];
+
+    for (const asset of manifest.assets) {
+      try {
+        const synced = await syncReleaseAsset(cacheDirectory, asset);
+        stats.downloadedBytes += synced.downloadedBytes;
+        stats.skippedBytes += synced.skippedBytes;
+        syncedAssets.push(synced.asset);
+      } catch (error) {
+        stats.failedAssetIds.push(asset.assetId);
+        await postReleaseSyncResult(
+          manifest,
+          stats,
+          "error",
+          error instanceof Error ? error.message : `Asset ${asset.assetId} failed to sync.`
+        );
+        throw error;
+      }
+    }
+
+    const cachedPlaylist = {
+      ...parsePlaylist(JSON.stringify(manifest.playlist), body.release.manifestUrl),
+      assets: syncedAssets
+    };
+    await cachePlaylist(cacheDirectory, cachedPlaylist);
+    await writeCurrentReleaseState(cacheDirectory, {
+      manifestChecksum: manifest.manifestChecksum,
+      releaseId: manifest.releaseId,
+      syncedAt: new Date().toISOString()
+    });
+    await postReleaseSyncResult(
+      manifest,
+      stats,
+      stats.failedAssetIds.length === 0 ? "success" : "warning",
+      `Synced release ${manifest.releaseId}: downloaded ${stats.downloadedBytes} byte(s), skipped ${stats.skippedBytes} cached byte(s).`
+    );
+
+    log("info", "cloud.release.synced", {
+      downloadedBytes: stats.downloadedBytes,
+      manifestChecksum: manifest.manifestChecksum,
+      releaseId: manifest.releaseId,
+      skippedBytes: stats.skippedBytes
+    });
+
+    return {
+      playlist: cachedPlaylist,
+      source: "cloud"
+    };
   }
 
   if (!body.playlist) {
@@ -494,6 +798,14 @@ async function loadPlaylist(
       log("error", "cloud.playlist.failed", {
         message: error instanceof Error ? error.message : String(error)
       });
+      try {
+        const playlist = await readCachedPlaylist(cacheDirectory);
+        return { playlist, source: "cache" };
+      } catch (cacheError) {
+        log("error", "cloud.cache.failed", {
+          message: cacheError instanceof Error ? cacheError.message : String(cacheError)
+        });
+      }
     }
   }
 

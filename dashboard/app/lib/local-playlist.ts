@@ -8,8 +8,12 @@ export type PlaylistAsset = {
   uri: string;
   durationSeconds?: number;
   altText?: string;
+  checksumSha256?: string;
   playbackObjectKey?: string;
+  playbackStorageBucket?: string;
+  sizeBytes?: number;
   sourceObjectKey?: string;
+  sourceStorageBucket?: string;
   storageBucket?: string;
   storageProvider?: "local" | "s3";
 };

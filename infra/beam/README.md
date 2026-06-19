@@ -36,7 +36,9 @@ The stack is named `BeamDevFoundationStack` by default.
 
 - Private S3 buckets for source media, playback media, thumbnails, and logs.
 - DynamoDB tables for accounts, devices, screens, playlists, assets, heartbeats, and activity.
+- DynamoDB release ledger for manual publish manifests and per-device sync results.
 - CloudWatch log groups reserved for future API, device, media, and dashboard services.
+- S3 request metrics and a Beam daily cost guardrail budget for cost visibility.
 - API Gateway routes `POST /v1/devices/{deviceId}/heartbeat` and `GET /v1/devices/{deviceId}/heartbeat`.
 - Lambda function `beam-dev-heartbeat`.
 - A generated dev API key attached to an API Gateway usage plan.
@@ -58,17 +60,20 @@ cloud Screens and Devices tables through `BEAM_SCREENS_TABLE_NAME` and
 `BEAM_DEVICES_TABLE_NAME`. It also reads the cloud playlist catalog through
 `BEAM_PLAYLISTS_TABLE_NAME` and seeds the dev `Main Playlist` record when that
 catalog is empty. Media uploads in cloud mode write source objects to
-`BEAM_SOURCE_MEDIA_BUCKET_NAME` and catalog records to `BEAM_ASSETS_TABLE_NAME`.
+`BEAM_SOURCE_MEDIA_BUCKET_NAME`, playback-ready renditions to
+`BEAM_PLAYBACK_MEDIA_BUCKET_NAME`, and catalog records to
+`BEAM_ASSETS_TABLE_NAME`. Manual publish writes release manifests and sync
+ledger entries to `BEAM_RELEASES_TABLE_NAME`.
 It does not need the dev API key for cloud heartbeat reads or dashboard
 inventory writes.
 
 The dashboard also exposes a dev device playlist endpoint at
-`/api/cloud/devices/{deviceId}/playlist`. It reads the device's manually
-published playlist/version marker, returns that cloud playlist, and includes
-short-lived signed S3 download URLs for cloud media objects. Saved playlist edits
-remain AWS-backed drafts until an operator publishes them to assigned screens.
-This is the first one-screen pilot bridge; it is not a production device-auth
-boundary yet.
+`/api/cloud/devices/{deviceId}/playlist`. It now returns only the device's
+desired release ID/checksum and manifest URL. The device fetches the release
+manifest only after manual publish and requests one short-lived signed S3 URL
+per missing asset. Saved playlist edits remain AWS-backed drafts until an
+operator publishes them to assigned screens. This is the first pilot bridge; it
+is not a production device-auth boundary yet.
 
 Screens, Devices, the playlist catalog, manual playlist publish markers, and
 source media cataloging are the first cloud-backed dashboard workflows. MP4

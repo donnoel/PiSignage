@@ -58,7 +58,11 @@ Validation:
 
 Make the Pi phone home to AWS while keeping local mode as the default.
 
-Status: partially implemented. The device agent can fetch a cloud playlist, cache it locally, send cloud heartbeat, write local heartbeat, and fall back to local/cache data.
+Status: partially implemented. The device agent can check a cloud release marker,
+fetch a release manifest only after manual publish, download only missing or
+changed assets, cache the verified release locally, send cloud heartbeat, write
+local heartbeat, and fall back to the last known good cache before any first-run
+fallback.
 
 Deliverables:
 
@@ -67,6 +71,8 @@ Deliverables:
 - Pairing configuration stored outside git.
 - Heartbeat interval with retry/backoff.
 - Playlist polling with version checks.
+- Release checks with no media URLs when unchanged.
+- Per-asset downloads only after manual publish and only when local cache verification misses.
 - Local status JSON continues to be written atomically.
 
 Validation:
@@ -74,6 +80,7 @@ Validation:
 - Agent runs locally without AWS in `local` mode.
 - Agent sends heartbeat to AWS in `cloud` mode.
 - AWS outage does not delete or corrupt the last known good local cache.
+- Turning off AWS or cloud monitors does not revert a device with a valid cache to the first-run fallback asset.
 
 ## Phase 4: Media Storage And Processing
 

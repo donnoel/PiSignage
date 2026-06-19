@@ -20,11 +20,15 @@ import { activeWorkspaceSession, workspaceContextFromSession } from "../../../li
 type PlaylistEditAction = "move-up" | "move-down" | "remove" | "update-item" | "add-media" | "reorder";
 
 type PlaylistAppendSource = {
+  checksumSha256?: string;
   durationSeconds: number | null;
   playbackFileName: string;
   playbackObjectKey?: string;
   playbackProfile?: string;
+  playbackStorageBucket?: string;
+  sizeBytes?: number;
   sourceObjectKey?: string;
+  sourceStorageBucket?: string;
   storageBucket?: string;
   storageProvider?: "local" | "s3";
   title: string;
@@ -171,11 +175,15 @@ async function appendMediaStoreItemToPlaylist(playlist: Playlist, mediaId: strin
 
   if (media) {
     source = {
+      checksumSha256: media.checksumSha256,
       durationSeconds: media.durationSeconds,
       playbackFileName: media.playbackFileName,
       playbackObjectKey: media.playbackObjectKey,
       playbackProfile: media.playbackProfile,
+      playbackStorageBucket: media.playbackStorageBucket,
+      sizeBytes: media.sizeBytes,
       sourceObjectKey: media.sourceObjectKey,
+      sourceStorageBucket: media.sourceStorageBucket,
       storageBucket: media.storageBucket,
       storageProvider: media.storageProvider,
       title: media.title
@@ -249,8 +257,12 @@ async function appendMediaStoreItemToPlaylist(playlist: Playlist, mediaId: strin
           : `assets/${source.playbackFileName}`,
         durationSeconds: source.durationSeconds ?? defaultDurationSeconds,
         altText: source.title,
+        checksumSha256: source.checksumSha256,
         playbackObjectKey: source.playbackObjectKey,
+        playbackStorageBucket: source.playbackStorageBucket,
+        sizeBytes: source.sizeBytes,
         sourceObjectKey: source.sourceObjectKey,
+        sourceStorageBucket: source.sourceStorageBucket,
         storageBucket: source.storageBucket,
         storageProvider: source.storageProvider
       }

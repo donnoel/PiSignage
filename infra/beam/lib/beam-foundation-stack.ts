@@ -3,6 +3,7 @@ import { Duration, RemovalPolicy, Stack } from "aws-cdk-lib";
 import type { StackProps } from "aws-cdk-lib";
 import * as apigateway from "aws-cdk-lib/aws-apigateway";
 import * as apprunner from "aws-cdk-lib/aws-apprunner";
+import * as budgets from "aws-cdk-lib/aws-budgets";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as ecrAssets from "aws-cdk-lib/aws-ecr-assets";
@@ -31,6 +32,7 @@ const tableDefinitions: BeamTableDefinition[] = [
   { id: "Playlists", partitionKey: "playlistId" },
   { id: "Assets", partitionKey: "assetId" },
   { id: "Heartbeats", partitionKey: "deviceId" },
+  { id: "Releases", partitionKey: "releaseId" },
   { id: "Activity", partitionKey: "accountId", sortKey: "timestamp" }
 ];
 
@@ -39,6 +41,7 @@ export class BeamFoundationStack extends Stack {
     super(scope, id, props);
 
     const namePrefix = `beam-${props.environmentName}`;
+    const budgetAlertEmail = "donnoel@icloud.com";
 
     const sourceMediaBucket = this.createPrivateBucket("SourceMediaBucket", `${namePrefix}-source-media`);
     const playbackMediaBucket = this.createPrivateBucket("PlaybackMediaBucket", `${namePrefix}-playback-media`);
@@ -53,6 +56,7 @@ export class BeamFoundationStack extends Stack {
     const devicesTable = tableById(tablesById, "Devices");
     const heartbeatsTable = tableById(tablesById, "Heartbeats");
     const playlistsTable = tableById(tablesById, "Playlists");
+    const releasesTable = tableById(tablesById, "Releases");
     const screensTable = tableById(tablesById, "Screens");
     const heartbeatFunctionName = `${namePrefix}-heartbeat`;
     const logGroups = ["api", "device", "media", "dashboard"].map((serviceName) =>
@@ -76,7 +80,98 @@ export class BeamFoundationStack extends Stack {
             ].join("\n"),
             width: 24
           })
+        ],
+        [
+          new cloudwatch.GraphWidget({
+            height: 6,
+            left: [
+              new cloudwatch.Metric({
+                dimensionsMap: {
+                  BucketName: playbackMediaBucket.bucketName,
+                  FilterId: "EntireBucket"
+                },
+                metricName: "BytesDownloaded",
+                namespace: "AWS/S3",
+                period: Duration.hours(24),
+                statistic: "Sum"
+              })
+            ],
+            title: "Playback media bytes downloaded",
+            width: 12
+          }),
+          new cloudwatch.GraphWidget({
+            height: 6,
+            left: [
+              new cloudwatch.Metric({
+                dimensionsMap: {
+                  BucketName: playbackMediaBucket.bucketName,
+                  FilterId: "EntireBucket"
+                },
+                metricName: "AllRequests",
+                namespace: "AWS/S3",
+                period: Duration.hours(24),
+                statistic: "Sum"
+              }),
+              new cloudwatch.Metric({
+                dimensionsMap: {
+                  BucketName: sourceMediaBucket.bucketName,
+                  FilterId: "EntireBucket"
+                },
+                metricName: "AllRequests",
+                namespace: "AWS/S3",
+                period: Duration.hours(24),
+                statistic: "Sum"
+              })
+            ],
+            title: "S3 request counts",
+            width: 12
+          })
         ]
+      ]
+    });
+
+    new budgets.CfnBudget(this, "DailyCostBudget", {
+      budget: {
+        budgetLimit: {
+          amount: 1,
+          unit: "USD"
+        },
+        budgetName: `${namePrefix}-daily-cost-guardrail`,
+        budgetType: "COST",
+        costFilters: {
+          TagKeyValue: ["user:Application$Beam"]
+        },
+        timeUnit: "DAILY"
+      },
+      notificationsWithSubscribers: [
+        {
+          notification: {
+            comparisonOperator: "GREATER_THAN",
+            notificationType: "ACTUAL",
+            threshold: 80,
+            thresholdType: "PERCENTAGE"
+          },
+          subscribers: [
+            {
+              address: budgetAlertEmail,
+              subscriptionType: "EMAIL"
+            }
+          ]
+        },
+        {
+          notification: {
+            comparisonOperator: "GREATER_THAN",
+            notificationType: "ACTUAL",
+            threshold: 100,
+            thresholdType: "PERCENTAGE"
+          },
+          subscribers: [
+            {
+              address: budgetAlertEmail,
+              subscriptionType: "EMAIL"
+            }
+          ]
+        }
       ]
     });
 
@@ -194,11 +289,28 @@ export class BeamFoundationStack extends Stack {
     }));
     dashboardInstanceRole.addToPolicy(new iam.PolicyStatement({
       actions: [
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:Scan"
+      ],
+      resources: [releasesTable.tableArn]
+    }));
+    dashboardInstanceRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
         "s3:DeleteObject",
         "s3:GetObject",
         "s3:PutObject"
       ],
       resources: [`${sourceMediaBucket.bucketArn}/*`]
+    }));
+    dashboardInstanceRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        "s3:DeleteObject",
+        "s3:GetObject",
+        "s3:PutObject"
+      ],
+      resources: [`${playbackMediaBucket.bucketArn}/*`]
     }));
     const dashboardService = new apprunner.CfnService(this, "DashboardService", {
       serviceName: `${namePrefix}-dashboard`,
@@ -240,12 +352,24 @@ export class BeamFoundationStack extends Stack {
                 value: playlistsTable.tableName
               },
               {
+                name: "BEAM_PLAYBACK_MEDIA_BUCKET_NAME",
+                value: playbackMediaBucket.bucketName
+              },
+              {
+                name: "BEAM_RELEASES_TABLE_NAME",
+                value: releasesTable.tableName
+              },
+              {
                 name: "BEAM_SCREENS_TABLE_NAME",
                 value: screensTable.tableName
               },
               {
                 name: "BEAM_SOURCE_MEDIA_BUCKET_NAME",
                 value: sourceMediaBucket.bucketName
+              },
+              {
+                name: "BEAM_TRANSFER_BUDGET_DAILY_USD",
+                value: "1"
               }
             ]
           },
@@ -283,6 +407,9 @@ export class BeamFoundationStack extends Stack {
     new cdk.CfnOutput(this, "ThumbnailBucketName", {
       value: thumbnailBucket.bucketName
     });
+    new cdk.CfnOutput(this, "ReleasesTableName", {
+      value: releasesTable.tableName
+    });
     new cdk.CfnOutput(this, "LogBucketName", {
       value: logBucket.bucketName
     });
@@ -302,8 +429,40 @@ export class BeamFoundationStack extends Stack {
       enforceSSL: true,
       lifecycleRules: [
         {
+          id: "abort-incomplete-multipart-uploads",
           abortIncompleteMultipartUploadAfter: Duration.days(7),
           enabled: true
+        },
+        {
+          enabled: true,
+          expiration: Duration.days(7),
+          id: "expire-temporary-objects",
+          prefix: "tmp/"
+        },
+        {
+          enabled: true,
+          expiration: Duration.days(14),
+          id: "expire-failed-processing-objects",
+          prefix: "processing/failed/"
+        },
+        {
+          enabled: true,
+          expiration: Duration.days(30),
+          id: "expire-obsolete-tagged-objects",
+          tagFilters: {
+            "beam-retention": "obsolete"
+          }
+        },
+        {
+          enabled: true,
+          id: "trim-noncurrent-versions",
+          noncurrentVersionExpiration: Duration.days(30),
+          noncurrentVersionsToRetain: 3
+        }
+      ],
+      metrics: [
+        {
+          id: "EntireBucket"
         }
       ],
       removalPolicy: RemovalPolicy.RETAIN,

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -42,6 +42,7 @@ import {
 
 export type CloudMediaConfig = {
   assetsTableName: string;
+  playbackMediaBucketName?: string;
   sourceMediaBucketName: string;
 };
 
@@ -79,16 +80,21 @@ export function cloudMediaConfig(): CloudMediaConfig | null {
   }
 
   const assetsTableName = trimmedEnv("BEAM_ASSETS_TABLE_NAME");
+  const playbackMediaBucketName = trimmedEnv("BEAM_PLAYBACK_MEDIA_BUCKET_NAME") ?? undefined;
   const sourceMediaBucketName = trimmedEnv("BEAM_SOURCE_MEDIA_BUCKET_NAME");
   if (!assetsTableName || !sourceMediaBucketName) {
     return null;
   }
 
-  return { assetsTableName, sourceMediaBucketName };
+  return { assetsTableName, playbackMediaBucketName, sourceMediaBucketName };
 }
 
 function isoNow(): string {
   return new Date().toISOString();
+}
+
+async function sha256ForBuffer(value: Buffer): Promise<string> {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 function baseTitleFromFileName(fileName: string): string {
@@ -174,11 +180,13 @@ function mediaFromItem(item: Record<string, AttributeValue>): MediaRecord {
     playbackFileName,
     playbackObjectKey: stringOrNull(item.playbackObjectKey) ?? undefined,
     playbackProfile: stringOrNull(item.playbackProfile) ?? undefined,
+    playbackStorageBucket: stringOrNull(item.playbackStorageBucket) ?? undefined,
     preparedAt: stringOrNull(item.preparedAt) ?? undefined,
     sizeBytes: numberOrDefault(item.sizeBytes, 0),
     sourceFileName,
     sourceObjectKey: stringOrNull(item.sourceObjectKey) ?? undefined,
     sourceSizeBytes: nullableNumber(item.sourceSizeBytes) ?? undefined,
+    sourceStorageBucket: stringOrNull(item.sourceStorageBucket) ?? undefined,
     status: cloudMediaStatus(item.status),
     storageBucket: stringOrNull(item.storageBucket) ?? undefined,
     storageProvider: "s3",
@@ -252,12 +260,14 @@ function mediaToItem(media: MediaRecord): Record<string, AttributeValue> {
     playbackFileName: stringAttribute(normalizedMedia.playbackFileName),
     playbackObjectKey: optionalStringAttribute(normalizedMedia.playbackObjectKey),
     playbackProfile: optionalStringAttribute(normalizedMedia.playbackProfile),
+    playbackStorageBucket: optionalStringAttribute(normalizedMedia.playbackStorageBucket),
     preparedAt: optionalStringAttribute(normalizedMedia.preparedAt),
     recordType: stringAttribute(mediaRecordType),
     sizeBytes: numberAttribute(normalizedMedia.sizeBytes),
     sourceFileName: stringAttribute(normalizedMedia.sourceFileName),
     sourceObjectKey: optionalStringAttribute(normalizedMedia.sourceObjectKey),
     sourceSizeBytes: nullableNumberAttribute(normalizedMedia.sourceSizeBytes),
+    sourceStorageBucket: optionalStringAttribute(normalizedMedia.sourceStorageBucket),
     status: stringAttribute(normalizedMedia.status),
     storageBucket: optionalStringAttribute(normalizedMedia.storageBucket),
     storageProvider: stringAttribute(normalizedMedia.storageProvider ?? "s3"),
@@ -412,12 +422,16 @@ export async function createCloudMediaUpload(config: CloudMediaConfig, input: Cl
   const sourceObjectKey = `uploads/${now.slice(0, 10)}/${id}/${safeFileName}`;
   const isVideo = sourceType === "video";
   const isPreparedVideo = isVideo && isPlaybackSafeVideoFileName(safeFileName);
+  const playbackStorageBucket = config.playbackMediaBucketName ?? config.sourceMediaBucketName;
   const playbackFileName = isPreparedVideo
     ? safeFileName
     : sourceType === "image"
     ? stillClipFileName(safeFileName, input.durationSeconds)
     : transcodedVideoFileName(safeFileName);
-  const playbackObjectKey = isPreparedVideo ? sourceObjectKey : undefined;
+  const playbackObjectKey = isPreparedVideo ? `playback/${now.slice(0, 10)}/${id}/${safeFileName}` : undefined;
+  const checksumSha256 = isPreparedVideo
+    ? await sha256ForBuffer(input.uploadedBytes)
+    : undefined;
 
   await s3.send(new PutObjectCommand({
     Body: input.uploadedBytes,
@@ -427,11 +441,22 @@ export async function createCloudMediaUpload(config: CloudMediaConfig, input: Cl
     Key: sourceObjectKey,
     ServerSideEncryption: "AES256"
   }));
+  if (isPreparedVideo && playbackObjectKey) {
+    await s3.send(new PutObjectCommand({
+      Body: input.uploadedBytes,
+      Bucket: playbackStorageBucket,
+      ContentLength: input.uploadedBytes.byteLength,
+      ContentType: "video/mp4",
+      Key: playbackObjectKey,
+      ServerSideEncryption: "AES256"
+    }));
+  }
 
   const media: MediaRecord = {
     cloudStatusDetail: isPreparedVideo
       ? "Uploaded prepared MP4 source is ready for playlist use."
       : "Uploaded source is stored in AWS. Playback-safe MP4 processing is pending.",
+    checksumSha256,
     createdAt: now,
     description: input.description?.trim().slice(0, 5000) ?? "",
     durationSeconds: sourceType === "image" ? input.durationSeconds : defaultDurationSeconds,
@@ -439,14 +464,16 @@ export async function createCloudMediaUpload(config: CloudMediaConfig, input: Cl
     mimeType: input.mimeType,
     playbackFileName,
     playbackObjectKey,
+    playbackStorageBucket: isPreparedVideo ? playbackStorageBucket : undefined,
     playbackProfile: isPreparedVideo ? playbackPrepProfile.id : "pending-playback-mp4-v1",
     preparedAt: isPreparedVideo ? now : undefined,
     sizeBytes: input.sizeBytes,
     sourceFileName: safeFileName,
     sourceObjectKey,
     sourceSizeBytes: input.sizeBytes,
+    sourceStorageBucket: config.sourceMediaBucketName,
     status: isPreparedVideo ? "ready" : "processing",
-    storageBucket: config.sourceMediaBucketName,
+    storageBucket: isPreparedVideo ? playbackStorageBucket : config.sourceMediaBucketName,
     storageProvider: "s3",
     tags: input.tags,
     title: input.title?.trim().slice(0, 120) || baseTitleFromFileName(safeFileName),
@@ -493,7 +520,7 @@ export async function prepareCloudMediaForPlayback(config: CloudMediaConfig, med
 
   try {
     const sourceObject = await s3.send(new GetObjectCommand({
-      Bucket: config.sourceMediaBucketName,
+      Bucket: current.sourceStorageBucket ?? config.sourceMediaBucketName,
       Key: current.sourceObjectKey
     }));
     await fs.writeFile(sourcePath, await s3BodyToBuffer(sourceObject.Body));
@@ -514,10 +541,11 @@ export async function prepareCloudMediaForPlayback(config: CloudMediaConfig, med
     ]);
     const now = isoNow();
     const playbackObjectKey = `playback/${now.slice(0, 10)}/${current.id}/${current.playbackFileName}`;
+    const playbackStorageBucket = config.playbackMediaBucketName ?? config.sourceMediaBucketName;
 
     await s3.send(new PutObjectCommand({
       Body: await fs.readFile(playbackPath),
-      Bucket: config.sourceMediaBucketName,
+      Bucket: playbackStorageBucket,
       ContentLength: outputStat.size,
       ContentType: "video/mp4",
       Key: playbackObjectKey,
@@ -537,9 +565,11 @@ export async function prepareCloudMediaForPlayback(config: CloudMediaConfig, med
       pixelFormat: probe.pixelFormat,
       playbackObjectKey,
       playbackProfile: playbackPrepProfile.id,
+      playbackStorageBucket,
       preparedAt: now,
       sizeBytes: outputStat.size,
       status: "ready",
+      storageBucket: playbackStorageBucket,
       updatedAt: now,
       videoCodec: probe.videoCodec,
       videoProfile: probe.videoProfile,
@@ -620,14 +650,14 @@ export async function deleteCloudMediaRecords(
 
     if (media.sourceObjectKey) {
       await s3.send(new DeleteObjectCommand({
-        Bucket: config.sourceMediaBucketName,
+        Bucket: media.sourceStorageBucket ?? config.sourceMediaBucketName,
         Key: media.sourceObjectKey
       }));
     }
 
     if (media.playbackObjectKey && media.playbackObjectKey !== media.sourceObjectKey) {
       await s3.send(new DeleteObjectCommand({
-        Bucket: config.sourceMediaBucketName,
+        Bucket: media.playbackStorageBucket ?? media.storageBucket ?? config.playbackMediaBucketName ?? config.sourceMediaBucketName,
         Key: media.playbackObjectKey
       }));
     }
