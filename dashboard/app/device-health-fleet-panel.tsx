@@ -464,6 +464,7 @@ export function DeviceHealthFleetPanel({
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(devices[0]?.id ?? null);
   const [message, setMessage] = useState("");
   const [busyAction, setBusyAction] = useState<"assign" | "inventory" | "publish" | "reboot" | "recover" | "refresh" | "reset" | "restart" | null>(null);
+  const [busyDeviceId, setBusyDeviceId] = useState<string | null>(null);
   const [rebootWatch, setRebootWatch] = useState<{
     baselineStatusUpdatedAt: string | null;
     deviceId: string;
@@ -1007,9 +1008,10 @@ export function DeviceHealthFleetPanel({
     }
 
     setBusyAction(action);
+    setBusyDeviceId(row.device.id);
     setMessage(
       action === "publish"
-        ? `Retrying playlist update for ${targetName}...`
+        ? `Publishing ${row.assignedPlaylistName} to ${targetName}...`
         : action === "restart"
           ? `Restarting playback for ${targetName}...`
           : action === "reboot"
@@ -1060,6 +1062,7 @@ export function DeviceHealthFleetPanel({
       setMessage(error instanceof Error ? error.message : "Action failed.");
     } finally {
       setBusyAction(null);
+      setBusyDeviceId(null);
     }
   }
 
@@ -1317,9 +1320,10 @@ export function DeviceHealthFleetPanel({
                             onClick={() => void runAction("publish", row)}
                             title={row.syncDetail}
                             aria-label={`Publish ${row.assignedPlaylistName} to ${screenName(row)}`}
+                            aria-busy={busyAction === "publish" && busyDeviceId === row.device.id}
                             className="inline-flex whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            {busyAction === "publish" ? "Publishing..." : row.syncLabel}
+                            {busyAction === "publish" && busyDeviceId === row.device.id ? "Publishing..." : row.syncLabel}
                           </button>
                         ) : (
                           <span title={row.syncDetail}>
@@ -1475,7 +1479,7 @@ export function DeviceHealthFleetPanel({
                     onClick={() => void runAction("publish", selectedRow)}
                     className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
                   >
-                    {busyAction === "publish" ? "Publishing..." : "Retry publish"}
+                    {busyAction === "publish" && busyDeviceId === selectedRow.device.id ? "Publishing..." : "Retry publish"}
                   </button>
                   {selectedPlayerUrl ? (
                     <a
