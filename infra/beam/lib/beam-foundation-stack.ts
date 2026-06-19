@@ -194,7 +194,7 @@ export class BeamFoundationStack extends Stack {
         removalPolicy: RemovalPolicy.DESTROY,
         retention: logs.RetentionDays.ONE_MONTH
       }),
-      runtime: lambda.Runtime.NODEJS_20_X,
+      runtime: lambda.Runtime.NODEJS_22_X,
       timeout: Duration.seconds(10)
     });
     heartbeatFunction.addToRolePolicy(new iam.PolicyStatement({
