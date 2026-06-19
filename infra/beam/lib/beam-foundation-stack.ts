@@ -187,7 +187,7 @@ export class BeamFoundationStack extends Stack {
         HEARTBEATS_TABLE_NAME: heartbeatsTable.tableName,
         NEXT_HEARTBEAT_IN_SECONDS: "60"
       },
-      functionName: heartbeatFunctionName,
+      functionName: `${heartbeatFunctionName}-v2`,
       handler: "index.handler",
       logGroup: new logs.LogGroup(this, "HeartbeatFunctionLogGroup", {
         logGroupName: `/aws/lambda/${heartbeatFunctionName}`,
