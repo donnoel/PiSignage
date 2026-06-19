@@ -206,14 +206,14 @@ export class BeamFoundationStack extends Stack {
       resources: [devicesTable.tableArn]
     }));
 
-    const api = new apigateway.RestApi(this, "BeamApi", {
+    const api = new apigateway.RestApi(this, "BeamApiRestored", {
       deployOptions: {
         stageName: props.environmentName,
         throttlingBurstLimit: 20,
         throttlingRateLimit: 10
       },
       description: "Beam dev API.",
-      restApiName: `${namePrefix}-api`
+      restApiName: `${namePrefix}-api-v2`
     });
     const plan = api.addUsagePlan("DevDeviceUsagePlan", {
       name: `${namePrefix}-device-dev`,
