@@ -256,7 +256,7 @@ export class BeamFoundationStack extends Stack {
       assumedBy: new iam.ServicePrincipal("tasks.apprunner.amazonaws.com")
     });
     dashboardInstanceRole.addToPolicy(new iam.PolicyStatement({
-      actions: ["dynamodb:BatchGetItem", "dynamodb:DescribeTable", "dynamodb:GetItem"],
+      actions: ["dynamodb:BatchGetItem", "dynamodb:DescribeTable", "dynamodb:GetItem", "dynamodb:PutItem"],
       resources: [heartbeatsTable.tableArn]
     }));
     dashboardInstanceRole.addToPolicy(new iam.PolicyStatement({
@@ -334,6 +334,10 @@ export class BeamFoundationStack extends Stack {
               {
                 name: "BEAM_DASHBOARD_MODE",
                 value: "cloud"
+              },
+              {
+                name: "BEAM_CLOUD_API_URL",
+                value: api.url
               },
               {
                 name: "BEAM_DEVICES_TABLE_NAME",
