@@ -312,7 +312,7 @@ export class BeamFoundationStack extends Stack {
       ],
       resources: [`${playbackMediaBucket.bucketArn}/*`]
     }));
-    const dashboardService = new apprunner.CfnService(this, "DashboardService", {
+    const dashboardService = new apprunner.CfnService(this, "DashboardServiceV2", {
       serviceName: `${namePrefix}-dashboard`,
       sourceConfiguration: {
         authenticationConfiguration: {
@@ -334,10 +334,6 @@ export class BeamFoundationStack extends Stack {
               {
                 name: "BEAM_DASHBOARD_MODE",
                 value: "cloud"
-              },
-              {
-                name: "BEAM_PUBLIC_DASHBOARD_URL",
-                value: "https://rgkjsjxwec.us-west-2.awsapprunner.com"
               },
               {
                 name: "BEAM_DEVICES_TABLE_NAME",
