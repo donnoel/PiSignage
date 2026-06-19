@@ -175,7 +175,7 @@ export class BeamFoundationStack extends Stack {
       ]
     });
 
-    const heartbeatFunction = new nodeLambda.NodejsFunction(this, "HeartbeatFunction", {
+    const heartbeatFunction = new nodeLambda.NodejsFunction(this, "HeartbeatFunctionRestored", {
       bundling: {
         externalModules: []
       },
