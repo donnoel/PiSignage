@@ -297,6 +297,10 @@ export class BeamFoundationStack extends Stack {
       resources: [releasesTable.tableArn]
     }));
     dashboardInstanceRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["ce:GetCostAndUsage"],
+      resources: ["*"]
+    }));
+    dashboardInstanceRole.addToPolicy(new iam.PolicyStatement({
       actions: [
         "s3:DeleteObject",
         "s3:GetObject",

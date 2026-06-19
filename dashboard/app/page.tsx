@@ -3,6 +3,7 @@ import { Socket } from "node:net";
 import { DashboardAutoRefresh } from "./dashboard-auto-refresh";
 import { Metric, StatusPill } from "./dashboard-ui";
 import { DeviceHealthFleetPanel } from "./device-health-fleet-panel";
+import { readCloudBillingSummary, type CloudBillingSummary } from "./lib/cloud-billing-store";
 import { readCloudHeartbeat, readCloudHeartbeats } from "./lib/cloud-heartbeat";
 import type { CloudHeartbeatState } from "./lib/cloud-heartbeat";
 import { readCloudTransferSummary, type CloudTransferSummary } from "./lib/cloud-release-store";
@@ -91,6 +92,7 @@ type LastKnownPlayback = {
 };
 
 type DashboardState = {
+  cloudBilling: CloudBillingSummary;
   cloudHeartbeat: CloudHeartbeatState;
   cloudHeartbeats: Record<string, CloudHeartbeatState>;
   cloudTransfer: CloudTransferSummary;
@@ -272,6 +274,18 @@ function formatBytes(value: number | null | undefined): string {
     style: "unit",
     unit: "gigabyte"
   }).format(value / 1_000_000_000);
+}
+
+function formatCurrency(value: number | null | undefined, currency: string = "USD"): string {
+  if (typeof value !== "number") {
+    return "Not reported";
+  }
+
+  return new Intl.NumberFormat("en", {
+    currency,
+    maximumFractionDigits: 2,
+    style: "currency"
+  }).format(value);
 }
 
 function formatDuration(assets: PlaylistAsset[]): string {
@@ -927,7 +941,8 @@ async function loadDashboardState(selectedPlaylistId?: string | null): Promise<D
     readInventory(seedPlaylistId),
     readJsonFile<PublishStatus>(publishStatusPath())
   ]);
-  const [cloudHeartbeat, cloudHeartbeats, cloudTransfer] = await Promise.all([
+  const [cloudBilling, cloudHeartbeat, cloudHeartbeats, cloudTransfer] = await Promise.all([
+    readCloudBillingSummary(),
     readCloudHeartbeat(),
     readCloudHeartbeats(inventory.devices.items.map((device) => device.id)),
     readCloudTransferSummary()
@@ -937,7 +952,7 @@ async function loadDashboardState(selectedPlaylistId?: string | null): Promise<D
   const deviceStatuses = await loadDeviceStatuses(inventory, cloudHeartbeats);
   const lastKnownPlayback = await resolveLastKnownPlayback(pi);
 
-  return { cloudHeartbeat, cloudHeartbeats, cloudTransfer, deviceStatuses, heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi };
+  return { cloudBilling, cloudHeartbeat, cloudHeartbeats, cloudTransfer, deviceStatuses, heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi };
 }
 
 function syncState(localVersion: number, piVersion: number | undefined, piReachable: boolean): PlaylistSyncState {
@@ -1313,7 +1328,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const selectedView = dashboardViewFrom(resolvedSearchParams?.view);
   const selectedPlaylistParam = scalarSearchParam(resolvedSearchParams?.playlist);
   const currentViewCopy = viewCopy[selectedView];
-  const { cloudHeartbeat, cloudTransfer, deviceStatuses, heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi } =
+  const { cloudBilling, cloudHeartbeat, cloudTransfer, deviceStatuses, heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi } =
     await loadDashboardState(selectedPlaylistParam);
   const selectedScreenParam = scalarSearchParam(resolvedSearchParams?.screen);
   const playerStatus = pi.playerStatus;
@@ -1360,6 +1375,22 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       : cloudTransfer.latestRelease
         ? `Planned ${formatBytes(cloudTransfer.plannedBytesToday)} today from ${cloudTransfer.releasesToday} publish release${cloudTransfer.releasesToday === 1 ? "" : "s"}; ${formatBytes(cloudTransfer.unexpectedBytesToday)} unexpected by Beam ledger.`
         : "No cloud release has been manually published today.";
+  const cloudBillingTone: "good" | "warn" | "muted" =
+    !isCloudDashboard || cloudBilling.status === "local"
+      ? "muted"
+      : cloudBilling.status === "available"
+        ? "good"
+        : "warn";
+  const cloudBillingLabel =
+    cloudBilling.status === "available"
+      ? formatCurrency(cloudBilling.amountUsd, cloudBilling.currency)
+      : cloudBilling.status === "local"
+        ? "Local mode"
+        : "Unavailable";
+  const cloudBillingDetail =
+    cloudBilling.status === "available"
+      ? `${cloudBilling.estimated ? "Estimated" : "Actual"} month-to-date AWS account cost. Cost Explorer can lag behind live usage.`
+      : cloudBilling.message;
   const playbackHealthy = isPlaying && isPlayerStatusFresh;
   const playbackLabel = playbackHealthy ? "Playing" : isPlaying ? "Stale" : playbackState;
   const playerFreshnessDetail = statusFreshnessDetail(pi, playerStatus, isPlayerStatusFresh);
@@ -1884,7 +1915,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 {systemStatusLabel}
               </p>
             </div>
-            <dl className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <dl className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
               <div className={`rounded-lg border p-4 shadow-sm ${onlineDeviceCount > 0 ? "border-emerald-200 bg-emerald-50" : "border-zinc-200 bg-white"}`}>
                 <dt className="text-xs font-semibold uppercase text-emerald-800">Online</dt>
                 <dd className="mt-2 text-2xl font-semibold text-zinc-950">{onlineDeviceCount}</dd>
@@ -1911,6 +1942,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 <dt className="text-xs font-semibold uppercase text-zinc-600">AWS transfer</dt>
                 <dd className="mt-2 text-2xl font-semibold text-zinc-950">{cloudTransferLabel}</dd>
                 <dd className="mt-1 break-words text-sm text-zinc-600">{cloudTransferDetail}</dd>
+              </div>
+              <div className={`rounded-lg border p-4 shadow-sm ${cloudBillingTone === "good" ? "border-emerald-200 bg-emerald-50" : cloudBillingTone === "warn" ? "border-amber-200 bg-amber-50" : "border-zinc-200 bg-white"}`}>
+                <dt className="text-xs font-semibold uppercase text-zinc-600">AWS bill</dt>
+                <dd className="mt-2 text-2xl font-semibold text-zinc-950">{cloudBillingLabel}</dd>
+                <dd className="mt-1 break-words text-sm text-zinc-600">{cloudBillingDetail}</dd>
               </div>
             </dl>
           </section>
