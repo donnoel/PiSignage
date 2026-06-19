@@ -4,7 +4,7 @@ import { DashboardAutoRefresh } from "./dashboard-auto-refresh";
 import { Metric, StatusPill } from "./dashboard-ui";
 import { DeviceHealthFleetPanel } from "./device-health-fleet-panel";
 import { readCloudBillingSummary, type CloudBillingSummary } from "./lib/cloud-billing-store";
-import { readCloudHeartbeat, readCloudHeartbeats } from "./lib/cloud-heartbeat";
+import { readCloudHeartbeats } from "./lib/cloud-heartbeat";
 import type { CloudHeartbeatState } from "./lib/cloud-heartbeat";
 import { readCloudTransferSummary, type CloudTransferSummary } from "./lib/cloud-release-store";
 import { ensureLocalDataFoundation } from "./lib/local-data-store";
@@ -93,7 +93,6 @@ type LastKnownPlayback = {
 
 type DashboardState = {
   cloudBilling: CloudBillingSummary;
-  cloudHeartbeat: CloudHeartbeatState;
   cloudHeartbeats: Record<string, CloudHeartbeatState>;
   cloudTransfer: CloudTransferSummary;
   deviceStatuses: Record<string, DeviceLiveStatus>;
@@ -141,6 +140,12 @@ type PublishStatus = {
 type StatusTone = "good" | "warn" | "muted";
 
 type PlaylistSyncState = {
+  detail: string;
+  label: string;
+  tone: StatusTone;
+};
+
+type CloudHeartbeatFleetSummary = {
   detail: string;
   label: string;
   tone: StatusTone;
@@ -874,6 +879,136 @@ function cloudDeviceStatus(device: DeviceRecord, cloudHeartbeat: CloudHeartbeatS
   };
 }
 
+function cloudHeartbeatTimestamp(cloudHeartbeat: CloudHeartbeatState | undefined): string | null {
+  return cloudHeartbeat?.heartbeat?.receivedAt ?? cloudHeartbeat?.heartbeat?.timestamp ?? null;
+}
+
+function compactDeviceNames(devices: DeviceRecord[]): string {
+  const names = devices.slice(0, 2).map((device) => device.name || device.id);
+  const remainingCount = devices.length - names.length;
+
+  return remainingCount > 0 ? `${names.join(", ")} +${remainingCount} more` : names.join(", ");
+}
+
+function expectedPlaylistForDevice(device: DeviceRecord, screens: ScreenRecord[], playlistStore: PlaylistStore): Playlist | null {
+  const linkedScreen =
+    (device.screenId ? screens.find((screen) => screen.id === device.screenId) : null) ??
+    screens.find((screen) => screen.deviceId === device.id) ??
+    null;
+  const playlistId = linkedScreen?.playlistId ?? device.playlistId;
+
+  return playlistId ? playlistStore.items.find((playlist) => playlist.playlistId === playlistId) ?? null : null;
+}
+
+function cloudHeartbeatFleetSummary(
+  devices: DeviceRecord[],
+  screens: ScreenRecord[],
+  playlistStore: PlaylistStore,
+  cloudHeartbeats: Record<string, CloudHeartbeatState>,
+  isCloudDashboard: boolean
+): CloudHeartbeatFleetSummary {
+  if (!isCloudDashboard) {
+    return {
+      detail: "AWS heartbeat monitoring is only active in cloud mode.",
+      label: "Local mode",
+      tone: "muted"
+    };
+  }
+
+  if (devices.length === 0) {
+    return {
+      detail: "No devices are registered for cloud heartbeat monitoring yet.",
+      label: "No devices",
+      tone: "muted"
+    };
+  }
+
+  const entries = devices.map((device) => ({
+    device,
+    state: cloudHeartbeats[device.id]
+  }));
+  const firstState = entries.find((entry) => entry.state)?.state;
+
+  if (entries.every((entry) => entry.state?.status === "not_configured")) {
+    return {
+      detail: firstState?.message ?? "AWS heartbeat monitoring is not configured.",
+      label: "Not configured",
+      tone: "muted"
+    };
+  }
+
+  const freshEntries = entries.filter((entry) => {
+    const timestamp = cloudHeartbeatTimestamp(entry.state);
+    const ageMs = statusAgeMs(timestamp);
+
+    return Boolean(entry.state?.ok && entry.state.heartbeat && ageMs !== null && ageMs <= staleHeartbeatThresholdMs);
+  });
+  const staleEntries = entries.filter((entry) => {
+    const timestamp = cloudHeartbeatTimestamp(entry.state);
+    const ageMs = statusAgeMs(timestamp);
+
+    return Boolean(entry.state?.ok && entry.state.heartbeat && (ageMs === null || ageMs > staleHeartbeatThresholdMs));
+  });
+  const missingEntries = entries.filter((entry) => entry.state?.status === "not_found" || !entry.state);
+  const errorEntries = entries.filter((entry) => entry.state?.status === "error");
+  const playlistMismatchEntries = freshEntries.filter((entry) => {
+    const expectedPlaylist = expectedPlaylistForDevice(entry.device, screens, playlistStore);
+    const heartbeat = entry.state?.heartbeat;
+
+    if (!expectedPlaylist || !heartbeat) {
+      return false;
+    }
+
+    if (heartbeat.currentPlaylistId !== expectedPlaylist.playlistId) {
+      return true;
+    }
+
+    return typeof heartbeat.playlistVersion === "number" && heartbeat.playlistVersion !== expectedPlaylist.version;
+  });
+  const currentCount = freshEntries.length;
+  const label = `${currentCount}/${devices.length} current`;
+
+  if (currentCount === devices.length && playlistMismatchEntries.length === 0) {
+    const oldestEntry = freshEntries
+      .slice()
+      .sort((left, right) => {
+        const leftTimestamp = new Date(cloudHeartbeatTimestamp(left.state) ?? 0).getTime();
+        const rightTimestamp = new Date(cloudHeartbeatTimestamp(right.state) ?? 0).getTime();
+
+        return leftTimestamp - rightTimestamp;
+      })[0];
+    const expectedPlaylist = oldestEntry ? expectedPlaylistForDevice(oldestEntry.device, screens, playlistStore) : null;
+    const heartbeat = oldestEntry?.state?.heartbeat;
+    const playlistLabel = expectedPlaylist?.name ?? heartbeat?.currentPlaylistId ?? "playlist not reported";
+    const versionLabel = typeof heartbeat?.playlistVersion === "number" ? ` v${heartbeat.playlistVersion}` : "";
+
+    return {
+      detail: oldestEntry
+        ? `Oldest: ${oldestEntry.device.name || oldestEntry.device.id} · ${formatStatusAge(cloudHeartbeatTimestamp(oldestEntry.state))} · ${playlistLabel}${versionLabel}.`
+        : "All cloud heartbeats are current.",
+      label,
+      tone: "good"
+    };
+  }
+
+  const issueDetails = [
+    playlistMismatchEntries.length > 0 ? `${compactDeviceNames(playlistMismatchEntries.map((entry) => entry.device))} playlist mismatch` : null,
+    staleEntries.length > 0
+      ? `${staleEntries[0].device.name || staleEntries[0].device.id} stale ${formatStatusAge(cloudHeartbeatTimestamp(staleEntries[0].state))}`
+      : null,
+    missingEntries.length > 0 ? `${compactDeviceNames(missingEntries.map((entry) => entry.device))} missing` : null,
+    errorEntries.length > 0 ? `${compactDeviceNames(errorEntries.map((entry) => entry.device))} unavailable` : null
+  ].filter((detail): detail is string => Boolean(detail));
+
+  return {
+    detail: issueDetails.length > 0
+      ? `${issueDetails.slice(0, 3).join("; ")}. ${currentCount}/${devices.length} fresh.`
+      : `${currentCount}/${devices.length} fresh; waiting for complete fleet reports.`,
+    label,
+    tone: "warn"
+  };
+}
+
 async function loadDeviceStatuses(
   inventory: DashboardState["inventory"],
   cloudHeartbeats: Record<string, CloudHeartbeatState>
@@ -941,9 +1076,8 @@ async function loadDashboardState(selectedPlaylistId?: string | null): Promise<D
     readInventory(seedPlaylistId),
     readJsonFile<PublishStatus>(publishStatusPath())
   ]);
-  const [cloudBilling, cloudHeartbeat, cloudHeartbeats, cloudTransfer] = await Promise.all([
+  const [cloudBilling, cloudHeartbeats, cloudTransfer] = await Promise.all([
     readCloudBillingSummary(),
-    readCloudHeartbeat(),
     readCloudHeartbeats(inventory.devices.items.map((device) => device.id)),
     readCloudTransferSummary()
   ]);
@@ -952,7 +1086,7 @@ async function loadDashboardState(selectedPlaylistId?: string | null): Promise<D
   const deviceStatuses = await loadDeviceStatuses(inventory, cloudHeartbeats);
   const lastKnownPlayback = await resolveLastKnownPlayback(pi);
 
-  return { cloudBilling, cloudHeartbeat, cloudHeartbeats, cloudTransfer, deviceStatuses, heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi };
+  return { cloudBilling, cloudHeartbeats, cloudTransfer, deviceStatuses, heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi };
 }
 
 function syncState(localVersion: number, piVersion: number | undefined, piReachable: boolean): PlaylistSyncState {
@@ -1328,7 +1462,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const selectedView = dashboardViewFrom(resolvedSearchParams?.view);
   const selectedPlaylistParam = scalarSearchParam(resolvedSearchParams?.playlist);
   const currentViewCopy = viewCopy[selectedView];
-  const { cloudBilling, cloudHeartbeat, cloudTransfer, deviceStatuses, heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi } =
+  const { cloudBilling, cloudHeartbeats, cloudTransfer, deviceStatuses, heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi } =
     await loadDashboardState(selectedPlaylistParam);
   const selectedScreenParam = scalarSearchParam(resolvedSearchParams?.screen);
   const playerStatus = pi.playerStatus;
@@ -1338,25 +1472,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const isPlayerStatusFresh = playerStatusAgeMs !== null && playerStatusAgeMs <= staleStatusThresholdMs;
   const heartbeatAgeMs = statusAgeMs(heartbeat?.timestamp);
   const isHeartbeatFresh = heartbeatAgeMs !== null && heartbeatAgeMs <= staleHeartbeatThresholdMs;
-  const cloudHeartbeatTimestamp = cloudHeartbeat.heartbeat?.receivedAt ?? cloudHeartbeat.heartbeat?.timestamp ?? null;
-  const cloudHeartbeatAgeMs = statusAgeMs(cloudHeartbeatTimestamp);
-  const isCloudHeartbeatFresh = cloudHeartbeatAgeMs !== null && cloudHeartbeatAgeMs <= staleHeartbeatThresholdMs;
-  const cloudHeartbeatLabel =
-    cloudHeartbeat.status === "not_configured"
-      ? "Not configured"
-      : cloudHeartbeat.status === "not_found"
-        ? "No report"
-        : cloudHeartbeat.ok
-          ? isCloudHeartbeatFresh
-            ? "Fresh"
-            : "Stale"
-          : "Unavailable";
-  const cloudHeartbeatTone: "good" | "warn" | "muted" =
-    cloudHeartbeat.status === "not_configured" ? "muted" : cloudHeartbeat.ok && isCloudHeartbeatFresh ? "good" : "warn";
-  const cloudHeartbeatDetail =
-    cloudHeartbeat.ok && cloudHeartbeat.heartbeat
-      ? `${cloudHeartbeat.heartbeat.deviceId ?? cloudHeartbeat.deviceId} · ${formatStatusAge(cloudHeartbeatTimestamp)} · ${cloudHeartbeat.heartbeat.currentPlaylistId ?? "playlist not reported"}`
-      : cloudHeartbeat.message;
+  const cloudHeartbeatSummary = cloudHeartbeatFleetSummary(
+    inventory.devices.items,
+    inventory.screens.items,
+    playlistStore,
+    cloudHeartbeats,
+    isCloudDashboard
+  );
   const cloudTransferTone: "good" | "warn" | "muted" =
     !isCloudDashboard || !cloudTransfer.latestRelease
       ? "muted"
@@ -1931,12 +2053,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 <dd className="mt-2 text-2xl font-semibold text-zinc-950">{inventory.screens.items.length}</dd>
                 <dd className="mt-1 text-sm text-zinc-600">{screenDetail}</dd>
               </div>
-              <div className={`rounded-lg border p-4 shadow-sm ${cloudHeartbeatTone === "good" ? "border-emerald-200 bg-emerald-50" : cloudHeartbeatTone === "warn" ? "border-amber-200 bg-amber-50" : "border-zinc-200 bg-white"}`}>
+              <div className={`rounded-lg border p-4 shadow-sm ${cloudHeartbeatSummary.tone === "good" ? "border-emerald-200 bg-emerald-50" : cloudHeartbeatSummary.tone === "warn" ? "border-amber-200 bg-amber-50" : "border-zinc-200 bg-white"}`}>
                 <dt className="text-xs font-semibold uppercase text-zinc-600">AWS heartbeat</dt>
                 <dd className="mt-2 flex items-center gap-2 text-2xl font-semibold text-zinc-950">
-                  {cloudHeartbeatLabel}
+                  {cloudHeartbeatSummary.label}
                 </dd>
-                <dd className="mt-1 break-words text-sm text-zinc-600">{cloudHeartbeatDetail}</dd>
+                <dd className="mt-1 break-words text-sm text-zinc-600">{cloudHeartbeatSummary.detail}</dd>
               </div>
               <div className={`rounded-lg border p-4 shadow-sm ${cloudTransferTone === "good" ? "border-emerald-200 bg-emerald-50" : cloudTransferTone === "warn" ? "border-amber-200 bg-amber-50" : "border-zinc-200 bg-white"}`}>
                 <dt className="text-xs font-semibold uppercase text-zinc-600">AWS transfer</dt>
