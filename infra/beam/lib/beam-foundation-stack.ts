@@ -216,7 +216,7 @@ export class BeamFoundationStack extends Stack {
       restApiName: `${namePrefix}-api-v2`
     });
     const plan = api.addUsagePlan("DevDeviceUsagePlan", {
-      name: `${namePrefix}-device-dev`,
+      name: `${namePrefix}-device-dev-v2`,
       throttle: {
         burstLimit: 20,
         rateLimit: 10
@@ -226,7 +226,7 @@ export class BeamFoundationStack extends Stack {
       stage: api.deploymentStage
     });
     const apiKey = api.addApiKey("DevDeviceApiKey", {
-      apiKeyName: `${namePrefix}-device-dev`
+      apiKeyName: `${namePrefix}-device-dev-v2`
     });
     plan.addApiKey(apiKey);
 
