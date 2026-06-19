@@ -12,6 +12,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV BEAM_NEXT_OUTPUT=standalone
 ENV PISIGNAGE_NEXT_DIST_DIR=.next-build
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/dashboard/node_modules ./dashboard/node_modules
 COPY . .
 RUN npm --workspace dashboard run build
 
