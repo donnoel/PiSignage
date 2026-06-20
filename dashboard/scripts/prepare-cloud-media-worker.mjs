@@ -12,7 +12,8 @@ const dynamoDb = new DynamoDBClient({});
 const s3 = new S3Client({});
 const assetId = process.argv[2];
 const tableName = process.env.BEAM_ASSETS_TABLE_NAME;
-const bucketName = process.env.BEAM_SOURCE_MEDIA_BUCKET_NAME;
+const defaultSourceBucketName = process.env.BEAM_SOURCE_MEDIA_BUCKET_NAME;
+const defaultPlaybackBucketName = process.env.BEAM_PLAYBACK_MEDIA_BUCKET_NAME || defaultSourceBucketName;
 const profile = {
   audioCodec: "aac",
   fps: 30,
@@ -167,7 +168,7 @@ async function transcodeVideo(sourcePath, outputPath) {
 }
 
 async function main() {
-  if (!assetId || !tableName || !bucketName) {
+  if (!assetId || !tableName || !defaultSourceBucketName || !defaultPlaybackBucketName) {
     throw new Error("Missing media worker configuration.");
   }
   const item = await readAsset();
@@ -178,6 +179,8 @@ async function main() {
   const sourceFileName = text(item, "sourceFileName");
   const playbackFileName = text(item, "playbackFileName");
   const sourceObjectKey = text(item, "sourceObjectKey");
+  const sourceBucketName = text(item, "sourceStorageBucket", defaultSourceBucketName);
+  const playbackBucketName = text(item, "playbackStorageBucket", defaultPlaybackBucketName);
   const durationSeconds = Number.parseFloat(item.durationSeconds?.N ?? "30");
   const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "beam-worker-"));
   const sourcePath = path.join(tempDirectory, sourceFileName);
@@ -190,7 +193,7 @@ async function main() {
       playbackProfile: { S: "preparing-playback-mp4-v1" },
       status: { S: "processing" }
     });
-    const sourceObject = await s3.send(new GetObjectCommand({ Bucket: bucketName, Key: sourceObjectKey }));
+    const sourceObject = await s3.send(new GetObjectCommand({ Bucket: sourceBucketName, Key: sourceObjectKey }));
     await fs.writeFile(sourcePath, await bodyToBuffer(sourceObject.Body));
 
     const sourceType = mediaSourceType(sourceFileName);
@@ -221,7 +224,7 @@ async function main() {
 
     await s3.send(new PutObjectCommand({
       Body: await fs.readFile(playbackPath),
-      Bucket: bucketName,
+      Bucket: playbackBucketName,
       ContentLength: stat.size,
       ContentType: "video/mp4",
       Key: playbackObjectKey,
@@ -240,9 +243,11 @@ async function main() {
       pixelFormat: metadata.pixelFormat ? { S: metadata.pixelFormat } : { NULL: true },
       playbackObjectKey: { S: playbackObjectKey },
       playbackProfile: { S: profile.id },
+      playbackStorageBucket: { S: playbackBucketName },
       preparedAt: { S: now },
       sizeBytes: { N: String(stat.size) },
       status: { S: "ready" },
+      storageBucket: { S: playbackBucketName },
       videoCodec: metadata.videoCodec ? { S: metadata.videoCodec } : { NULL: true },
       videoProfile: metadata.videoProfile ? { S: metadata.videoProfile } : { NULL: true },
       width: numberAttr(metadata.width)
