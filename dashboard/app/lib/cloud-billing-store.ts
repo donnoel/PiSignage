@@ -11,6 +11,13 @@ export type CloudBillingSummary = {
 };
 
 const costExplorer = new CostExplorerClient({ region: "us-east-1" });
+const billingCacheTtlMs = 6 * 60 * 60 * 1000;
+let cachedBillingSummary: {
+  expiresAtMs: number;
+  rangeKey: string;
+  summary: CloudBillingSummary;
+} | null = null;
+let billingSummaryRequest: Promise<CloudBillingSummary> | null = null;
 
 function cloudDashboardConfigured(): boolean {
   return process.env.BEAM_DASHBOARD_MODE === "cloud";
@@ -43,6 +50,29 @@ export async function readCloudBillingSummary(): Promise<CloudBillingSummary> {
   }
 
   const range = monthRange();
+  const rangeKey = `${range.start}:${range.end}`;
+  const nowMs = Date.now();
+  if (
+    cachedBillingSummary &&
+    cachedBillingSummary.rangeKey === rangeKey &&
+    cachedBillingSummary.expiresAtMs > nowMs
+  ) {
+    return cachedBillingSummary.summary;
+  }
+
+  if (billingSummaryRequest) {
+    return billingSummaryRequest;
+  }
+
+  billingSummaryRequest = fetchCloudBillingSummary(range, rangeKey);
+  try {
+    return await billingSummaryRequest;
+  } finally {
+    billingSummaryRequest = null;
+  }
+}
+
+async function fetchCloudBillingSummary(range: { end: string; start: string }, rangeKey: string): Promise<CloudBillingSummary> {
   try {
     const result = await costExplorer.send(new GetCostAndUsageCommand({
       Granularity: "MONTHLY",
@@ -57,15 +87,27 @@ export async function readCloudBillingSummary(): Promise<CloudBillingSummary> {
     const parsed = metric?.Amount ? Number(metric.Amount) : Number.NaN;
     const amountUsd = Number.isFinite(parsed) ? parsed : null;
 
-    return {
+    const summary: CloudBillingSummary = {
       amountUsd,
       currency: metric?.Unit ?? "USD",
       endDate: range.end,
       estimated: Boolean(firstResult?.Estimated),
-      message: amountUsd === null ? "Cost Explorer did not return a month-to-date total." : "Month-to-date AWS account cost from Cost Explorer.",
+      message: amountUsd === null
+        ? "Cost Explorer did not return a month-to-date total."
+        : "Month-to-date AWS account cost from Cost Explorer. Cached for 6 hours to avoid paid billing API churn.",
       startDate: range.start,
       status: amountUsd === null ? "error" : "available"
     };
+
+    if (summary.status === "available") {
+      cachedBillingSummary = {
+        expiresAtMs: Date.now() + billingCacheTtlMs,
+        rangeKey,
+        summary
+      };
+    }
+
+    return summary;
   } catch (error) {
     return {
       amountUsd: null,
