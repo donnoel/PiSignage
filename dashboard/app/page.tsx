@@ -1498,7 +1498,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         ? `Planned ${formatBytes(cloudTransfer.plannedBytesToday)} today from ${cloudTransfer.releasesToday} publish release${cloudTransfer.releasesToday === 1 ? "" : "s"}; ${formatBytes(cloudTransfer.unexpectedBytesToday)} unexpected by Beam ledger.`
         : "No cloud release has been manually published today.";
   const cloudBillingTone: "good" | "warn" | "muted" =
-    !isCloudDashboard || cloudBilling.status === "local"
+    !isCloudDashboard || cloudBilling.status === "local" || cloudBilling.status === "manual"
       ? "muted"
       : cloudBilling.status === "available"
         ? "good"
@@ -1506,12 +1506,14 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const cloudBillingLabel =
     cloudBilling.status === "available"
       ? formatCurrency(cloudBilling.amountUsd, cloudBilling.currency)
+      : cloudBilling.status === "manual"
+        ? "Budget alerts"
       : cloudBilling.status === "local"
         ? "Local mode"
         : "Unavailable";
   const cloudBillingDetail =
     cloudBilling.status === "available"
-      ? `${cloudBilling.estimated ? "Estimated" : "Actual"} month-to-date AWS account cost. Cost Explorer can lag behind live usage.`
+      ? `${cloudBilling.estimated ? "Estimated" : "Actual"} month-to-date AWS account cost.`
       : cloudBilling.message;
   const playbackHealthy = isPlaying && isPlayerStatusFresh;
   const playbackLabel = playbackHealthy ? "Playing" : isPlaying ? "Stale" : playbackState;
