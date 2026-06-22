@@ -5,6 +5,7 @@ This repo is a local-first Raspberry Pi digital signage proof of concept. You ar
 - Read `AGENTS.md` first. Read `AGENTS.project.md` when touching product behavior, architecture, persistence, device setup, playback, publishing, recovery, or project constraints.
 - Keep changes small and focused. No broad rewrites unless explicitly requested.
 - Preserve the local-first contract. Do not introduce AWS/cloud work unless the user explicitly asks for it.
+- For AWS/cloud work, read `docs/AWS_COST_GUARDRAILS.md` and treat cost control as a hard requirement: no unnecessary data movement, no surprise paid polling, and no AWS mutation without explicit approval.
 - Keep playback and recovery first-class. Do not regress fullscreen playback, reboot recovery, power-loss recovery, network-loss tolerance, or local playlist behavior.
 - Keep the five Pi appliances identical at all times except intentional identity/network fields such as hostname, IP address, screen name, screen assignment, and location. Beam-managed scripts, services, package/runtime baselines, playlist files, and published media sets must not drift between C1-C5.
 - Keep dashboard, player, and Pi/device scripts clearly separated.
@@ -40,6 +41,7 @@ This repo is a local-first Raspberry Pi digital signage proof of concept. You ar
 - Playlist edits, uploads, removes, and reorders should update live local state without automatically publishing to the Pi.
 - The manual publish button is the intentional operator-controlled step for sending saved playlist changes to the screen.
 - Preserve local playback when the network is unavailable. A missing network must not stop cached/local playback.
+- Cloud playlist/media behavior must stay publish-gated and cache-aware: normal polling must not return or trigger full media downloads.
 
 ## Pi And Playback Rules
 

@@ -21,6 +21,7 @@ Delivery path:
 - Current sprint: production-minded hardening for real local operations, screen health, playlists, media, recovery, and cloud alpha truthfulness.
 - Five real Raspberry Pi signage systems controlled from the interface as the pilot surface, with a soak period for playback, control, monitoring, recovery, and outage behavior.
 - Real AWS buildout happens only through explicit approval. The current `dev` alpha scaffold is intentionally narrow and must preserve local playback and manual publish.
+- AWS buildout must also follow `docs/AWS_COST_GUARDRAILS.md`: avoid unnecessary data transfer, paid polling, unbounded scans, and always-on services unless the cost is understood and approved.
 - Production only after the five-system pilot and later cloud work prove playback, control, monitoring, and recovery.
 
 ## Current Product Phase
@@ -152,6 +153,9 @@ Heartbeat model starts with:
 
 - Do not create, update, destroy, or deploy real AWS infrastructure unless the user explicitly approves that action in the current task.
 - Do not require AWS credentials for local operations.
+- Read `docs/AWS_COST_GUARDRAILS.md` before changing AWS infrastructure, cloud traffic, uploads, media delivery, polling, monitoring, billing, or deployed dashboard behavior.
+- Every AWS change must preserve the traffic contract: tiny heartbeat/status is allowed, uploads are operator-initiated, media sync is manual-publish-gated, and unchanged devices download nothing.
+- Every AWS change must include a cost review for always-on services, paid APIs, S3 transfer, DynamoDB Scan usage, log retention, lifecycle cleanup, metrics, tags, and expected daily/monthly cost.
 - When AWS starts, build real resource-backed behavior rather than placeholder cloud flows.
 - Keep future AWS design least-privilege and easy to reason about.
 - Use signed CloudFront/S3 access patterns for private media in future docs.

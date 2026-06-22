@@ -2,6 +2,8 @@
 
 Goal: run Beam in AWS instead of relying on the laptop-hosted dashboard, while preserving local-first playback and recovery.
 
+Every phase must follow `docs/AWS_COST_GUARDRAILS.md`. AWS rollout is not ready when it merely works; it must be cheap at idle, publish-gated for media transfer, observable, and explainable from both AWS metrics and Beam's own ledger.
+
 ## Current Snapshot
 
 Beam now has a real `dev` alpha scaffold and partial cloud workflows. Foundation resources, App Runner dashboard hosting, DynamoDB-backed dashboard stores, cloud source-media cataloging, latest heartbeat routes, device-agent cloud heartbeat, device-agent playlist fetch, manual publish markers, and a cloud reset queue are present in code. Production auth, IoT/MQTT, complete media processing, cloud schedule parity, and production device identity remain future work.
@@ -24,6 +26,7 @@ Validation:
 
 - `npm run synth` from `infra/beam`.
 - Human review of the generated CloudFormation template before deploy.
+- AWS cost guardrail review covering always-on services, paid APIs, S3 transfer, DynamoDB Scan usage, log retention, lifecycle cleanup, metrics, tags, and expected daily/monthly cost.
 - No AWS credentials or account IDs committed.
 
 ## Phase 2: Minimal Backend API
@@ -79,6 +82,7 @@ Validation:
 
 - Agent runs locally without AWS in `local` mode.
 - Agent sends heartbeat to AWS in `cloud` mode.
+- Unchanged release checks download no media and return no signed asset URLs.
 - AWS outage does not delete or corrupt the last known good local cache.
 - Turning off AWS or cloud monitors does not revert a device with a valid cache to the first-run fallback asset.
 
@@ -101,6 +105,7 @@ Validation:
 - Upload PNG or JPEG.
 - Confirm MP4 playback rendition exists.
 - Confirm playlist fetch only returns ready playback renditions.
+- Confirm S3 transfer is caused only by operator upload or manual publish sync.
 - Confirm signed URLs are not stored in DynamoDB or logged.
 
 ## Phase 5: Cloud Dashboard Mode

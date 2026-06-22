@@ -4,6 +4,8 @@ AWS `dev` alpha work has started. This document records the target design and di
 
 The first cloud alpha still serves the same narrow product: one pilot workspace, one dashboard, one or more Raspberry Pis, assigned playlists, and reliable offline-capable playback. Production multi-client use requires the workspace isolation model in `docs/WORKSPACES_AND_ROLES.md`.
 
+All AWS design must also follow `docs/AWS_COST_GUARDRAILS.md`. Cost control is part of the architecture: Beam should move media only for operator uploads or manual publish sync, keep routine traffic tiny, cache aggressively on devices, and explain transfer through both AWS metrics and the Beam publish/sync ledger.
+
 ## Current Dev Alpha
 
 Implemented or scaffolded now:
@@ -40,6 +42,8 @@ Still not production-ready:
 - AWS IoT Core: future MQTT device command, event, and playlist update messages.
 
 Greengrass may be considered later, but it is not part of the initial alpha.
+
+App Runner can remain a short-term dev alpha dashboard host, but it is not the final default. Before expanding hosted compute, compare the expected cost and operational value against a smaller API Gateway/Lambda path, ECS Express Mode, or another lower-cost option.
 
 ## S3 Media Bucket And Key Strategy
 
@@ -87,6 +91,7 @@ Device traffic rules:
 - If the release ID and manifest checksum are unchanged, the device downloads nothing.
 - A device fetches the release manifest only after a new manual publish.
 - Signed S3 URLs are generated one asset at a time only after the device reports a missing or changed cached asset.
+- S3 transfer must be explainable from the release manifest and sync ledger; unexpected transfer is a cost incident.
 - AWS, monitor, or playlist-check failure must keep the last known good local cache. The first-run fallback playlist is used only when no valid cache exists.
 
 Each sync result records downloaded bytes, skipped cached bytes, failed asset IDs,
@@ -114,6 +119,8 @@ Open design question for Phase 5:
 ## DynamoDB Table Design
 
 Start with single-table complexity only if it is clearly useful. For the alpha, simple focused tables are easier to inspect and migrate.
+
+Normal dashboard and device paths should use GetItem, Query, or bounded indexed reads. DynamoDB Scan is acceptable only for clearly bounded admin or migration work, not for hot-path media lists, playlist fetches, release checks, or heartbeat/status reads.
 
 ### Accounts
 
