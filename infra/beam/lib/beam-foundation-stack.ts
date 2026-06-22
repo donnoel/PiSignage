@@ -130,49 +130,12 @@ export class BeamFoundationStack extends Stack {
       ]
     });
 
-    new budgets.CfnBudget(this, "DailyCostBudget", {
-      budget: {
-        budgetLimit: {
-          amount: 1,
-          unit: "USD"
-        },
-        budgetName: `${namePrefix}-daily-cost-guardrail`,
-        budgetType: "COST",
-        costFilters: {
-          TagKeyValue: ["user:Application$Beam"]
-        },
-        timeUnit: "DAILY"
-      },
-      notificationsWithSubscribers: [
-        {
-          notification: {
-            comparisonOperator: "GREATER_THAN",
-            notificationType: "ACTUAL",
-            threshold: 80,
-            thresholdType: "PERCENTAGE"
-          },
-          subscribers: [
-            {
-              address: budgetAlertEmail,
-              subscriptionType: "EMAIL"
-            }
-          ]
-        },
-        {
-          notification: {
-            comparisonOperator: "GREATER_THAN",
-            notificationType: "ACTUAL",
-            threshold: 100,
-            thresholdType: "PERCENTAGE"
-          },
-          subscribers: [
-            {
-              address: budgetAlertEmail,
-              subscriptionType: "EMAIL"
-            }
-          ]
-        }
-      ]
+    this.createDailyCostBudget("DailyCostBudget", {
+      budgetAlertEmail,
+      budgetName: `${namePrefix}-daily-cost-guardrail`,
+      costFilters: {
+        TagKeyValue: ["user:Application$Beam"]
+      }
     });
 
     const heartbeatFunction = new nodeLambda.NodejsFunction(this, "HeartbeatFunctionRestored", {
@@ -471,6 +434,58 @@ export class BeamFoundationStack extends Stack {
       ],
       removalPolicy: RemovalPolicy.RETAIN,
       versioned: true
+    });
+  }
+
+  private createDailyCostBudget(
+    id: string,
+    input: {
+      budgetAlertEmail: string;
+      budgetName: string;
+      costFilters?: Record<string, string[]>;
+    }
+  ): budgets.CfnBudget {
+    return new budgets.CfnBudget(this, id, {
+      budget: {
+        budgetLimit: {
+          amount: 1,
+          unit: "USD"
+        },
+        budgetName: input.budgetName,
+        budgetType: "COST",
+        costFilters: input.costFilters,
+        timeUnit: "DAILY"
+      },
+      notificationsWithSubscribers: [
+        {
+          notification: {
+            comparisonOperator: "GREATER_THAN",
+            notificationType: "ACTUAL",
+            threshold: 80,
+            thresholdType: "PERCENTAGE"
+          },
+          subscribers: [
+            {
+              address: input.budgetAlertEmail,
+              subscriptionType: "EMAIL"
+            }
+          ]
+        },
+        {
+          notification: {
+            comparisonOperator: "GREATER_THAN",
+            notificationType: "ACTUAL",
+            threshold: 100,
+            thresholdType: "PERCENTAGE"
+          },
+          subscribers: [
+            {
+              address: input.budgetAlertEmail,
+              subscriptionType: "EMAIL"
+            }
+          ]
+        }
+      ]
     });
   }
 
