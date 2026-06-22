@@ -5,8 +5,9 @@ import path from "node:path";
 import {
   DeleteItemCommand,
   DynamoDBClient,
+  GetItemCommand,
   PutItemCommand,
-  ScanCommand
+  QueryCommand
 } from "@aws-sdk/client-dynamodb";
 import type { AttributeValue } from "@aws-sdk/client-dynamodb";
 import {
@@ -34,7 +35,6 @@ import {
 import { isPlaybackSafeVideoFileName } from "./playback-safety";
 import {
   activeWorkspaceId,
-  filterWorkspaceItems,
   requireActiveWorkspacePermission,
   withDefaultWorkspace,
   workspaceIdOrDefault
@@ -310,14 +310,18 @@ function mediaFolderAssignmentToItem(mediaId: string, folderId: string, updatedA
   };
 }
 
-async function scanAllItems(tableName: string): Promise<Record<string, AttributeValue>[]> {
+async function queryWorkspaceItems(tableName: string): Promise<Record<string, AttributeValue>[]> {
   const items: Record<string, AttributeValue>[] = [];
   let exclusiveStartKey: Record<string, AttributeValue> | undefined;
 
   do {
-    const result = await dynamoDb.send(new ScanCommand({
-      ConsistentRead: true,
+    const result = await dynamoDb.send(new QueryCommand({
       ExclusiveStartKey: exclusiveStartKey,
+      ExpressionAttributeValues: {
+        ":workspaceId": stringAttribute(activeWorkspaceId())
+      },
+      IndexName: "byWorkspace",
+      KeyConditionExpression: "workspaceId = :workspaceId",
       TableName: tableName
     }));
     items.push(...(result.Items ?? []));
@@ -328,19 +332,18 @@ async function scanAllItems(tableName: string): Promise<Record<string, Attribute
 }
 
 export async function readCloudMediaStore(config: CloudMediaConfig): Promise<MediaStore> {
-  const items = (await scanAllItems(config.assetsTableName))
+  const items = (await queryWorkspaceItems(config.assetsTableName))
     .filter((item) => itemRecordType(item) === mediaRecordType)
     .map(mediaFromItem);
-  const workspaceItems = filterWorkspaceItems(items);
   return {
-    items: workspaceItems,
-    updatedAt: workspaceItems.reduce((latest, item) => item.updatedAt > latest ? item.updatedAt : latest, ""),
+    items,
+    updatedAt: items.reduce((latest, item) => item.updatedAt > latest ? item.updatedAt : latest, ""),
     version: 1
   };
 }
 
 export async function readCloudMediaFolderStore(config: CloudMediaConfig): Promise<MediaFolderStore> {
-  const scannedItems = await scanAllItems(config.assetsTableName);
+  const scannedItems = await queryWorkspaceItems(config.assetsTableName);
   const folders = scannedItems
     .filter((item) => itemRecordType(item) === mediaFolderRecordType)
     .filter(itemInActiveWorkspace)
@@ -370,7 +373,7 @@ export async function readCloudMediaFolderStore(config: CloudMediaConfig): Promi
 
 export async function writeCloudMediaFolderStore(config: CloudMediaConfig, store: MediaFolderStore): Promise<void> {
   requireActiveWorkspacePermission("write");
-  const managedItems = (await scanAllItems(config.assetsTableName)).filter((item) =>
+  const managedItems = (await queryWorkspaceItems(config.assetsTableName)).filter((item) =>
     itemRecordType(item) === mediaFolderRecordType || itemRecordType(item) === mediaFolderAssignmentRecordType
   ).filter(itemInActiveWorkspace);
   const folderItems = store.items.map(mediaFolderToItem);
@@ -488,6 +491,18 @@ export async function createCloudMediaUpload(config: CloudMediaConfig, input: Cl
   return media;
 }
 
+async function readCloudMediaRecord(config: CloudMediaConfig, mediaId: string): Promise<MediaRecord | null> {
+  const result = await dynamoDb.send(new GetItemCommand({
+    Key: { assetId: stringAttribute(mediaId) },
+    TableName: config.assetsTableName
+  }));
+  if (!result.Item || itemRecordType(result.Item) !== mediaRecordType || !itemInActiveWorkspace(result.Item)) {
+    return null;
+  }
+
+  return mediaFromItem(result.Item);
+}
+
 async function s3BodyToBuffer(body: unknown): Promise<Buffer> {
   if (!body || typeof body !== "object" || !("transformToByteArray" in body)) {
     throw new MediaUploadError("AWS returned an unreadable source media object.", 502);
@@ -499,8 +514,7 @@ async function s3BodyToBuffer(body: unknown): Promise<Buffer> {
 
 export async function prepareCloudMediaForPlayback(config: CloudMediaConfig, mediaId: string): Promise<MediaRecord | null> {
   requireActiveWorkspacePermission("write");
-  const mediaStore = await readCloudMediaStore(config);
-  const current = mediaStore.items.find((item) => item.id === mediaId);
+  const current = await readCloudMediaRecord(config, mediaId);
   if (!current) {
     return null;
   }
@@ -597,8 +611,7 @@ export async function updateCloudMediaPreparationStatus(
   }
 ): Promise<MediaRecord | null> {
   requireActiveWorkspacePermission("write");
-  const mediaStore = await readCloudMediaStore(config);
-  const current = mediaStore.items.find((item) => item.id === mediaId);
+  const current = await readCloudMediaRecord(config, mediaId);
   if (!current) {
     return null;
   }
@@ -625,14 +638,13 @@ export async function deleteCloudMediaRecords(
   blockedIds: Set<string> = new Set()
 ): Promise<CloudMediaDeleteResult> {
   requireActiveWorkspacePermission("write");
-  const mediaStore = await readCloudMediaStore(config);
   const requestedIds = new Set(mediaIds.filter((id) => !id.startsWith("playlist:")));
   const deletedIds: string[] = [];
   const missingIds = mediaIds.filter((id) => id.startsWith("playlist:"));
   const blocked: string[] = [];
 
   for (const id of requestedIds) {
-    const media = mediaStore.items.find((item) => item.id === id);
+    const media = await readCloudMediaRecord(config, id);
     if (!media) {
       missingIds.push(id);
       continue;
@@ -689,8 +701,7 @@ export async function updateCloudMediaMetadata(
   input: { description?: string; tags?: string[]; title?: string }
 ): Promise<MediaRecord | null> {
   requireActiveWorkspacePermission("write");
-  const mediaStore = await readCloudMediaStore(config);
-  const current = mediaStore.items.find((item) => item.id === mediaId);
+  const current = await readCloudMediaRecord(config, mediaId);
   if (!current) {
     return null;
   }

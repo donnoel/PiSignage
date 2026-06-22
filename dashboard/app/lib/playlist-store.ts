@@ -2,7 +2,7 @@ import {
   DeleteItemCommand,
   DynamoDBClient,
   PutItemCommand,
-  ScanCommand
+  QueryCommand
 } from "@aws-sdk/client-dynamodb";
 import type { AttributeValue } from "@aws-sdk/client-dynamodb";
 import {
@@ -111,14 +111,18 @@ function playlistToItem(playlist: Playlist): Record<string, AttributeValue> {
   };
 }
 
-async function scanAllItems(tableName: string): Promise<Record<string, AttributeValue>[]> {
+async function queryWorkspaceItems(tableName: string): Promise<Record<string, AttributeValue>[]> {
   const items: Record<string, AttributeValue>[] = [];
   let exclusiveStartKey: Record<string, AttributeValue> | undefined;
 
   do {
-    const result = await dynamoDb.send(new ScanCommand({
-      ConsistentRead: true,
+    const result = await dynamoDb.send(new QueryCommand({
       ExclusiveStartKey: exclusiveStartKey,
+      ExpressionAttributeValues: {
+        ":workspaceId": stringAttribute(activeWorkspaceId())
+      },
+      IndexName: "byWorkspace",
+      KeyConditionExpression: "workspaceId = :workspaceId",
       TableName: tableName
     }));
     items.push(...(result.Items ?? []));
@@ -170,7 +174,7 @@ function storeFromPlaylists(playlists: Playlist[]): PlaylistStore {
 }
 
 async function readCloudPlaylistStore(config: { playlistsTableName: string }): Promise<PlaylistStore> {
-  const items = await scanAllItems(config.playlistsTableName);
+  const items = await queryWorkspaceItems(config.playlistsTableName);
   const playlists = await ensureSeedPlaylist(config.playlistsTableName, items.map(playlistFromItem));
   return storeFromPlaylists(playlists.filter((playlist) => workspaceMatches(playlist)));
 }
@@ -215,7 +219,7 @@ export async function writePlaylistStore(store: PlaylistStore): Promise<void> {
 
   const currentWorkspaceId = activeWorkspaceId();
   const nextIds = new Set(store.items.map((playlist) => playlist.playlistId));
-  const existingItems = await scanAllItems(config.playlistsTableName);
+  const existingItems = await queryWorkspaceItems(config.playlistsTableName);
   await Promise.all([
     ...existingItems
       .map(playlistFromItem)

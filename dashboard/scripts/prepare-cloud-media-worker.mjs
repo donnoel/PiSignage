@@ -4,7 +4,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { DynamoDBClient, PutItemCommand, ScanCommand } from "@aws-sdk/client-dynamodb";
+import { DynamoDBClient, GetItemCommand, PutItemCommand } from "@aws-sdk/client-dynamodb";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 const execFileAsync = promisify(execFile);
@@ -45,8 +45,11 @@ async function updateItem(item, updates) {
 }
 
 async function readAsset() {
-  const result = await dynamoDb.send(new ScanCommand({ TableName: tableName }));
-  return (result.Items ?? []).find((item) => text(item, "assetId") === assetId || text(item, "id") === assetId) ?? null;
+  const result = await dynamoDb.send(new GetItemCommand({
+    Key: { assetId: { S: assetId } },
+    TableName: tableName
+  }));
+  return result.Item ?? null;
 }
 
 async function bodyToBuffer(body) {

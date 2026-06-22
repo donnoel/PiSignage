@@ -23,16 +23,17 @@ type BeamTableDefinition = {
   id: string;
   partitionKey: string;
   sortKey?: string;
+  workspaceIndex?: boolean;
 };
 
 const tableDefinitions: BeamTableDefinition[] = [
   { id: "Accounts", partitionKey: "accountId" },
-  { id: "Devices", partitionKey: "deviceId" },
-  { id: "Screens", partitionKey: "screenId" },
-  { id: "Playlists", partitionKey: "playlistId" },
-  { id: "Assets", partitionKey: "assetId" },
+  { id: "Devices", partitionKey: "deviceId", workspaceIndex: true },
+  { id: "Screens", partitionKey: "screenId", workspaceIndex: true },
+  { id: "Playlists", partitionKey: "playlistId", workspaceIndex: true },
+  { id: "Assets", partitionKey: "assetId", workspaceIndex: true },
   { id: "Heartbeats", partitionKey: "deviceId" },
-  { id: "Releases", partitionKey: "releaseId" },
+  { id: "Releases", partitionKey: "releaseId", workspaceIndex: true },
   { id: "Activity", partitionKey: "accountId", sortKey: "timestamp" }
 ];
 
@@ -227,37 +228,43 @@ export class BeamFoundationStack extends Stack {
         "dynamodb:DeleteItem",
         "dynamodb:DescribeTable",
         "dynamodb:PutItem",
-        "dynamodb:Scan",
+        "dynamodb:Query",
         "dynamodb:TransactWriteItems"
       ],
-      resources: [devicesTable.tableArn, screensTable.tableArn]
+      resources: [
+        devicesTable.tableArn,
+        `${devicesTable.tableArn}/index/byWorkspace`,
+        screensTable.tableArn,
+        `${screensTable.tableArn}/index/byWorkspace`
+      ]
     }));
     dashboardInstanceRole.addToPolicy(new iam.PolicyStatement({
       actions: [
         "dynamodb:DeleteItem",
         "dynamodb:DescribeTable",
         "dynamodb:PutItem",
-        "dynamodb:Scan"
+        "dynamodb:Query"
       ],
-      resources: [playlistsTable.tableArn]
+      resources: [playlistsTable.tableArn, `${playlistsTable.tableArn}/index/byWorkspace`]
     }));
     dashboardInstanceRole.addToPolicy(new iam.PolicyStatement({
       actions: [
         "dynamodb:DeleteItem",
         "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
         "dynamodb:PutItem",
-        "dynamodb:Scan"
+        "dynamodb:Query"
       ],
-      resources: [assetsTable.tableArn]
+      resources: [assetsTable.tableArn, `${assetsTable.tableArn}/index/byWorkspace`]
     }));
     dashboardInstanceRole.addToPolicy(new iam.PolicyStatement({
       actions: [
         "dynamodb:DescribeTable",
         "dynamodb:GetItem",
         "dynamodb:PutItem",
-        "dynamodb:Scan"
+        "dynamodb:Query"
       ],
-      resources: [releasesTable.tableArn]
+      resources: [releasesTable.tableArn, `${releasesTable.tableArn}/index/byWorkspace`]
     }));
     dashboardInstanceRole.addToPolicy(new iam.PolicyStatement({
       actions: [
@@ -511,6 +518,17 @@ export class BeamFoundationStack extends Stack {
         indexName: "byAccount",
         partitionKey: {
           name: "accountId",
+          type: dynamodb.AttributeType.STRING
+        },
+        projectionType: dynamodb.ProjectionType.ALL
+      });
+    }
+
+    if (definition.workspaceIndex) {
+      table.addGlobalSecondaryIndex({
+        indexName: "byWorkspace",
+        partitionKey: {
+          name: "workspaceId",
           type: dynamodb.AttributeType.STRING
         },
         projectionType: dynamodb.ProjectionType.ALL

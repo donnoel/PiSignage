@@ -3,7 +3,7 @@ import {
   DeleteItemCommand,
   DynamoDBClient,
   PutItemCommand,
-  ScanCommand,
+  QueryCommand,
   TransactWriteItemsCommand
 } from "@aws-sdk/client-dynamodb";
 import type { AttributeValue } from "@aws-sdk/client-dynamodb";
@@ -24,7 +24,7 @@ import {
   writeDeviceStore,
   writeScreenStore
 } from "./local-data-store";
-import { filterWorkspaceItems, requireActiveWorkspacePermission, withDefaultWorkspace, workspaceIdOrDefault } from "./workspace";
+import { activeWorkspaceId, requireActiveWorkspacePermission, withDefaultWorkspace, workspaceIdOrDefault } from "./workspace";
 
 type InventoryStore = {
   devices: DeviceStore;
@@ -319,13 +319,18 @@ function deviceFromItem(item: Record<string, AttributeValue>): DeviceRecord {
   };
 }
 
-async function scanAllItems(tableName: string): Promise<Record<string, AttributeValue>[]> {
+async function queryWorkspaceItems(tableName: string): Promise<Record<string, AttributeValue>[]> {
   const items: Record<string, AttributeValue>[] = [];
   let exclusiveStartKey: Record<string, AttributeValue> | undefined;
 
   do {
-    const result = await dynamoDb.send(new ScanCommand({
+    const result = await dynamoDb.send(new QueryCommand({
       ExclusiveStartKey: exclusiveStartKey,
+      ExpressionAttributeValues: {
+        ":workspaceId": stringAttribute(activeWorkspaceId())
+      },
+      IndexName: "byWorkspace",
+      KeyConditionExpression: "workspaceId = :workspaceId",
       TableName: tableName
     }));
     items.push(...(result.Items ?? []));
@@ -349,13 +354,13 @@ function storeFromItems<TRecord extends { updatedAt: string }>(items: TRecord[])
 
 async function readCloudInventory(config: { devicesTableName: string; screensTableName: string }): Promise<InventoryStore> {
   const [screenItems, deviceItems] = await Promise.all([
-    scanAllItems(config.screensTableName),
-    scanAllItems(config.devicesTableName)
+    queryWorkspaceItems(config.screensTableName),
+    queryWorkspaceItems(config.devicesTableName)
   ]);
 
   return {
-    devices: storeFromItems(filterWorkspaceItems(deviceItems.map(deviceFromItem))),
-    screens: storeFromItems(filterWorkspaceItems(screenItems.map(screenFromItem)))
+    devices: storeFromItems(deviceItems.map(deviceFromItem)),
+    screens: storeFromItems(screenItems.map(screenFromItem))
   };
 }
 

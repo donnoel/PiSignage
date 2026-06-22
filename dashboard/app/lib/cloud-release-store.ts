@@ -4,7 +4,7 @@ import path from "node:path";
 import {
   GetItemCommand,
   PutItemCommand,
-  ScanCommand,
+  QueryCommand,
   DynamoDBClient
 } from "@aws-sdk/client-dynamodb";
 import type { AttributeValue } from "@aws-sdk/client-dynamodb";
@@ -383,8 +383,13 @@ export async function readCloudTransferSummary(): Promise<CloudTransferSummary> 
   const items: Record<string, AttributeValue>[] = [];
   let exclusiveStartKey: Record<string, AttributeValue> | undefined;
   do {
-    const result = await dynamoDb.send(new ScanCommand({
+    const result = await dynamoDb.send(new QueryCommand({
       ExclusiveStartKey: exclusiveStartKey,
+      ExpressionAttributeValues: {
+        ":workspaceId": stringAttribute(activeWorkspaceId())
+      },
+      IndexName: "byWorkspace",
+      KeyConditionExpression: "workspaceId = :workspaceId",
       TableName: config.releasesTableName
     }));
     items.push(...(result.Items ?? []));
