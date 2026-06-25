@@ -67,6 +67,10 @@ type SortDirection = "asc" | "desc";
 type SortKey = "action" | "device" | "lastSeen" | "playback" | "playlist" | "screen" | "status" | "sync";
 
 type RowState = {
+  addressChanged: boolean;
+  addressDetail: string;
+  addressLabel: string;
+  addressValue: string;
   assignedPlaylistId: string | null;
   assignedPlaylistAssetCount: number | null;
   assignedPlaylistName: string;
@@ -93,6 +97,8 @@ type RowState = {
   resetDetail: string;
   resetLabel: string;
   resetTone: Tone;
+  reportedAddress: string | null;
+  savedAddress: string;
   syncDetail: string;
   syncLabel: string;
   syncTone: Tone;
@@ -294,7 +300,7 @@ function compareRows(left: RowState, right: RowState, sortKey: SortKey): number 
   }
 
   if (sortKey === "device") {
-    return compareText(left.device.host, right.device.host) || compareText(screenName(left), screenName(right));
+    return compareText(left.addressValue, right.addressValue) || compareText(screenName(left), screenName(right));
   }
 
   if (sortKey === "playback") {
@@ -515,6 +521,24 @@ export function DeviceHealthFleetPanel({
         const reportedPlaylistId = status?.playerStatus?.playlistId ?? null;
         const reportedPlaylistVersion = status?.playerStatus?.playlistVersion;
         const hostConfigured = Boolean(device.host.trim()) && device.host !== "Not configured";
+        const savedAddress = device.host.trim() || "Not configured";
+        const reportedAddress = status?.host?.trim() || null;
+        const addressChanged = Boolean(
+          reportedAddress &&
+          hostConfigured &&
+          normalize(reportedAddress) !== normalize(device.host)
+        );
+        const addressLabel = reportedAddress
+          ? dashboardMode === "cloud"
+            ? "Call-home"
+            : "Current"
+          : "Saved";
+        const addressValue = reportedAddress ?? savedAddress;
+        const addressDetail = reportedAddress
+          ? addressChanged
+            ? `Latest ${dashboardMode === "cloud" ? "call-home" : "reported"} address is ${reportedAddress}; saved inventory address is ${savedAddress}.`
+            : `${addressLabel} address is ${reportedAddress}.`
+          : `Saved inventory address is ${savedAddress}.`;
         let healthLabel = "Waiting";
         let healthDetail = "Saved in Beam, but this screen has not checked in yet.";
         let healthTone: Tone = "muted";
@@ -526,8 +550,12 @@ export function DeviceHealthFleetPanel({
         } else if (isLive) {
           healthLabel = reachable ? "Online" : "Offline";
           healthDetail = reachable
-            ? "Beam can reach this screen on the local network."
-            : "Beam cannot reach this screen right now.";
+            ? dashboardMode === "cloud"
+              ? "This Pi called home recently and reports network online."
+              : "Beam can reach this screen on the local network."
+            : dashboardMode === "cloud"
+              ? "This Pi has not sent a fresh online call-home report."
+              : "Beam cannot reach this screen right now.";
           healthTone = reachable ? "good" : "warn";
         }
 
@@ -619,6 +647,10 @@ export function DeviceHealthFleetPanel({
 
         return {
           device,
+          addressChanged,
+          addressDetail,
+          addressLabel,
+          addressValue,
           assignedPlaylistId: assignedPlaylistId ?? null,
           assignedPlaylistAssetCount: assignedPlaylist?.assetCount ?? null,
           assignedPlaylistName: assignedPlaylist?.name ?? "No playlist assigned",
@@ -644,6 +676,8 @@ export function DeviceHealthFleetPanel({
           resetDetail: resetState.detail,
           resetLabel: resetState.label,
           resetTone: resetState.tone,
+          reportedAddress,
+          savedAddress,
           syncDetail,
           syncLabel,
           syncTone,
@@ -655,6 +689,7 @@ export function DeviceHealthFleetPanel({
         };
       });
   }, [
+    dashboardMode,
     devices,
     deviceStatuses,
     playlistsById,
@@ -665,6 +700,9 @@ export function DeviceHealthFleetPanel({
     const searchable = [
       row.device.name,
       row.device.host,
+      row.addressValue,
+      row.reportedAddress ?? "",
+      row.savedAddress,
       row.device.location,
       row.device.group,
       row.linkedScreen?.name ?? "",
@@ -1244,7 +1282,7 @@ export function DeviceHealthFleetPanel({
           </p>
 
           <div className="mt-4 max-h-[620px] overflow-auto rounded-md border border-zinc-200">
-            <div className="grid min-w-[1180px] grid-cols-[minmax(170px,1fr)_260px_110px_120px_150px_150px_190px] gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-3 text-xs font-semibold uppercase text-zinc-500">
+            <div className="grid min-w-[1320px] grid-cols-[minmax(170px,1fr)_260px_110px_120px_150px_210px_270px] gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-3 text-xs font-semibold uppercase text-zinc-500">
               <span>Screen</span>
               <span>Playlist</span>
               <span>Status</span>
@@ -1260,7 +1298,7 @@ export function DeviceHealthFleetPanel({
                 return (
                   <li key={row.device.id}>
                     <div
-                      className={`grid min-w-[1180px] gap-3 px-4 py-3 text-left text-sm lg:grid-cols-[minmax(170px,1fr)_260px_110px_120px_150px_150px_190px] lg:items-center ${
+                      className={`grid min-w-[1320px] gap-3 px-4 py-3 text-left text-sm lg:grid-cols-[minmax(170px,1fr)_260px_110px_120px_150px_210px_270px] lg:items-center ${
                         isSelected ? "bg-teal-50" : "bg-white hover:bg-zinc-50"
                       }`}
                     >
@@ -1333,9 +1371,28 @@ export function DeviceHealthFleetPanel({
                       </span>
                       <span className="min-w-0 text-left lg:w-full">
                         <span className="block truncate font-semibold text-zinc-800">{piLabel(row.device, row.linkedScreen)}</span>
-                        <span className="mt-1 block truncate text-xs text-zinc-600">{row.device.host}</span>
+                        <span className="mt-1 block truncate text-xs text-zinc-700" title={row.addressDetail}>
+                          <span className="font-semibold">{row.addressLabel}:</span> {row.addressValue}
+                        </span>
+                        {row.addressChanged ? (
+                          <span className="mt-0.5 block truncate text-xs text-zinc-500" title={`Saved inventory address: ${row.savedAddress}`}>
+                            Saved: {row.savedAddress}
+                          </span>
+                        ) : null}
                       </span>
-                      <span className="flex min-w-[172px] flex-nowrap gap-2">
+                      <span className="flex min-w-[260px] flex-nowrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void runAction("publish", row)}
+                          disabled={!row.isLive || !row.assignedPlaylistId || isBusy}
+                          title={`Publish ${row.assignedPlaylistName} to ${screenName(row)}`}
+                          aria-label={`Publish ${row.assignedPlaylistName} to ${screenName(row)}`}
+                          aria-busy={busyAction === "publish" && busyDeviceId === row.device.id}
+                          className={`inline-flex h-9 min-w-[92px] items-center justify-center gap-1.5 rounded-md border bg-white px-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${screenActionClass("primary")}`}
+                        >
+                          <ScreenActionIcon name="playlist" />
+                          <span>{busyAction === "publish" && busyDeviceId === row.device.id ? "Publishing" : "Publish"}</span>
+                        </button>
                         <button
                           type="button"
                           onClick={() => setSelectedDeviceId(row.device.id)}
@@ -1407,8 +1464,11 @@ export function DeviceHealthFleetPanel({
                 <div>
                   <h3 className="text-2xl font-semibold">{selectedRow.linkedScreen?.name ?? selectedRow.device.name}</h3>
                   <p className="mt-1 text-sm text-zinc-600">
-                    Pi {selectedRow.device.host} / {selectedRow.linkedScreen?.location ?? selectedRow.device.location}
+                    Pi address: {selectedRow.addressLabel} {selectedRow.addressValue} / {selectedRow.linkedScreen?.location ?? selectedRow.device.location}
                   </p>
+                  {selectedRow.addressChanged ? (
+                    <p className="mt-1 text-sm text-zinc-500">Saved inventory address: {selectedRow.savedAddress}</p>
+                  ) : null}
                 </div>
                 <StatusPill
                   label={selectedRow.needsAttention ? `Needs attention: ${selectedRow.attentionReason}` : "Looks good"}
@@ -1479,7 +1539,7 @@ export function DeviceHealthFleetPanel({
                     onClick={() => void runAction("publish", selectedRow)}
                     className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
                   >
-                    {busyAction === "publish" && busyDeviceId === selectedRow.device.id ? "Publishing..." : "Retry publish"}
+                    {busyAction === "publish" && busyDeviceId === selectedRow.device.id ? "Publishing..." : "Publish playlist"}
                   </button>
                   {selectedPlayerUrl ? (
                     <a
@@ -1547,10 +1607,14 @@ export function DeviceHealthFleetPanel({
 
               <details className="mt-4 rounded-md border border-zinc-200 bg-white p-4">
                 <summary className="cursor-pointer text-sm font-semibold text-zinc-900">More details</summary>
-                <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
+                <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-6">
                   <div>
-                    <dt className="font-semibold text-zinc-500">Pi address</dt>
-                    <dd className="mt-1 break-words text-zinc-800">{selectedRow.device.host}</dd>
+                    <dt className="font-semibold text-zinc-500">{selectedRow.addressLabel} address</dt>
+                    <dd className="mt-1 break-words text-zinc-800">{selectedRow.addressValue}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-zinc-500">Saved inventory</dt>
+                    <dd className="mt-1 break-words text-zinc-800">{selectedRow.savedAddress}</dd>
                   </div>
                   <div>
                     <dt className="font-semibold text-zinc-500">Group</dt>
@@ -1566,7 +1630,9 @@ export function DeviceHealthFleetPanel({
                   </div>
                   <div>
                     <dt className="font-semibold text-zinc-500">Live target</dt>
-                    <dd className="mt-1 break-words text-zinc-800">{selectedRow.isLive ? "Configured Pi" : "Inventory only"}</dd>
+                    <dd className="mt-1 break-words text-zinc-800">
+                      {selectedRow.isLive ? (dashboardMode === "cloud" ? "Calling home" : "Configured Pi") : "Inventory only"}
+                    </dd>
                   </div>
                 </dl>
               </details>

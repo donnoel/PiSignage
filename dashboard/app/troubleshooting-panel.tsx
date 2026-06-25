@@ -130,6 +130,53 @@ function summarizePlayer(detail: string): string {
   }
 }
 
+function networkRouteInterface(detail: string): string | null {
+  return detail.match(/^defaultRoute=.*\bdev\s+(\S+)/m)?.[1] ?? null;
+}
+
+function networkInterfaceIsUp(detail: string, iface: "eth0" | "wlan0"): boolean {
+  const state = extractLineValue(detail, `${iface}OperState`);
+  if (state === "up") {
+    return true;
+  }
+
+  return detail
+    .split("\n")
+    .some((line) => line.trim().startsWith(`${iface} `) && line.includes(" UP "));
+}
+
+function summarizeNetwork(detail: string): string {
+  const routeInterface = networkRouteInterface(detail);
+  const ethernetUp = networkInterfaceIsUp(detail, "eth0");
+  const wifiUp = networkInterfaceIsUp(detail, "wlan0");
+
+  if (ethernetUp && wifiUp && routeInterface) {
+    return `Both connected (${routeInterface} route)`;
+  }
+
+  if (routeInterface === "eth0") {
+    return "Ethernet active";
+  }
+
+  if (routeInterface === "wlan0") {
+    return "Wi-Fi active";
+  }
+
+  if (ethernetUp && wifiUp) {
+    return "Both connected";
+  }
+
+  if (ethernetUp) {
+    return "Ethernet connected";
+  }
+
+  if (wifiUp) {
+    return "Wi-Fi connected";
+  }
+
+  return "No active network route";
+}
+
 function summarizeDiagnostic(item: DiagnosticItem | null): string {
   if (!item) {
     return "Not reported";
@@ -146,6 +193,10 @@ function summarizeDiagnostic(item: DiagnosticItem | null): string {
 
   if (item.label === "Player status") {
     return summarizePlayer(item.detail);
+  }
+
+  if (item.label === "Network") {
+    return summarizeNetwork(item.detail);
   }
 
   if (item.label === "Display") {
@@ -182,6 +233,10 @@ function guidanceForDiagnostic(item: DiagnosticItem | null): string {
 
   if (item.label === "Player status") {
     return "Recover can reload the playlist and refresh player evidence.";
+  }
+
+  if (item.label === "Network") {
+    return "Confirms whether Beam is reaching the Pi through Ethernet or Wi-Fi without exposing Wi-Fi credentials.";
   }
 
   if (item.label === "Display") {
@@ -262,6 +317,12 @@ function unavailableStateCards(screen: TroubleshootingScreen | null): Array<{
       value: "No live evidence"
     },
     {
+      detail: "Network route evidence is not available until this screen has a live diagnostics path.",
+      label: "Network",
+      tone: "muted",
+      value: "Not reported"
+    },
+    {
       detail: "Playback may continue locally, but Beam has not received a player status report from this screen.",
       label: "Player status",
       tone: "muted",
@@ -331,6 +392,7 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
   const latestRecovery = recoveryRuns[0] ?? null;
   const troubleshootingActivity = dedupeActivity((data?.activity ?? []).filter(isTroubleshootingActivity)).slice(0, 8);
   const serviceDiagnostic = diagnosticByLabel(diagnostics, "VLC service");
+  const networkDiagnostic = diagnosticByLabel(diagnostics, "Network");
   const playerDiagnostic = diagnosticByLabel(diagnostics, "Player status");
   const displayDiagnostic = diagnosticByLabel(diagnostics, "Display");
   const healthDiagnostic = diagnosticByLabel(diagnostics, "Health");
@@ -366,6 +428,12 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
       label: "VLC service",
       tone: serviceDiagnostic ? toneFromDiagnostic(serviceDiagnostic.status) : "muted",
       value: summarizeDiagnostic(serviceDiagnostic)
+    },
+    {
+      detail: guidanceForDiagnostic(networkDiagnostic),
+      label: "Network",
+      tone: networkDiagnostic ? toneFromDiagnostic(networkDiagnostic.status) : "muted",
+      value: summarizeDiagnostic(networkDiagnostic)
     },
     {
       detail: guidanceForDiagnostic(playerDiagnostic),

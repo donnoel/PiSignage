@@ -62,6 +62,18 @@ function summarizeDiagnostics(items) {
   }
 }
 
+function printC5WirelessChecklist(pi) {
+  console.log("\nC5 Ethernet/Wi-Fi validation gates:");
+  console.log(`- Target: ${pi?.host ?? "not configured"}; prefer C5.local on the study network.`);
+  console.log("- Wired baseline: connect Ethernet, refresh Troubleshooting, publish assigned playlist, and confirm VLC playing on the TV.");
+  console.log("- Wi-Fi setup: run device/pi/bin/pisignage-configure-wifi.sh on C5 and enter the Wi-Fi secret only at the Pi/NetworkManager prompt.");
+  console.log("- Wi-Fi-only: unplug Ethernet, wait for C5.local/SSH to recover, then rerun this drill and repeat publish/status checks.");
+  console.log("- Wireless recovery: reboot C5 with Ethernet unplugged and confirm fullscreen VLC playback returns without dashboard action.");
+  console.log("- Network loss: interrupt Wi-Fi after cached playback is visible, confirm playback continues, reconnect, then verify heartbeat/status recover.");
+  console.log("- Return-to-wired: reconnect Ethernet, rerun this drill, and confirm the Network diagnostic names the active transport.");
+  console.log("- Reset safety: run pisignage-reset-device.sh --dry-run only unless an operator explicitly approves --apply.");
+}
+
 async function printPublishFreshness() {
   const playlistPath = path.join(repoRoot, "dashboard", "local-state", "playlist.local.json");
   const publishPath = path.join(repoRoot, "dashboard", "local-state", "publish-status.json");
@@ -103,6 +115,7 @@ if (pi?.configured) {
   console.log("Pi SSH: not configured.");
 }
 summarizeDiagnostics(pi?.diagnostics);
+printC5WirelessChecklist(pi);
 
 const recovery = await fetchJson("/api/local-player/actions");
 requireOk("Recovery history", recovery);

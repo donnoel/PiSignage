@@ -50,6 +50,15 @@ function statusFromService(value: string): DiagnosticItem["status"] {
   return value.includes("ActiveState=active") ? "ok" : "warning";
 }
 
+function statusFromNetwork(value: string): DiagnosticItem["status"] {
+  const defaultRouteInterface = value.match(/^defaultRoute=.*\bdev\s+(\S+)/m)?.[1] ?? "";
+  if (defaultRouteInterface === "eth0" || defaultRouteInterface === "wlan0") {
+    return "ok";
+  }
+
+  return "warning";
+}
+
 async function readPiDiagnostics() {
   const config = readPiConfig();
   const configured = Boolean(config);
@@ -85,6 +94,11 @@ async function readPiDiagnostics() {
     "kmsprint 2>/dev/null | sed -n '1,20p' || true",
     "printf '\\n__HEALTH__\\n'",
     "printf 'uptime='; uptime -p 2>/dev/null || uptime; printf '\\ntemp='; vcgencmd measure_temp 2>/dev/null || true; printf '\\nthrottle='; vcgencmd get_throttled 2>/dev/null || true",
+    "printf '\\n__NETWORK__\\n'",
+    "printf 'defaultRoute='; ip route get 1.1.1.1 2>/dev/null | head -n 1 || true",
+    "printf '\\ninterfaces\\n'; for iface in eth0 wlan0; do ip -br -4 addr show dev \"$iface\" 2>/dev/null | awk '{print $1\" \"$2\" \"$3}'; done",
+    "printf 'eth0OperState='; cat /sys/class/net/eth0/operstate 2>/dev/null || echo unavailable",
+    "printf '\\nwlan0OperState='; cat /sys/class/net/wlan0/operstate 2>/dev/null || echo unavailable",
     "printf '\\n__LOGS__\\n'",
     "journalctl --user -u pisignage-vlc.service -n 60 --no-pager 2>/dev/null || echo logs-unavailable"
   ].join("; ");
@@ -94,7 +108,8 @@ async function readPiDiagnostics() {
     const service = textBetween(stdout, "__SERVICE__", "__PLAYER__");
     const player = textBetween(stdout, "__PLAYER__", "__DISPLAY__");
     const display = textBetween(stdout, "__DISPLAY__", "__HEALTH__");
-    const health = textBetween(stdout, "__HEALTH__", "__LOGS__");
+    const health = textBetween(stdout, "__HEALTH__", "__NETWORK__");
+    const network = textBetween(stdout, "__NETWORK__", "__LOGS__");
     const logsIndex = stdout.indexOf("__LOGS__");
     const logs = logsIndex === -1 ? "" : stdout.slice(logsIndex + "__LOGS__".length).trim();
 
@@ -108,6 +123,11 @@ async function readPiDiagnostics() {
         detail: trimmedOrUnavailable(service),
         label: "VLC service",
         status: statusFromService(service)
+      },
+      {
+        detail: trimmedOrUnavailable(network),
+        label: "Network",
+        status: statusFromNetwork(network)
       },
       {
         detail: trimmedOrUnavailable(player),

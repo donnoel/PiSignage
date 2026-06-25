@@ -42,6 +42,62 @@ Recommended baseline:
 - AWS is not required for local playback or recovery testing.
 - If Wi-Fi is unreliable, keep validating local playback and reboot recovery.
 
+## C5 Ethernet And Wi-Fi Validation
+
+For study-network testing, use C5 as the only hardware target and prefer
+`C5.local` instead of a numeric IP address. That keeps the dashboard target stable
+when C5 moves between Ethernet and Wi-Fi.
+
+Initial Wi-Fi credential entry is a local device setup step. Do not commit Wi-Fi
+secrets, paste them into docs, or add them to dashboard state. Run the helper on
+C5 and let NetworkManager prompt for the Wi-Fi password:
+
+```sh
+device/pi/bin/pisignage-configure-wifi.sh
+```
+
+The helper accepts an optional `--ssid` value, but it deliberately has no
+password flag. NetworkManager owns the credential prompt and stores the resulting
+network profile on the Pi.
+
+Use this validation sequence for C5:
+
+1. With Ethernet connected, confirm dashboard Troubleshooting can reach
+   `C5.local`, the Network diagnostic reports the active transport, and
+   `pisignage-vlc.service`, `pisignage-device-agent.service`, and
+   `pisignage-schedule.timer` are active.
+2. Publish the assigned playlist to C5 and confirm the TV keeps playing through
+   the VLC field path.
+3. Configure Wi-Fi on C5, then unplug Ethernet after the Wi-Fi connection is
+   ready.
+4. Wait for `C5.local`/SSH to recover over Wi-Fi, refresh Troubleshooting, and
+   confirm the Network diagnostic reports Wi-Fi activity without exposing SSID
+   or credential details.
+5. Force one call-home check-in, then confirm the hosted dashboard row shows the
+   current call-home address and last check-in evidence:
+
+   ```sh
+   device/pi/bin/pisignage-call-home-now.sh
+   ```
+
+6. Repeat publish, heartbeat, restart-VLC, and visible-TV playback checks while
+   Ethernet is unplugged.
+7. Reboot C5 with Ethernet unplugged and confirm unattended fullscreen playback
+   returns.
+8. Interrupt the network only after cached playback is visible; playback should
+   continue locally. Reconnect Wi-Fi and confirm heartbeat/status recover.
+9. Reconnect Ethernet and run a light publish/status check to confirm Beam still
+   works on the physical cable path.
+
+Reset validation for this workflow should use:
+
+```sh
+device/pi/bin/pisignage-reset-device.sh --dry-run
+```
+
+Do not run reset with `--apply` unless the operator explicitly approves clearing
+playlist/media/status/cache state.
+
 ## Local POC Flow
 
 For development on a workstation:
