@@ -126,6 +126,38 @@ type PublishFeedback = {
 
 type ScreenActionTone = "danger" | "neutral" | "primary";
 
+function displayedSyncState(row: RowState, publishFeedback: PublishFeedback | null): { detail: string; label: string; tone: Tone } {
+  if (publishFeedback?.status === "pending") {
+    return {
+      detail: publishFeedback.detail,
+      label: "Publishing...",
+      tone: "warn"
+    };
+  }
+
+  if (publishFeedback?.status === "success") {
+    return {
+      detail: publishFeedback.detail,
+      label: "Published",
+      tone: "good"
+    };
+  }
+
+  if (publishFeedback?.status === "error") {
+    return {
+      detail: publishFeedback.detail,
+      label: "Publish failed",
+      tone: "warn"
+    };
+  }
+
+  return {
+    detail: row.syncDetail,
+    label: row.syncLabel,
+    tone: row.syncTone
+  };
+}
+
 function screenActionClass(tone: ScreenActionTone): string {
   if (tone === "danger") {
     return "border-rose-200 text-rose-700 hover:bg-rose-50";
@@ -773,6 +805,7 @@ export function DeviceHealthFleetPanel({
   const selectedRow =
     sortedVisibleRows.find((row) => row.device.id === selectedDeviceId) ?? sortedVisibleRows[0] ?? rows[0] ?? null;
   const selectedPublishFeedback = selectedRow ? publishFeedbackByDeviceId[selectedRow.device.id] ?? null : null;
+  const selectedSyncState = selectedRow ? displayedSyncState(selectedRow, selectedPublishFeedback) : null;
   const selectedPublishPending = selectedPublishFeedback?.status === "pending";
   const selectedPlayerUrl = selectedRow ? playerUrlFor(selectedRow, liveHost, livePlayerUrl) : null;
   const selectedSshUrl = selectedRow ? sshUrlFor(selectedRow) : null;
@@ -858,6 +891,11 @@ export function DeviceHealthFleetPanel({
     const targetType = row.linkedScreen ? "screen" : "device";
     const targetId = row.linkedScreen?.id ?? row.device.id;
     setBusyAction("assign");
+    setPublishFeedbackByDeviceId((current) => {
+      const next = { ...current };
+      delete next[row.device.id];
+      return next;
+    });
     setMessage(nextPlaylistId ? `Assigning playlist to ${screenName(row)}...` : `Removing playlist from ${screenName(row)}...`);
     try {
       const response = await fetch("/api/local-playlist/assign", {
@@ -1112,12 +1150,12 @@ export function DeviceHealthFleetPanel({
         setPublishFeedbackByDeviceId((current) => ({
           ...current,
           [row.device.id]: {
-            detail: actionMessage,
+            detail: `${row.assignedPlaylistName} was published to ${targetName}.`,
             status: "success"
           }
         }));
       }
-      setMessage(actionMessage);
+      setMessage(action === "publish" ? `${row.assignedPlaylistName} was published to ${targetName}.` : actionMessage);
       startTransition(() => router.refresh());
     } catch (error) {
       if (action === "reboot") {
@@ -1332,12 +1370,13 @@ export function DeviceHealthFleetPanel({
                 const isSelected = selectedRow?.device.id === row.device.id;
                 const publishFeedback = publishFeedbackByDeviceId[row.device.id] ?? null;
                 const publishPending = publishFeedback?.status === "pending";
-                const publishFeedbackClass =
-                  publishFeedback?.status === "error"
-                    ? "text-rose-700"
-                    : publishFeedback?.status === "success"
-                      ? "text-emerald-700"
-                      : "text-amber-800";
+                const syncState = displayedSyncState(row, publishFeedback);
+                const publishPillClass =
+                  publishFeedback?.status === "success"
+                    ? "bg-emerald-100 text-emerald-800 ring-emerald-200 hover:bg-emerald-100 focus:ring-emerald-400"
+                    : publishFeedback?.status === "error"
+                      ? "bg-rose-100 text-rose-800 ring-rose-200 hover:bg-rose-100 focus:ring-rose-400"
+                      : "bg-amber-100 text-amber-900 ring-amber-200 hover:bg-amber-200 focus:ring-amber-400";
 
                 return (
                   <li key={row.device.id}>
@@ -1396,29 +1435,24 @@ export function DeviceHealthFleetPanel({
                       </span>
                       <span className="lg:justify-self-start">
                         <span className="block">
-                          {row.syncLabel === "Publish required" && row.assignedPlaylistId ? (
+                          {(row.syncLabel === "Publish required" || publishFeedback) && row.assignedPlaylistId ? (
                             <button
                               type="button"
                               disabled={isBusy}
                               onClick={() => void runAction("publish", row)}
-                              title={row.syncDetail}
+                              title={syncState.detail}
                               aria-label={`Publish ${row.assignedPlaylistName} to ${screenName(row)}`}
                               aria-busy={publishPending}
-                              className="inline-flex whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:cursor-not-allowed disabled:opacity-50"
+                              className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ring-1 focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${publishPillClass}`}
                             >
-                              {publishPending ? "Publishing..." : row.syncLabel}
+                              {syncState.label}
                             </button>
                           ) : (
-                            <span title={row.syncDetail}>
-                              <StatusPill label={row.syncLabel} tone={row.syncTone} />
+                            <span title={syncState.detail}>
+                              <StatusPill label={syncState.label} tone={syncState.tone} />
                             </span>
                           )}
                         </span>
-                        {publishFeedback ? (
-                          <span className={`mt-1 block max-w-[150px] truncate text-xs font-semibold ${publishFeedbackClass}`} role="status" aria-live="polite" title={publishFeedback.detail}>
-                            {publishFeedback.detail}
-                          </span>
-                        ) : null}
                       </span>
                       <span className="min-w-0 text-left lg:w-full">
                         <span className="block truncate font-semibold text-zinc-800">{piLabel(row.device, row.linkedScreen)}</span>
@@ -1540,12 +1574,12 @@ export function DeviceHealthFleetPanel({
                 </div>
                 <div
                   className={`rounded-md p-4 ${
-                    selectedRow.syncTone === "warn" ? "bg-amber-50 ring-1 ring-amber-100" : "bg-zinc-50"
+                    selectedSyncState?.tone === "warn" ? "bg-amber-50 ring-1 ring-amber-100" : "bg-zinc-50"
                   }`}
                 >
-                  <dt className={`text-xs font-semibold uppercase ${selectedRow.syncTone === "warn" ? "text-amber-800" : "text-zinc-500"}`}>Playlist update</dt>
-                  <dd className="mt-2 font-semibold text-zinc-950">{selectedRow.syncLabel}</dd>
-                  <dd className="mt-1 text-sm text-zinc-700">{selectedRow.syncDetail}</dd>
+                  <dt className={`text-xs font-semibold uppercase ${selectedSyncState?.tone === "warn" ? "text-amber-800" : "text-zinc-500"}`}>Playlist update</dt>
+                  <dd className="mt-2 font-semibold text-zinc-950">{selectedSyncState?.label ?? selectedRow.syncLabel}</dd>
+                  <dd className="mt-1 text-sm text-zinc-700">{selectedSyncState?.detail ?? selectedRow.syncDetail}</dd>
                 </div>
                 <div className="rounded-md bg-zinc-50 p-4">
                   <dt className="text-xs font-semibold uppercase text-zinc-500">Next action</dt>
@@ -1612,21 +1646,6 @@ export function DeviceHealthFleetPanel({
                     </a>
                   ) : null}
                 </div>
-                {selectedPublishFeedback ? (
-                  <p
-                    className={`mt-3 text-sm font-semibold ${
-                      selectedPublishFeedback.status === "error"
-                        ? "text-rose-700"
-                        : selectedPublishFeedback.status === "success"
-                          ? "text-emerald-700"
-                          : "text-amber-800"
-                    }`}
-                    role="status"
-                    aria-live="polite"
-                  >
-                    {selectedPublishFeedback.detail}
-                  </p>
-                ) : null}
                 <div className="mt-3 flex flex-wrap gap-2 border-t border-zinc-200 pt-3">
                   <button
                     type="button"
