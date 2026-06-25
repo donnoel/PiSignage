@@ -119,6 +119,11 @@ type InventoryResponse = {
   error?: string;
 };
 
+type PublishFeedback = {
+  detail: string;
+  status: "error" | "pending" | "success";
+};
+
 type ScreenActionTone = "danger" | "neutral" | "primary";
 
 function screenActionClass(tone: ScreenActionTone): string {
@@ -469,6 +474,7 @@ export function DeviceHealthFleetPanel({
   const [sortKey, setSortKey] = useState<SortKey>("screen");
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(devices[0]?.id ?? null);
   const [message, setMessage] = useState("");
+  const [publishFeedbackByDeviceId, setPublishFeedbackByDeviceId] = useState<Record<string, PublishFeedback>>({});
   const [busyAction, setBusyAction] = useState<"assign" | "inventory" | "publish" | "reboot" | "recover" | "refresh" | "reset" | "restart" | null>(null);
   const [busyDeviceId, setBusyDeviceId] = useState<string | null>(null);
   const [rebootWatch, setRebootWatch] = useState<{
@@ -766,6 +772,8 @@ export function DeviceHealthFleetPanel({
 
   const selectedRow =
     sortedVisibleRows.find((row) => row.device.id === selectedDeviceId) ?? sortedVisibleRows[0] ?? rows[0] ?? null;
+  const selectedPublishFeedback = selectedRow ? publishFeedbackByDeviceId[selectedRow.device.id] ?? null : null;
+  const selectedPublishPending = selectedPublishFeedback?.status === "pending";
   const selectedPlayerUrl = selectedRow ? playerUrlFor(selectedRow, liveHost, livePlayerUrl) : null;
   const selectedSshUrl = selectedRow ? sshUrlFor(selectedRow) : null;
   const onlineCount = rows.filter((row) => row.healthLabel === "Online").length;
@@ -1047,6 +1055,15 @@ export function DeviceHealthFleetPanel({
 
     setBusyAction(action);
     setBusyDeviceId(row.device.id);
+    if (action === "publish") {
+      setPublishFeedbackByDeviceId((current) => ({
+        ...current,
+        [row.device.id]: {
+          detail: `Publishing ${row.assignedPlaylistName} to ${targetName}...`,
+          status: "pending"
+        }
+      }));
+    }
     setMessage(
       action === "publish"
         ? `Publishing ${row.assignedPlaylistName} to ${targetName}...`
@@ -1079,6 +1096,11 @@ export function DeviceHealthFleetPanel({
                 screenId: row.linkedScreen?.id ?? undefined
               });
       const publishMessage = result.piPublish?.message ? ` ${result.piPublish.message}` : "";
+      const actionMessage =
+        result.message ??
+        (action === "publish"
+          ? `Publish sent for ${targetName}.${publishMessage}`
+          : `${row.device.name} action completed.`);
       if (action === "reboot") {
         setRebootWatch({
           baselineStatusUpdatedAt: row.lastStatusUpdatedAt,
@@ -1086,18 +1108,32 @@ export function DeviceHealthFleetPanel({
           requestedAt: new Date().toISOString()
         });
       }
-      setMessage(
-        result.message ??
-          (action === "publish"
-            ? `Playlist update retried.${publishMessage}`
-            : `${row.device.name} action completed.`)
-      );
+      if (action === "publish") {
+        setPublishFeedbackByDeviceId((current) => ({
+          ...current,
+          [row.device.id]: {
+            detail: actionMessage,
+            status: "success"
+          }
+        }));
+      }
+      setMessage(actionMessage);
       startTransition(() => router.refresh());
     } catch (error) {
       if (action === "reboot") {
         setRebootWatch(null);
       }
-      setMessage(error instanceof Error ? error.message : "Action failed.");
+      const failureMessage = error instanceof Error ? error.message : "Action failed.";
+      if (action === "publish") {
+        setPublishFeedbackByDeviceId((current) => ({
+          ...current,
+          [row.device.id]: {
+            detail: failureMessage,
+            status: "error"
+          }
+        }));
+      }
+      setMessage(failureMessage);
     } finally {
       setBusyAction(null);
       setBusyDeviceId(null);
@@ -1294,6 +1330,14 @@ export function DeviceHealthFleetPanel({
             <ol className="divide-y divide-zinc-200">
               {sortedVisibleRows.map((row) => {
                 const isSelected = selectedRow?.device.id === row.device.id;
+                const publishFeedback = publishFeedbackByDeviceId[row.device.id] ?? null;
+                const publishPending = publishFeedback?.status === "pending";
+                const publishFeedbackClass =
+                  publishFeedback?.status === "error"
+                    ? "text-rose-700"
+                    : publishFeedback?.status === "success"
+                      ? "text-emerald-700"
+                      : "text-amber-800";
 
                 return (
                   <li key={row.device.id}>
@@ -1351,23 +1395,30 @@ export function DeviceHealthFleetPanel({
                         <StatusPill label={row.playbackLabel} tone={row.playbackTone} />
                       </span>
                       <span className="lg:justify-self-start">
-                        {row.syncLabel === "Publish required" && row.assignedPlaylistId ? (
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => void runAction("publish", row)}
-                            title={row.syncDetail}
-                            aria-label={`Publish ${row.assignedPlaylistName} to ${screenName(row)}`}
-                            aria-busy={busyAction === "publish" && busyDeviceId === row.device.id}
-                            className="inline-flex whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {busyAction === "publish" && busyDeviceId === row.device.id ? "Publishing..." : row.syncLabel}
-                          </button>
-                        ) : (
-                          <span title={row.syncDetail}>
-                            <StatusPill label={row.syncLabel} tone={row.syncTone} />
+                        <span className="block">
+                          {row.syncLabel === "Publish required" && row.assignedPlaylistId ? (
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() => void runAction("publish", row)}
+                              title={row.syncDetail}
+                              aria-label={`Publish ${row.assignedPlaylistName} to ${screenName(row)}`}
+                              aria-busy={publishPending}
+                              className="inline-flex whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {publishPending ? "Publishing..." : row.syncLabel}
+                            </button>
+                          ) : (
+                            <span title={row.syncDetail}>
+                              <StatusPill label={row.syncLabel} tone={row.syncTone} />
+                            </span>
+                          )}
+                        </span>
+                        {publishFeedback ? (
+                          <span className={`mt-1 block max-w-[150px] truncate text-xs font-semibold ${publishFeedbackClass}`} role="status" aria-live="polite" title={publishFeedback.detail}>
+                            {publishFeedback.detail}
                           </span>
-                        )}
+                        ) : null}
                       </span>
                       <span className="min-w-0 text-left lg:w-full">
                         <span className="block truncate font-semibold text-zinc-800">{piLabel(row.device, row.linkedScreen)}</span>
@@ -1387,11 +1438,11 @@ export function DeviceHealthFleetPanel({
                           disabled={!row.isLive || !row.assignedPlaylistId || isBusy}
                           title={`Publish ${row.assignedPlaylistName} to ${screenName(row)}`}
                           aria-label={`Publish ${row.assignedPlaylistName} to ${screenName(row)}`}
-                          aria-busy={busyAction === "publish" && busyDeviceId === row.device.id}
+                          aria-busy={publishPending}
                           className={`inline-flex h-9 min-w-[92px] items-center justify-center gap-1.5 rounded-md border bg-white px-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${screenActionClass("primary")}`}
                         >
                           <ScreenActionIcon name="playlist" />
-                          <span>{busyAction === "publish" && busyDeviceId === row.device.id ? "Publishing" : "Publish"}</span>
+                          <span>{publishPending ? "Publishing" : "Publish"}</span>
                         </button>
                         <button
                           type="button"
@@ -1537,9 +1588,10 @@ export function DeviceHealthFleetPanel({
                     type="button"
                     disabled={!selectedRow.isLive || !selectedRow.assignedPlaylistId || isBusy}
                     onClick={() => void runAction("publish", selectedRow)}
+                    aria-busy={selectedPublishPending}
                     className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
                   >
-                    {busyAction === "publish" && busyDeviceId === selectedRow.device.id ? "Publishing..." : "Publish playlist"}
+                    {selectedPublishPending ? "Publishing..." : "Publish playlist"}
                   </button>
                   {selectedPlayerUrl ? (
                     <a
@@ -1560,6 +1612,21 @@ export function DeviceHealthFleetPanel({
                     </a>
                   ) : null}
                 </div>
+                {selectedPublishFeedback ? (
+                  <p
+                    className={`mt-3 text-sm font-semibold ${
+                      selectedPublishFeedback.status === "error"
+                        ? "text-rose-700"
+                        : selectedPublishFeedback.status === "success"
+                          ? "text-emerald-700"
+                          : "text-amber-800"
+                    }`}
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {selectedPublishFeedback.detail}
+                  </p>
+                ) : null}
                 <div className="mt-3 flex flex-wrap gap-2 border-t border-zinc-200 pt-3">
                   <button
                     type="button"
