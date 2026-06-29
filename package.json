@@ -24,7 +24,8 @@
     "test:dashboard-css": "node scripts/dashboard-css-smoke.mjs",
     "test:bad-upload": "node scripts/bad-media-upload-smoke.mjs",
     "test:bad-playback": "node scripts/bad-media-playback-smoke.mjs",
-    "test:release-hardening": "npm run typecheck && npm run test:cloud-inventory && npm run test:release-state && npm run test:schedule && npm run simulate:failures",
+    "test:vlc-boundary-handoff": "node scripts/vlc-boundary-handoff-smoke.mjs",
+    "test:release-hardening": "npm run typecheck && npm run test:cloud-inventory && npm run test:release-state && npm run test:schedule && npm run test:vlc-boundary-handoff && npm run simulate:failures",
     "drill:pi": "node scripts/pi-failure-drills.mjs",
     "generate:still-presets": "node scripts/generate-still-video-presets.mjs"
   },

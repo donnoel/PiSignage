@@ -109,6 +109,15 @@ async function waitWithPlaylistPolling(playlist, ms) {
   return { reloadRequested: false };
 }
 
+async function waitPlaybackWindow(playlist, ms, pendingPlaylistReload) {
+  if (pendingPlaylistReload) {
+    await sleep(Math.max(ms, 0));
+    return { reloadRequested: false };
+  }
+
+  return waitWithPlaylistPolling(playlist, ms);
+}
+
 function playlistSignature(rawPlaylist) {
   return createHash("sha256").update(rawPlaylist).digest("hex");
 }
@@ -419,6 +428,25 @@ async function writePlayingAssetStatus(playlist, asset, extra = {}) {
   });
 }
 
+async function loadPendingPlaylist(currentPlaylist) {
+  try {
+    const pendingPlaylist = await playableAssetsFromPlaylist();
+    if (pendingPlaylist.signature === currentPlaylist.signature) {
+      return { state: "unchanged" };
+    }
+
+    return { state: "ready", playlist: pendingPlaylist };
+  } catch (error) {
+    const message = `pending playlist is not ready: ${error instanceof Error ? error.message : String(error)}`;
+    log(message);
+    await writePlaybackStatus(currentPlaylist, "degraded", {
+      lastError: message,
+      pendingPlaylistReload: true
+    });
+    return { state: "failed" };
+  }
+}
+
 async function writeContinuousPlaybackStatus(playlist, extra = {}) {
   await writePlaybackStatus(playlist, "playing", {
     currentAssetId: null,
@@ -432,15 +460,17 @@ async function writeContinuousPlaybackStatus(playlist, extra = {}) {
 async function playPlaylist(playlist) {
   log(`playing playlist with ${playlist.assets.length} media asset(s)`);
   let statusHeartbeatTimer;
+  let activePlaylist = playlist;
   let currentIndex = 0;
-  let currentAsset = playlist.assets[currentIndex];
+  let currentAsset = activePlaylist.assets[currentIndex];
+  let pendingPlaylistReload = false;
   log(`playing asset ${currentAsset.assetId} for ${currentAsset.durationSeconds}s`);
-  await writePlayingAssetStatus(playlist, currentAsset);
+  await writePlayingAssetStatus(activePlaylist, currentAsset, { pendingPlaylistReload });
   let currentPlayer = startAssetPlayer(currentAsset);
 
   if (statusHeartbeatIntervalMs > 0) {
     statusHeartbeatTimer = setInterval(() => {
-      writePlayingAssetStatus(playlist, currentAsset).catch((error) => {
+      writePlayingAssetStatus(activePlaylist, currentAsset, { pendingPlaylistReload }).catch((error) => {
         log(`status heartbeat failed: ${error instanceof Error ? error.message : String(error)}`);
       });
     }, statusHeartbeatIntervalMs);
@@ -450,19 +480,20 @@ async function playPlaylist(playlist) {
     while (!stopping) {
       const currentDurationMs = Math.max(Math.round(currentAsset.durationSeconds * 1000), 1_000);
       const overlapMs =
-        playlist.assets.length > 1
+        activePlaylist.assets.length > 1
           ? Math.min(Math.max(playlistHandoffOverlapMs, 0), Math.max(currentDurationMs - 1_000, 0))
           : 0;
       const displayMs = Math.max(currentDurationMs - overlapMs, 1_000);
 
       const playbackResult = await Promise.race([
-        waitWithPlaylistPolling(playlist, displayMs),
+        waitPlaybackWindow(activePlaylist, displayMs, pendingPlaylistReload),
         currentPlayer.exited.then((exit) => ({ exit }))
       ]);
 
       if (playbackResult.reloadRequested) {
-        log("playlist changed; restarting VLC with the latest local playlist");
-        return;
+        pendingPlaylistReload = true;
+        log("playlist changed; staging reload for the next playlist boundary");
+        await writePlayingAssetStatus(activePlaylist, currentAsset, { pendingPlaylistReload });
       }
 
       if (playbackResult.exit && !isExpectedPlayerExit(currentPlayer, playbackResult.exit)) {
@@ -470,19 +501,20 @@ async function playPlaylist(playlist) {
           playbackResult.exit.code ?? "unknown"
         } signal ${playbackResult.exit.signal ?? "none"}`;
         quarantineAsset(currentAsset, message);
-        await writePlaybackStatus(playlist, "degraded", {
+        await writePlaybackStatus(activePlaylist, "degraded", {
           currentAssetId: currentAsset.assetId,
           currentAssetPath: currentAsset.path,
           currentAssetDurationSeconds: currentAsset.durationSeconds,
-          lastError: message
+          lastError: message,
+          pendingPlaylistReload
         });
       }
 
       let nextIndex = currentIndex;
       let nextAsset = currentAsset;
-      for (let offset = 1; offset <= playlist.assets.length; offset += 1) {
-        const candidateIndex = (currentIndex + offset) % playlist.assets.length;
-        const candidateAsset = playlist.assets[candidateIndex];
+      for (let offset = 1; offset <= activePlaylist.assets.length; offset += 1) {
+        const candidateIndex = (currentIndex + offset) % activePlaylist.assets.length;
+        const candidateAsset = activePlaylist.assets[candidateIndex];
         if (!activeQuarantineEntry(candidateAsset)) {
           nextIndex = candidateIndex;
           nextAsset = candidateAsset;
@@ -494,7 +526,37 @@ async function playPlaylist(playlist) {
         throw new Error(`No playable media assets remain in ${playlistPath}`);
       }
 
-      if (playlist.assets.length === 1) {
+      const reachedPlaylistBoundary = nextIndex <= currentIndex;
+      if (pendingPlaylistReload && reachedPlaylistBoundary) {
+        const pending = await loadPendingPlaylist(activePlaylist);
+        if (pending.state === "ready") {
+          const previousPlayer = currentPlayer;
+          const previousAsset = currentAsset;
+          activePlaylist = pending.playlist;
+          assetQuarantine.clear();
+          lastLoadedPlaylistSignature = activePlaylist.signature;
+          currentIndex = 0;
+          currentAsset = activePlaylist.assets[currentIndex];
+          pendingPlaylistReload = false;
+          log(
+            `handoff at playlist boundary from ${previousAsset.assetId} to ${currentAsset.assetId} in ${activePlaylist.playlistId} version ${activePlaylist.version}`
+          );
+          currentPlayer = startAssetPlayer(currentAsset);
+          await writePlayingAssetStatus(activePlaylist, currentAsset, { pendingPlaylistReload });
+          stopAssetPlayer(previousPlayer);
+          previousPlayer.exited.catch((error) => {
+            log(`previous VLC exit check failed: ${error instanceof Error ? error.message : String(error)}`);
+          });
+          continue;
+        }
+
+        if (pending.state === "unchanged") {
+          pendingPlaylistReload = false;
+          await writePlayingAssetStatus(activePlaylist, currentAsset, { pendingPlaylistReload });
+        }
+      }
+
+      if (activePlaylist.assets.length === 1) {
         continue;
       }
 
@@ -505,13 +567,13 @@ async function playPlaylist(playlist) {
       currentIndex = nextIndex;
       currentAsset = nextAsset;
       currentPlayer = nextPlayer;
-      await writePlayingAssetStatus(playlist, nextAsset);
+      await writePlayingAssetStatus(activePlaylist, nextAsset, { pendingPlaylistReload });
 
-      const overlapResult = await waitWithPlaylistPolling(playlist, overlapMs);
+      const overlapResult = await waitPlaybackWindow(activePlaylist, overlapMs, pendingPlaylistReload);
       if (overlapResult.reloadRequested) {
-        log("playlist changed; restarting VLC with the latest local playlist");
-        stopAssetPlayer(nextPlayer);
-        return;
+        pendingPlaylistReload = true;
+        log("playlist changed during handoff overlap; staging reload for the next playlist boundary");
+        await writePlayingAssetStatus(activePlaylist, currentAsset, { pendingPlaylistReload });
       }
 
       stopAssetPlayer(previousPlayer);
