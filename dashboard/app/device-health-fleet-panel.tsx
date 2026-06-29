@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { StatusPill } from "./dashboard-ui";
+import { assignedPlaylistIdForDevice } from "./lib/inventory-assignment";
 
 type ScreenRecord = {
   deviceId: string | null;
@@ -548,7 +549,7 @@ export function DeviceHealthFleetPanel({
       )
       .map((device) => {
         const linkedScreen = screensByDeviceId.get(device.id) ?? null;
-        const assignedPlaylistId = linkedScreen?.playlistId ?? device.playlistId;
+        const assignedPlaylistId = assignedPlaylistIdForDevice(device, linkedScreen);
         const assignedPlaylist = assignedPlaylistId ? playlistsById.get(assignedPlaylistId) : null;
         const status = deviceStatuses[device.id] ?? null;
         const isLive = Boolean(status);

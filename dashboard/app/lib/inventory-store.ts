@@ -17,6 +17,7 @@ import {
   removeDevice,
   removeScreen
 } from "./local-inventory";
+import { linkedDevicesForScreen, linkedScreensForDevice } from "./inventory-assignment";
 import {
   appendActivityRecord,
   readDeviceStore,
@@ -564,9 +565,9 @@ async function removeCloudDevice(config: { devicesTableName: string; screensTabl
 
 async function updateCloudInventory(config: { devicesTableName: string; screensTableName: string }, input: InventoryUpdateInput): Promise<void> {
   const timestamp = isoNow();
+  const inventory = await readCloudInventory(config);
 
   if (input.targetType === "screen") {
-    const inventory = await readCloudInventory(config);
     const screen = inventory.screens.items.find((item) => item.id === input.id);
     if (!screen) {
       throw new Error("Screen was not found.");
@@ -575,34 +576,75 @@ async function updateCloudInventory(config: { devicesTableName: string; screensT
       throw new Error("Screen name is required.");
     }
 
-    await dynamoDb.send(new PutItemCommand({
-      Item: screenToItem({
-        ...screen,
-        group: input.group === undefined ? screen.group : stringOrDefault(input.group, "General"),
-        location: input.location === undefined ? screen.location : stringOrDefault(input.location, "Unassigned"),
-        name: input.name?.trim() ?? screen.name,
-        playlistId: input.playlistId === undefined ? screen.playlistId : input.playlistId,
-        updatedAt: timestamp
-      }),
-      TableName: config.screensTableName
-    }));
+    const nextScreen = {
+      ...screen,
+      group: input.group === undefined ? screen.group : stringOrDefault(input.group, "General"),
+      location: input.location === undefined ? screen.location : stringOrDefault(input.location, "Unassigned"),
+      name: input.name?.trim() ?? screen.name,
+      playlistId: input.playlistId === undefined ? screen.playlistId : input.playlistId,
+      updatedAt: timestamp
+    };
+    const writes: Promise<unknown>[] = [
+      dynamoDb.send(new PutItemCommand({
+        Item: screenToItem(nextScreen),
+        TableName: config.screensTableName
+      }))
+    ];
+
+    if (input.playlistId !== undefined) {
+      const assignedPlaylistId = input.playlistId;
+      writes.push(
+        ...linkedDevicesForScreen(inventory.devices.items, screen).map((device) =>
+          dynamoDb.send(new PutItemCommand({
+            Item: deviceToItem({
+              ...device,
+              playlistId: assignedPlaylistId,
+              updatedAt: timestamp
+            }),
+            TableName: config.devicesTableName
+          }))
+        )
+      );
+    }
+
+    await Promise.all(writes);
     return;
   }
 
-  const inventory = await readCloudInventory(config);
   const device = inventory.devices.items.find((item) => item.id === input.id);
   if (!device) {
     throw new Error("Device was not found.");
   }
 
-  await dynamoDb.send(new PutItemCommand({
-    Item: deviceToItem({
-      ...device,
-      playlistId: input.playlistId === undefined ? device.playlistId : input.playlistId,
-      updatedAt: timestamp
-    }),
-    TableName: config.devicesTableName
-  }));
+  const nextDevice = {
+    ...device,
+    playlistId: input.playlistId === undefined ? device.playlistId : input.playlistId,
+    updatedAt: timestamp
+  };
+  const writes: Promise<unknown>[] = [
+    dynamoDb.send(new PutItemCommand({
+      Item: deviceToItem(nextDevice),
+      TableName: config.devicesTableName
+    }))
+  ];
+
+  if (input.playlistId !== undefined) {
+    const assignedPlaylistId = input.playlistId;
+    writes.push(
+      ...linkedScreensForDevice(inventory.screens.items, device).map((screen) =>
+        dynamoDb.send(new PutItemCommand({
+          Item: screenToItem({
+            ...screen,
+            playlistId: assignedPlaylistId,
+            updatedAt: timestamp
+          }),
+          TableName: config.screensTableName
+        }))
+      )
+    );
+  }
+
+  await Promise.all(writes);
 }
 
 export async function readInventory(fallbackPlaylistId: string): Promise<InventoryStore> {
@@ -707,6 +749,7 @@ export async function markCloudPlaylistPublished(input: {
               ...target.screen,
               desiredReleaseId: input.desiredReleaseId ?? target.screen.desiredReleaseId ?? null,
               desiredReleaseManifestChecksum: input.desiredReleaseManifestChecksum ?? target.screen.desiredReleaseManifestChecksum ?? null,
+              playlistId: input.playlistId,
               publishedAt: timestamp,
               publishedPlaylistId: input.playlistId,
               publishedPlaylistVersion: input.playlistVersion,
@@ -723,6 +766,7 @@ export async function markCloudPlaylistPublished(input: {
               ...target.device,
               desiredReleaseId: input.desiredReleaseId ?? target.device.desiredReleaseId ?? null,
               desiredReleaseManifestChecksum: input.desiredReleaseManifestChecksum ?? target.device.desiredReleaseManifestChecksum ?? null,
+              playlistId: input.playlistId,
               publishedAt: timestamp,
               publishedPlaylistId: input.playlistId,
               publishedPlaylistVersion: input.playlistVersion,

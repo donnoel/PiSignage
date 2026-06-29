@@ -9,6 +9,7 @@ import type { CloudHeartbeatState } from "./lib/cloud-heartbeat";
 import { readCloudTransferSummary, type CloudTransferSummary } from "./lib/cloud-release-store";
 import { ensureLocalDataFoundation } from "./lib/local-data-store";
 import type { DeviceRecord, DeviceStore, ScreenRecord, ScreenStore } from "./lib/local-data-store";
+import { assignedPlaylistIdForDevice } from "./lib/inventory-assignment";
 import { readInventory } from "./lib/inventory-store";
 import { localStateDirectory, publishStatusPath, repoRoot, writeFileAtomic } from "./lib/local-playlist";
 import type { Playlist, PlaylistAsset, PlaylistStore } from "./lib/local-playlist";
@@ -895,7 +896,7 @@ function expectedPlaylistForDevice(device: DeviceRecord, screens: ScreenRecord[]
     (device.screenId ? screens.find((screen) => screen.id === device.screenId) : null) ??
     screens.find((screen) => screen.deviceId === device.id) ??
     null;
-  const playlistId = linkedScreen?.playlistId ?? device.playlistId;
+  const playlistId = assignedPlaylistIdForDevice(device, linkedScreen);
 
   return playlistId ? playlistStore.items.find((playlist) => playlist.playlistId === playlistId) ?? null : null;
 }
@@ -1358,7 +1359,7 @@ function fleetCommandRows({
     )
     .map((device) => {
       const linkedScreen = screensByDeviceId.get(device.id) ?? null;
-      const assignedPlaylistId = linkedScreen?.playlistId ?? device.playlistId;
+      const assignedPlaylistId = assignedPlaylistIdForDevice(device, linkedScreen);
       const assignedPlaylist = assignedPlaylistId ? playlistsById.get(assignedPlaylistId) ?? null : null;
       const hostConfigured = Boolean(device.host.trim()) && device.host !== "Not configured";
       const deviceStatus = deviceStatuses[device.id];
