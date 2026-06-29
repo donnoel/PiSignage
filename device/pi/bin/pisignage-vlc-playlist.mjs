@@ -36,7 +36,7 @@ const playlistPollIntervalMs = Number.parseInt(
   10
 );
 const playlistHandoffOverlapMs = Number.parseInt(
-  process.env.PISIGNAGE_PLAYLIST_HANDOFF_OVERLAP_MS ?? "0",
+  process.env.PISIGNAGE_PLAYLIST_HANDOFF_OVERLAP_MS ?? "2500",
   10
 );
 const playlistPlaybackMode = process.env.PISIGNAGE_VLC_PLAYBACK_MODE ?? "continuous";
@@ -120,6 +120,27 @@ async function waitPlaybackWindow(playlist, ms, pendingPlaylistReload) {
 
 function playlistSignature(rawPlaylist) {
   return createHash("sha256").update(rawPlaylist).digest("hex");
+}
+
+function playlistDurationMs(playlist) {
+  return playlist.assets.reduce((total, asset) => {
+    const durationSeconds = Number.isFinite(asset.durationSeconds) && asset.durationSeconds > 0
+      ? asset.durationSeconds
+      : 30;
+    return total + Math.max(Math.round(durationSeconds * 1000), 1_000);
+  }, 0);
+}
+
+function millisecondsUntilPlaylistBoundary(playlist, loopStartedAtMs) {
+  const durationMs = playlistDurationMs(playlist);
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    return 1_000;
+  }
+
+  const elapsedMs = Math.max(Date.now() - loopStartedAtMs, 0);
+  const remainingMs = durationMs - (elapsedMs % durationMs);
+  const minimumLeadMs = Math.max(Math.min(playlistHandoffOverlapMs, durationMs), 1_000);
+  return remainingMs < minimumLeadMs ? remainingMs + durationMs : remainingMs;
 }
 
 async function writeStatus(update) {
@@ -590,12 +611,15 @@ async function playPlaylist(playlist) {
 async function playPlaylistContinuously(playlist) {
   log(`playing playlist continuously with ${playlist.assets.length} media asset(s)`);
   let statusHeartbeatTimer;
-  await writeContinuousPlaybackStatus(playlist);
-  const player = startPlaylistPlayer(playlist);
+  let activePlaylist = playlist;
+  let loopStartedAtMs = Date.now();
+  let pendingPlaylistReload = false;
+  await writeContinuousPlaybackStatus(activePlaylist, { pendingPlaylistReload });
+  let player = startPlaylistPlayer(activePlaylist);
 
   if (statusHeartbeatIntervalMs > 0) {
     statusHeartbeatTimer = setInterval(() => {
-      writeContinuousPlaybackStatus(playlist).catch((error) => {
+      writeContinuousPlaybackStatus(activePlaylist, { pendingPlaylistReload }).catch((error) => {
         log(`status heartbeat failed: ${error instanceof Error ? error.message : String(error)}`);
       });
     }, statusHeartbeatIntervalMs);
@@ -603,14 +627,57 @@ async function playPlaylistContinuously(playlist) {
 
   try {
     while (!stopping) {
+      const waitMs = pendingPlaylistReload
+        ? millisecondsUntilPlaylistBoundary(activePlaylist, loopStartedAtMs)
+        : playlistPollIntervalMs;
       const playbackResult = await Promise.race([
-        waitWithPlaylistPolling(playlist, playlistPollIntervalMs),
+        pendingPlaylistReload
+          ? sleep(waitMs).then(() => ({ applyPendingReload: true }))
+          : waitWithPlaylistPolling(activePlaylist, waitMs),
         player.exited.then((exit) => ({ exit }))
       ]);
 
       if (playbackResult.reloadRequested) {
-        log("playlist changed; restarting VLC with the latest local playlist");
-        return;
+        pendingPlaylistReload = true;
+        log("playlist changed; staging continuous VLC handoff for playlist boundary");
+        await writeContinuousPlaybackStatus(activePlaylist, {
+          nextPlaylistReloadAt: new Date(Date.now() + millisecondsUntilPlaylistBoundary(activePlaylist, loopStartedAtMs)).toISOString(),
+          pendingPlaylistReload
+        });
+        continue;
+      }
+
+      if (playbackResult.applyPendingReload) {
+        const pending = await loadPendingPlaylist(activePlaylist);
+        if (pending.state === "ready") {
+          const previousPlayer = player;
+          activePlaylist = pending.playlist;
+          assetQuarantine.clear();
+          lastLoadedPlaylistSignature = activePlaylist.signature;
+          pendingPlaylistReload = false;
+          loopStartedAtMs = Date.now();
+          log(
+            `handoff at playlist boundary to ${activePlaylist.playlistId} version ${activePlaylist.version}`
+          );
+          player = startPlaylistPlayer(activePlaylist);
+          await writeContinuousPlaybackStatus(activePlaylist, {
+            handoffCompletedAt: new Date().toISOString(),
+            pendingPlaylistReload
+          });
+          await sleep(Math.max(playlistHandoffOverlapMs, 0));
+          stopAssetPlayer(previousPlayer);
+          previousPlayer.exited.catch((error) => {
+            log(`previous VLC exit check failed: ${error instanceof Error ? error.message : String(error)}`);
+          });
+          continue;
+        }
+
+        if (pending.state === "unchanged") {
+          pendingPlaylistReload = false;
+          await writeContinuousPlaybackStatus(activePlaylist, { pendingPlaylistReload });
+        }
+
+        continue;
       }
 
       if (playbackResult.exit) {
@@ -621,7 +688,7 @@ async function playPlaylistContinuously(playlist) {
         const message = `VLC exited with code ${
           playbackResult.exit.code ?? "unknown"
         } signal ${playbackResult.exit.signal ?? "none"}`;
-        await writePlaybackStatus(playlist, "failed", { lastError: message });
+        await writePlaybackStatus(activePlaylist, "failed", { lastError: message });
         throw new Error(message);
       }
     }
