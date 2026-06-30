@@ -82,6 +82,7 @@ managed_bin_sources=(
   "device/pi/bin/pisignage-call-home-now.sh"
   "device/pi/bin/pisignage-configure-wifi.sh"
   "device/pi/bin/pisignage-enforce-schedule.mjs"
+  "device/pi/bin/pisignage-install-runtime.sh"
   "device/pi/bin/pisignage-serve-player.mjs"
   "device/pi/bin/pisignage-start-display.sh"
   "device/pi/bin/pisignage-vlc-playlist.mjs"

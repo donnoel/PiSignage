@@ -275,6 +275,39 @@ cat ~/.local/state/pisignage/heartbeat.json
 journalctl --user -u pisignage-device-agent.service -n 100 --no-pager
 ```
 
+## Repeatable Runtime Install/Update
+
+Use the runtime installer when setting up or refreshing a Pi. It installs the
+managed scripts into `~/.local/bin` and writes generated user services with the
+current repo path, user runtime directory, display output, display mode, and
+screen ID. This avoids relying on hidden assumptions like a specific checkout
+path or hard-coded `/run/user/1000` value.
+
+Preview the work first:
+
+```sh
+device/pi/bin/pisignage-install-runtime.sh --dry-run
+```
+
+Apply the C5-style VLC field runtime:
+
+```sh
+device/pi/bin/pisignage-install-runtime.sh \
+  --apply \
+  --field-player vlc \
+  --display-output HDMI-A-1 \
+  --display-resolution 1920x1080@60.000000
+```
+
+If schedule enforcement needs a device-specific screen ID, pass it explicitly:
+
+```sh
+device/pi/bin/pisignage-install-runtime.sh --apply --screen-id screen-primary
+```
+
+The installer does not create desktop autologin or a Wayland session. Validate
+those OS/session prerequisites during the C5 reboot and power-loss drill.
+
 ## systemd Player Service
 
 The source-controlled user service is:
@@ -283,9 +316,10 @@ The source-controlled user service is:
 device/pi/systemd/user/pisignage-player.service
 ```
 
-The service builds the player bundle before startup, then serves it with the
-local static server instead of Vite dev mode. This keeps reboot recovery local
-and avoids a development server in field-style playback.
+Build the player bundle before enabling the browser fallback service. The
+service serves `player/dist` with the local static server instead of Vite dev
+mode, which keeps reboot recovery local and avoids a development server in
+field-style playback.
 
 ## systemd Display Browser Service
 
@@ -303,15 +337,11 @@ The checked-in service defaults to field/appliance mode:
 Environment=PISIGNAGE_DISPLAY_MODE=kiosk
 ```
 
-Install or update the tracked services and launcher for the current user:
+Install or update the generated browser services and launcher for the current
+user:
 
 ```sh
-install -Dm755 device/pi/bin/pisignage-start-display.sh ~/.local/bin/pisignage-start-display.sh
-install -Dm644 device/pi/systemd/user/pisignage-player.service ~/.config/systemd/user/pisignage-player.service
-install -Dm644 device/pi/systemd/user/pisignage-kiosk.service ~/.config/systemd/user/pisignage-kiosk.service
-install -Dm644 device/pi/systemd/user/pisignage-device-agent.service ~/.config/systemd/user/pisignage-device-agent.service
-systemctl --user daemon-reload
-systemctl --user enable --now pisignage-player.service pisignage-kiosk.service pisignage-device-agent.service
+device/pi/bin/pisignage-install-runtime.sh --apply --field-player browser
 ```
 
 In kiosk mode, Chromium uses an isolated PiSignage profile and avoids desktop
@@ -359,12 +389,10 @@ Validate the playlist without taking over the TV:
 node device/pi/bin/pisignage-vlc-playlist.mjs --dry-run
 ```
 
-Install the tracked VLC service for the current user:
+Install or update the generated VLC field service for the current user:
 
 ```sh
-install -Dm755 device/pi/bin/pisignage-vlc-playlist.mjs ~/.local/bin/pisignage-vlc-playlist.mjs
-install -Dm644 device/pi/systemd/user/pisignage-vlc.service ~/.config/systemd/user/pisignage-vlc.service
-systemctl --user daemon-reload
+device/pi/bin/pisignage-install-runtime.sh --apply --field-player vlc
 ```
 
 Only one TV player should own the display during a field test. To compare VLC
@@ -414,14 +442,10 @@ Validate schedule evaluation without changing VLC:
 node device/pi/bin/pisignage-enforce-schedule.mjs --dry-run
 ```
 
-Install the tracked schedule timer for the current user:
+Install or update the generated schedule timer for the current user:
 
 ```sh
-install -Dm755 device/pi/bin/pisignage-enforce-schedule.mjs ~/.local/bin/pisignage-enforce-schedule.mjs
-install -Dm644 device/pi/systemd/user/pisignage-schedule.service ~/.config/systemd/user/pisignage-schedule.service
-install -Dm644 device/pi/systemd/user/pisignage-schedule.timer ~/.config/systemd/user/pisignage-schedule.timer
-systemctl --user daemon-reload
-systemctl --user enable --now pisignage-schedule.timer
+device/pi/bin/pisignage-install-runtime.sh --apply --field-player vlc --screen-id screen-primary
 ```
 
 Inspect the local schedule status file:
