@@ -316,12 +316,14 @@ enable_services() {
     vlc)
       print_step "enabling VLC field playback"
       apply_or_print systemctl --user disable --now pisignage-kiosk.service pisignage-player.service
-      apply_or_print systemctl --user enable --now pisignage-vlc.service
+      apply_or_print systemctl --user enable pisignage-vlc.service
+      apply_or_print systemctl --user restart pisignage-vlc.service
       ;;
     browser)
       print_step "enabling browser field playback"
       apply_or_print systemctl --user disable --now pisignage-vlc.service
-      apply_or_print systemctl --user enable --now pisignage-player.service pisignage-kiosk.service
+      apply_or_print systemctl --user enable pisignage-player.service pisignage-kiosk.service
+      apply_or_print systemctl --user restart pisignage-player.service pisignage-kiosk.service
       ;;
     none)
       print_step "field player left unchanged"
