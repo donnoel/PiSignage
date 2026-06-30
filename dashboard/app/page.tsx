@@ -250,6 +250,10 @@ function playlistWorkflowStepFrom(value: string | string[] | undefined): Playlis
   return playlistWorkflowStepIds.includes(candidate as PlaylistWorkflowStepId) ? (candidate as PlaylistWorkflowStepId) : "playlist";
 }
 
+function autoRefreshEnabledForView(view: DashboardView): boolean {
+  return view === "dashboard" || view === "screens" || view === "troubleshooting";
+}
+
 async function readJsonFile<TValue>(filePath: string): Promise<TValue | null> {
   try {
     return JSON.parse(await fs.readFile(filePath, "utf8")) as TValue;
@@ -1961,7 +1965,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   return (
     <main className="min-h-screen [overflow-x:clip] bg-[#f3f6f8] text-zinc-950">
-      <DashboardAutoRefresh />
+      <DashboardAutoRefresh enabled={autoRefreshEnabledForView(selectedView)} />
       <div className="min-h-screen">
         <aside className="border-b border-cyan-200 bg-[radial-gradient(circle_at_top_left,rgba(94,234,212,0.34),transparent_44%),linear-gradient(180deg,#e4fbf7_0%,#f1fbff_48%,#ffffff_100%)] px-5 py-5 text-slate-950 shadow-[inset_0_-1px_0_rgba(20,184,166,0.2)]">
           <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">

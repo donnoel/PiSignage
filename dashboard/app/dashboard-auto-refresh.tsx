@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useTransition } from "react";
 
 type DashboardAutoRefreshProps = {
+  enabled?: boolean;
   intervalMs?: number;
 };
 
@@ -19,7 +20,7 @@ function isEditingFormField(element: Element | null): boolean {
   return Boolean(element.closest("input, textarea, select"));
 }
 
-export function DashboardAutoRefresh({ intervalMs = 10_000 }: DashboardAutoRefreshProps) {
+export function DashboardAutoRefresh({ enabled = true, intervalMs = 30_000 }: DashboardAutoRefreshProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const pendingRef = useRef(false);
@@ -29,7 +30,14 @@ export function DashboardAutoRefresh({ intervalMs = 10_000 }: DashboardAutoRefre
   }, [isPending]);
 
   const refresh = useCallback(() => {
-    if (pendingRef.current || document.hidden || isEditingFormField(document.activeElement)) {
+    const activeElement = document.activeElement;
+    if (
+      !enabled ||
+      pendingRef.current ||
+      document.hidden ||
+      isEditingFormField(activeElement) ||
+      Boolean(activeElement instanceof Element && activeElement.closest("[data-refresh-busy='true'], [draggable='true']"))
+    ) {
       return;
     }
 
@@ -40,6 +48,10 @@ export function DashboardAutoRefresh({ intervalMs = 10_000 }: DashboardAutoRefre
   }, [router, startTransition]);
 
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
     const interval = window.setInterval(refresh, intervalMs);
     const refreshWhenVisible = () => {
       if (!document.hidden) {
@@ -53,7 +65,7 @@ export function DashboardAutoRefresh({ intervalMs = 10_000 }: DashboardAutoRefre
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [intervalMs, refresh]);
+  }, [enabled, intervalMs, refresh]);
 
   return null;
 }
