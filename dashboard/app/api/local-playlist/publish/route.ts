@@ -146,7 +146,7 @@ export async function POST(request: Request) {
               {
                 notConfigured: `Pi publish is not configured for ${device.name}; playlist stayed local.`,
                 failure: `Manual publish to ${device.name} needs attention.`,
-                success: `Published ${playlist.name} to ${device.name} at ${device.host}.`
+                success: `Published ${playlist.name} to ${device.name}'s playback cache at ${device.host}.`
               },
               piConfigForDevice(device)
             ),

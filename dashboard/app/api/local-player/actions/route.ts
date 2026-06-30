@@ -9,7 +9,7 @@ import {
   readRecoveryStore
 } from "../../../lib/local-data-store";
 import { apiErrorResponse } from "../../../lib/api-error-response";
-import { quoteRemoteShell, readPiConfig, runSsh } from "../../../lib/pi-local";
+import { playbackCachePlaylistPath, playbackCacheRoot, quoteRemoteShell, readPiConfig, runSsh } from "../../../lib/pi-local";
 import type { PiConfig } from "../../../lib/pi-local";
 import { piConfigForDevice, targetDevicesForRequest } from "../../../lib/pi-targets";
 import { activeWorkspaceSession, workspaceContextFromSession } from "../../../lib/workspace";
@@ -77,8 +77,8 @@ async function runRecoverWorkflow(config: PiConfig, actor: string): Promise<Reco
   const startedAt = nowIso();
   const displayOutput = process.env.PISIGNAGE_DISPLAY_OUTPUT?.trim() || "HDMI-A-1";
   const displayMode = process.env.PISIGNAGE_DISPLAY_RESOLUTION?.trim() || "1920x1080@60.000000";
-  const playlistPath = path.posix.join(config.root, "sample-content", "playlist.local.json");
-  const mediaPath = path.posix.join(config.root, "sample-content", "assets");
+  const playlistPath = playbackCachePlaylistPath(config);
+  const mediaPath = path.posix.join(playbackCacheRoot(config), "assets");
   const quotedDisplayOutput = quoteRemoteShell(displayOutput);
   const quotedDisplayMode = quoteRemoteShell(displayMode);
   const quotedPlaylistPath = quoteRemoteShell(playlistPath);
@@ -107,7 +107,7 @@ async function runRecoverWorkflow(config: PiConfig, actor: string): Promise<Reco
     "cat ~/.local/state/pisignage/player-status.json 2>/dev/null || echo status-file-missing"
   );
   await executeStep(
-    "Collect playlist and media sync footprint",
+    "Collect playback cache sync footprint",
     `printf 'playlist-sha='; sha256sum ${quotedPlaylistPath} 2>/dev/null || echo playlist-missing; printf '\\nasset-files='; find ${quotedMediaPath} -maxdepth 1 -type f 2>/dev/null | wc -l`
   );
   await executeStep(

@@ -661,7 +661,7 @@ function unavailablePiProbe(config: PiConfig | null, message: string): PiProbe {
 }
 
 function piProbeCacheKey(config: PiConfig): string {
-  return `${config.user}@${config.host}:${config.root}`;
+  return `${config.user}@${config.host}:${config.root}:${config.cacheRoot}`;
 }
 
 function schedulePiProbeRefresh(config: PiConfig, entry: PiProbeCacheEntry | undefined): void {
@@ -750,12 +750,7 @@ function piConfigFromInventory(inventory: { devices: DeviceStore; screens: Scree
     return fallbackConfig;
   }
 
-  return {
-    host: savedDevice.host.trim(),
-    password: fallbackConfig?.password,
-    root: savedDevice.rootPath?.trim() && savedDevice.rootPath !== "~" ? savedDevice.rootPath.trim() : fallbackConfig?.root ?? "/home/donnoel/PiSignage",
-    user: savedDevice.sshUser?.trim() || fallbackConfig?.user || "donnoel"
-  };
+  return piConfigForDevice(savedDevice);
 }
 
 async function loadPiProbe(config: PiConfig | null): Promise<PiProbe> {

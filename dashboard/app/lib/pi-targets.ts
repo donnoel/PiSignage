@@ -1,6 +1,6 @@
 import type { DeviceRecord } from "./local-data-store";
 import { readDeviceStore, readScreenStore } from "./local-data-store";
-import { readPiConfig } from "./pi-local";
+import { defaultPlaybackCacheRoot, readPiConfig } from "./pi-local";
 import type { PiConfig } from "./pi-local";
 
 function configuredDevice(device: DeviceRecord): boolean {
@@ -16,6 +16,7 @@ export function piConfigForDevice(device: DeviceRecord): PiConfig {
       : fallback?.root ?? `/home/${user}/PiSignage`;
 
   return {
+    cacheRoot: fallback?.cacheRoot ?? defaultPlaybackCacheRoot(user),
     host: device.host.trim(),
     password: fallback?.password,
     root,

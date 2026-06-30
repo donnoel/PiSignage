@@ -520,6 +520,7 @@ export async function POST(request: Request) {
       );
     }
 
+    const safeFileName = sanitizeMediaFileName(file.name);
     const cloudConfig = cloudMediaConfig();
     if (cloudConfig) {
       const folderStore = await readMediaFolderStore();
@@ -550,7 +551,6 @@ export async function POST(request: Request) {
     }
 
     await ensureLocalDataFoundation();
-    const safeFileName = sanitizeMediaFileName(file.name);
     const folderStore = await readMediaFolderStore();
     const folderId = normalizeFolderId(formData.get("folderId"), folderStore);
     const sourceType = mediaSourceTypeFromFileName(safeFileName);

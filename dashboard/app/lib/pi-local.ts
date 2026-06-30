@@ -11,6 +11,7 @@ export type PiConfig = {
   host: string;
   user: string;
   root: string;
+  cacheRoot: string;
   password?: string;
 };
 
@@ -49,6 +50,7 @@ export function describePiPublishFailure(error: unknown): string {
 
 export function readPiConfig(): PiConfig | null {
   const host = process.env.PISIGNAGE_PI_HOST?.trim();
+  const user = process.env.PISIGNAGE_PI_USER?.trim() || "donnoel";
 
   if (!host) {
     return null;
@@ -56,14 +58,27 @@ export function readPiConfig(): PiConfig | null {
 
   return {
     host,
-    user: process.env.PISIGNAGE_PI_USER?.trim() || "donnoel",
+    cacheRoot: process.env.PISIGNAGE_PI_CACHE_ROOT?.trim() || defaultPlaybackCacheRoot(user),
     root: process.env.PISIGNAGE_PI_ROOT?.trim() || "/home/donnoel/PiSignage",
+    user,
     password: process.env.PISIGNAGE_PI_PASSWORD
   };
 }
 
 export function quoteRemoteShell(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+export function defaultPlaybackCacheRoot(user: string): string {
+  return `/home/${user}/.local/cache/pisignage/device-agent`;
+}
+
+export function playbackCacheRoot(config: PiConfig): string {
+  return config.cacheRoot.trim() || defaultPlaybackCacheRoot(config.user);
+}
+
+export function playbackCachePlaylistPath(config: PiConfig): string {
+  return path.posix.join(playbackCacheRoot(config), "playlists", "current.json");
 }
 
 function remoteLogin(config: PiConfig): string {
@@ -217,16 +232,7 @@ async function ensurePiScheduleEnforcement(config: PiConfig): Promise<void> {
 
 export function requiredRemoteAssetPaths(config: PiConfig, playlist: Playlist): string[] {
   return playlist.assets.map((asset) => {
-    const normalizedUri = path.posix.normalize(asset.uri);
-    if (
-      path.posix.isAbsolute(normalizedUri) ||
-      normalizedUri === ".." ||
-      normalizedUri.startsWith("../")
-    ) {
-      throw new Error(`Playlist asset path is not local: ${asset.assetId}`);
-    }
-
-    return path.posix.join(config.root, "sample-content", normalizedUri);
+    return path.posix.join(playbackCacheRoot(config), normalizedPlaylistAssetUri(asset));
   });
 }
 
@@ -302,13 +308,13 @@ function assetSyncMessage(summary: AssetSyncSummary): string {
     summary.verifiedByChecksum > 0
       ? `${summary.verifiedByChecksum} hash-verified`
       : `${summary.verifiedBySize} size-verified`;
-  return ` Assets checked: ${summary.checked}; copied ${summary.copied}, skipped ${summary.skipped}, removed ${summary.removed} stale; ${verification}.`;
+  return ` Playback cache assets checked: ${summary.checked}; copied ${summary.copied}, skipped ${summary.skipped}, removed ${summary.removed} stale; ${verification}.`;
 }
 
 async function pruneStaleRemoteAssets(config: PiConfig, playlist: Playlist): Promise<number> {
-  const remoteAssetDirectory = path.posix.join(config.root, "sample-content", "assets");
+  const remoteAssetDirectory = path.posix.join(playbackCacheRoot(config), "assets");
   const expectedAssetPaths = playlist.assets.map((asset) =>
-    path.posix.join(config.root, "sample-content", normalizedPlaylistAssetUri(asset))
+    path.posix.join(playbackCacheRoot(config), normalizedPlaylistAssetUri(asset))
   );
   const pruneScript = `
 node <<'NODE'
@@ -355,7 +361,7 @@ async function syncPlaylistAssetsToPi(config: PiConfig, playlist: Playlist): Pro
     const localAssetPath = await repoFilePath(path.join("sample-content", normalizedUri));
     const localAsset = await stat(localAssetPath);
     const localHash = await sha256ForFile(localAssetPath);
-    const remoteAssetPath = path.posix.join(config.root, "sample-content", normalizedUri);
+    const remoteAssetPath = path.posix.join(playbackCacheRoot(config), normalizedUri);
     const remoteHash = await remoteFileSha256(config, remoteAssetPath);
     summary.checked += 1;
 
@@ -411,8 +417,10 @@ export async function publishPlaylistToPi(
     };
   }
 
-  const remotePlaylistPath = path.posix.join(config.root, "sample-content", "playlist.local.json");
+  const remotePlaylistPath = playbackCachePlaylistPath(config);
+  const remotePlaylistByIdPath = path.posix.join(playbackCacheRoot(config), "playlists", `${playlist.playlistId}.json`);
   const temporaryPlaylistPath = `${remotePlaylistPath}.${Date.now()}.tmp`;
+  const temporaryPlaylistByIdPath = `${remotePlaylistByIdPath}.${Date.now()}.tmp`;
 
   try {
     const assetSync = await syncPlaylistAssetsToPi(config, playlist);
@@ -421,6 +429,12 @@ export async function publishPlaylistToPi(
       requiredRemoteAssetPaths(config, playlist)
         .map((assetPath) => `test -f ${quoteRemoteShell(assetPath)}`)
         .join(" && ")
+    );
+    await runSsh(config, `mkdir -p ${quoteRemoteShell(path.posix.dirname(remotePlaylistPath))}`);
+    await runScp(config, playlistPath, temporaryPlaylistByIdPath);
+    await runSsh(
+      config,
+      `mv ${quoteRemoteShell(temporaryPlaylistByIdPath)} ${quoteRemoteShell(remotePlaylistByIdPath)}`
     );
     await runScp(config, playlistPath, temporaryPlaylistPath);
     await runSsh(
@@ -437,7 +451,7 @@ export async function publishPlaylistToPi(
       assetsVerifiedBySize: assetSync.verifiedBySize,
       enabled: true,
       ok: true,
-      message: `${messages.success ?? `Published playlist to Pi at ${config.host}.`}${assetSyncMessage(assetSync)}`
+      message: `${messages.success ?? `Published playlist to Pi playback cache at ${config.host}.`}${assetSyncMessage(assetSync)}`
     };
   } catch (error) {
     console.error("local playlist publish failed", error);
