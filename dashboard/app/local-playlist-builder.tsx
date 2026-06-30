@@ -53,6 +53,7 @@ type PlaylistBuilderProps = {
 };
 
 type PlaylistScreenAssignmentProps = {
+  defaultOpen?: boolean;
   playlistId: string;
 };
 
@@ -412,7 +413,7 @@ export function LocalPlaylistBuilder({ playlistAssetFileNames, playlistId }: Pla
   );
 }
 
-export function LocalPlaylistScreenAssignment({ playlistId }: PlaylistScreenAssignmentProps) {
+export function LocalPlaylistScreenAssignment({ defaultOpen = false, playlistId }: PlaylistScreenAssignmentProps) {
   const router = useRouter();
   const [assignments, setAssignments] = useState<AssignmentResponse | null>(null);
   const [assignmentMessage, setAssignmentMessage] = useState("Loading screens...");
@@ -486,6 +487,7 @@ export function LocalPlaylistScreenAssignment({ playlistId }: PlaylistScreenAssi
   return (
     <details
       id="playlist-screen-assignment"
+      open={defaultOpen ? true : undefined}
       tabIndex={-1}
       className="rounded-lg border border-zinc-200 bg-white shadow-sm outline-none transition-shadow"
     >

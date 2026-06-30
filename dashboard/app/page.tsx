@@ -176,9 +176,14 @@ type DashboardView =
   | "scheduling"
   | "troubleshooting";
 
+type PlaylistWorkflowStepId = "playlist" | "media" | "screens" | "publish";
+
+const playlistWorkflowStepIds: PlaylistWorkflowStepId[] = ["playlist", "media", "screens", "publish"];
+
 type DashboardPageProps = {
   searchParams?: Promise<{
     playlist?: string | string[];
+    playlistStep?: string | string[];
     screen?: string | string[];
     view?: string | string[];
   }>;
@@ -238,6 +243,11 @@ function dashboardViewFrom(value: string | string[] | undefined): DashboardView 
   }
 
   return navigationItems.some((item) => item.view === candidate) ? (candidate as DashboardView) : "dashboard";
+}
+
+function playlistWorkflowStepFrom(value: string | string[] | undefined): PlaylistWorkflowStepId {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  return playlistWorkflowStepIds.includes(candidate as PlaylistWorkflowStepId) ? (candidate as PlaylistWorkflowStepId) : "playlist";
 }
 
 async function readJsonFile<TValue>(filePath: string): Promise<TValue | null> {
@@ -1457,6 +1467,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const resolvedSearchParams = await searchParams;
   const selectedView = dashboardViewFrom(resolvedSearchParams?.view);
   const selectedPlaylistParam = scalarSearchParam(resolvedSearchParams?.playlist);
+  const selectedPlaylistStep = playlistWorkflowStepFrom(resolvedSearchParams?.playlistStep);
   const currentViewCopy = viewCopy[selectedView];
   const { cloudBilling, cloudHeartbeats, cloudTransfer, deviceStatuses, heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi } =
     await loadDashboardState(selectedPlaylistParam);
@@ -1681,6 +1692,45 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     assignedScreensLabel,
     dashboardMode
   );
+  const workflowSteps = [
+    {
+      detail: playlist.name,
+      id: "playlist" as const,
+      label: "Playlist",
+      status: `${playlistOptions.length} saved`,
+      tone: "good" as const
+    },
+    {
+      detail: totalDuration,
+      id: "media" as const,
+      label: "Add media",
+      status: playlist.assets.length > 0 ? `${playlist.assets.length} item${playlist.assets.length === 1 ? "" : "s"}` : "Empty",
+      tone: playlist.assets.length > 0 ? "good" as const : "warn" as const
+    },
+    {
+      detail: assignedScreensLabel,
+      id: "screens" as const,
+      label: "Screens",
+      status: assignedScreens.length > 0 ? `${assignedScreens.length} assigned` : "Choose screens",
+      tone: assignedScreens.length > 0 ? "good" as const : "warn" as const
+    },
+    {
+      detail: shortScreenDetail(selectedPlaylistLiveState),
+      id: "publish" as const,
+      label: "Publish",
+      status: selectedPlaylistLiveState.label,
+      tone: selectedPlaylistLiveState.tone
+    }
+  ];
+  function playlistWorkflowStepHref(stepId: PlaylistWorkflowStepId): string {
+    const params = new URLSearchParams({
+      playlist: playlist.playlistId,
+      playlistStep: stepId,
+      view: "playlist"
+    });
+
+    return `/?${params.toString()}`;
+  }
   const playlistAssetFileNames = playlist.assets.map((asset) => fileNameFromUri(asset.uri));
   const playlistSwitchOptions = playlistOptions.map((option) => ({
     assetCount: option.assets.length,
@@ -2367,81 +2417,147 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           <section
             id="playlist"
             aria-labelledby="playlist-heading"
-            className={selectedView === "playlist" ? "mt-6 space-y-4" : "hidden"}
+            className={selectedView === "playlist" ? "mt-6 space-y-5" : "hidden"}
           >
-            <div className="grid gap-4 xl:grid-cols-[minmax(260px,0.8fr)_minmax(360px,1fr)_minmax(360px,1fr)] xl:items-start">
-              <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-                <p className="text-xs font-semibold uppercase text-teal-700">Active playlist</p>
-                <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
-                  <h2 id="playlist-heading" className="min-w-0 truncate text-3xl font-semibold tracking-normal text-zinc-950" title={playlist.name}>
-                    {playlist.name}
-                  </h2>
-                  <LocalPlaylistRenameButton name={playlist.name} playlistId={playlist.playlistId} />
-                  <LocalPlaylistDeleteButton
-                    assignedScreenCount={assignedScreens.length}
-                    isOnlyPlaylist={playlistOptions.length <= 1}
-                    name={playlist.name}
-                    playlistId={playlist.playlistId}
-                  />
+            <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase text-teal-700">Playlist workflow</p>
+                  <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
+                    <h2 id="playlist-heading" className="min-w-0 truncate text-3xl font-semibold tracking-normal text-zinc-950" title={playlist.name}>
+                      {playlist.name}
+                    </h2>
+                    <LocalPlaylistRenameButton name={playlist.name} playlistId={playlist.playlistId} />
+                    <LocalPlaylistDeleteButton
+                      assignedScreenCount={assignedScreens.length}
+                      isOnlyPlaylist={playlistOptions.length <= 1}
+                      name={playlist.name}
+                      playlistId={playlist.playlistId}
+                    />
+                  </div>
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 xl:justify-end">
                   <StatusPill label={`${playlist.assets.length} items`} tone="muted" />
                   <StatusPill label={totalDuration} tone="muted" />
                   <StatusPill label={`${readyAssetCount} ready`} tone="good" />
                   {needsPrepAssetCount > 0 ? <StatusPill label={`${needsPrepAssetCount} needs prep`} tone="warn" /> : null}
                   <StatusPill label={selectedPlaylistLiveState.label} tone={selectedPlaylistLiveState.tone} />
                 </div>
-                <div className="mt-4">
-                  <LocalPlaylistCreateForm />
-                </div>
               </div>
 
-              <div className="rounded-lg border border-teal-200 bg-teal-50 p-4 shadow-sm">
-                <h3 className="text-sm font-semibold uppercase text-teal-800">Ready to send</h3>
-                <p className="mt-1 text-sm text-teal-950">{playlist.name} · {shortScreenDetail(selectedPlaylistLiveState)}</p>
-                <LocalPublishForm
-                  assetCount={playlist.assets.length}
-                  assignedScreenCount={assignedScreens.length}
-                  assignmentTargetId="playlist-screen-assignment"
-                  playlistId={playlist.playlistId}
-                />
-              </div>
+              <ol className="mt-5 grid gap-2 md:grid-cols-4" aria-label="Playlist workflow steps">
+                {workflowSteps.map((step, index) => {
+                  const selected = step.id === selectedPlaylistStep;
+                  const toneClassName = {
+                    good: "border-emerald-200 bg-emerald-50 text-emerald-950",
+                    muted: "border-zinc-200 bg-zinc-50 text-zinc-900",
+                    warn: "border-amber-200 bg-amber-50 text-amber-950"
+                  }[step.tone];
+                  const stepClassName = selected
+                    ? "border-teal-500 bg-teal-50 text-teal-950 shadow-sm ring-2 ring-teal-500 ring-offset-2 ring-offset-white"
+                    : `${toneClassName} hover:border-teal-300 hover:bg-teal-50 hover:text-teal-950`;
 
-              <div className="grid min-w-0 gap-3 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-                <LocalPlaylistSwitcher currentPlaylistId={playlist.playlistId} playlists={playlistSwitchOptions} />
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  <LocalPlaylistResetButton playlistCount={playlistOptions.length} />
-                </div>
-              </div>
+                  return (
+                    <li key={step.id} className="min-w-0">
+                      <a
+                        id={`playlist-workflow-step-${step.id}`}
+                        href={playlistWorkflowStepHref(step.id)}
+                        aria-current={selected ? "step" : undefined}
+                        className={`block min-h-full rounded-md border p-3 transition focus:outline-none focus:ring-2 focus:ring-teal-500 ${stepClassName}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-sm font-bold ring-1 ring-inset ring-current">
+                            {index + 1}
+                          </span>
+                          <span className="min-w-0 truncate text-sm font-semibold">{step.label}</span>
+                        </div>
+                        <p className="mt-2 text-sm font-semibold">{step.status}</p>
+                        <p className="mt-1 line-clamp-2 text-xs opacity-80">{step.detail}</p>
+                      </a>
+                    </li>
+                  );
+                })}
+              </ol>
             </div>
 
-            <LocalPlaylistScreenAssignment playlistId={playlist.playlistId} />
+            <div id="playlist-workflow-panel" className="min-w-0">
+              {selectedPlaylistStep === "playlist" ? (
+                <section aria-labelledby="playlist-select-heading" className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+                  <h3 id="playlist-select-heading" className="text-sm font-semibold uppercase text-zinc-600">1. Playlist</h3>
+                  <div className="mt-4 grid gap-4">
+                    <LocalPlaylistSwitcher currentPlaylistId={playlist.playlistId} playlists={playlistSwitchOptions} />
+                    <div className="border-t border-zinc-200 pt-4">
+                      <p className="text-sm font-semibold text-zinc-950">Create another playlist</p>
+                      <div className="mt-3">
+                        <LocalPlaylistCreateForm />
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 pt-4">
+                      <LocalPlaylistResetButton playlistCount={playlistOptions.length} />
+                    </div>
+                  </div>
+                </section>
+              ) : null}
 
-            <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
-              <div className="min-w-0">
-                <LocalPlaylistBuilder
-                  playlistAssetFileNames={playlistAssetFileNames}
-                  playlistId={playlist.playlistId}
-                />
-                {playlist.assets.length > 0 ? (
-                  <LocalPlaylistTimeline
-                    assets={playlist.assets}
-                    piAssetIds={Array.from(piAssetIds)}
+              {selectedPlaylistStep === "media" ? (
+                <section aria-labelledby="playlist-add-media-heading" className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
+                  <div className="border-b border-zinc-200 px-5 py-4">
+                    <h3 id="playlist-add-media-heading" className="text-sm font-semibold uppercase text-zinc-600">2. Add media</h3>
+                    <p className="mt-1 text-sm text-zinc-600">Choose from ready Pi-safe media and add it to this playlist.</p>
+                  </div>
+                  <LocalPlaylistBuilder
+                    playlistAssetFileNames={playlistAssetFileNames}
                     playlistId={playlist.playlistId}
                   />
-                ) : (
-                  <div className="px-5 py-5 text-sm text-zinc-600">
-                    Add local media to this playlist before publishing.
+                </section>
+              ) : null}
+
+              {selectedPlaylistStep === "screens" ? (
+                <section aria-labelledby="playlist-screens-heading" className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 shadow-sm">
+                  <h3 id="playlist-screens-heading" className="text-sm font-semibold uppercase text-zinc-600">3. Screens</h3>
+                  <p className="mt-1 text-sm text-zinc-600">Choose which screens should use this playlist before publishing.</p>
+                  <div className="mt-4">
+                    <LocalPlaylistScreenAssignment defaultOpen playlistId={playlist.playlistId} />
                   </div>
-                )}
-                <LocalPlaylistSequence
+                </section>
+              ) : null}
+
+              {selectedPlaylistStep === "publish" ? (
+                <section aria-labelledby="playlist-publish-heading" className="rounded-lg border border-teal-200 bg-teal-50 p-4 shadow-sm">
+                  <h3 id="playlist-publish-heading" className="text-sm font-semibold uppercase text-teal-800">4. Publish</h3>
+                  <p className="mt-1 text-sm text-teal-950">{playlist.name} · {shortScreenDetail(selectedPlaylistLiveState)}</p>
+                  <LocalPublishForm
+                    assetCount={playlist.assets.length}
+                    assignedScreenCount={assignedScreens.length}
+                    assignmentTargetId="playlist-workflow-step-screens"
+                    playlistId={playlist.playlistId}
+                  />
+                </section>
+              ) : null}
+            </div>
+
+            <section aria-labelledby="playlist-content-heading" className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
+              <div className="border-b border-zinc-200 px-5 py-4">
+                <h3 id="playlist-content-heading" className="text-sm font-semibold uppercase text-zinc-600">Timeline and media list</h3>
+                <p className="mt-1 text-sm text-zinc-600">Review the running order, then adjust names, durations, and order.</p>
+              </div>
+              {playlist.assets.length > 0 ? (
+                <LocalPlaylistTimeline
                   assets={playlist.assets}
                   piAssetIds={Array.from(piAssetIds)}
                   playlistId={playlist.playlistId}
                 />
-              </div>
-            </div>
-
+              ) : (
+                <div className="px-5 py-5 text-sm text-zinc-600">
+                  Add local media to this playlist before publishing.
+                </div>
+              )}
+              <LocalPlaylistSequence
+                assets={playlist.assets}
+                piAssetIds={Array.from(piAssetIds)}
+                playlistId={playlist.playlistId}
+              />
+            </section>
           </section>
 
         </div>

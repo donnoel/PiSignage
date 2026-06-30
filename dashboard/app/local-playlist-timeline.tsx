@@ -60,7 +60,7 @@ export function LocalPlaylistTimeline({ assets, piAssetIds, playlistId }: Playli
   const [draggedAssetId, setDraggedAssetId] = useState<string | null>(null);
   const [dropAssetId, setDropAssetId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
-  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isPending, startTransition] = useTransition();
   const piAssetSet = useMemo(() => new Set(piAssetIds), [piAssetIds]);
@@ -186,13 +186,13 @@ export function LocalPlaylistTimeline({ assets, piAssetIds, playlistId }: Playli
 
   return (
     <details
-      className="m-4 overflow-hidden rounded-lg border border-zinc-200 bg-white"
+      className="overflow-hidden bg-white"
       onToggle={(event) => setPreviewOpen(event.currentTarget.open)}
       open={previewOpen}
     >
       <summary className="flex cursor-pointer list-none flex-col gap-2 px-5 py-4 marker:hidden sm:flex-row sm:items-center sm:justify-between [&::-webkit-details-marker]:hidden">
         <div>
-          <h3 className="text-lg font-semibold text-zinc-950">Preview loop</h3>
+          <h3 className="text-lg font-semibold text-zinc-950">Timeline</h3>
           <p className="mt-1 text-sm text-zinc-600">{items.length} items in visual order.</p>
         </div>
         <div className="flex flex-col gap-2 sm:items-end">
