@@ -870,13 +870,16 @@ function cloudDeviceStatus(device: DeviceRecord, cloudHeartbeat: CloudHeartbeatS
   const ageMs = statusAgeMs(timestamp);
   const fresh = ageMs !== null && ageMs <= staleHeartbeatThresholdMs;
   const state = heartbeat.playbackState ?? (heartbeat.currentAssetId ? "playing" : "unknown");
+  const deploymentReady =
+    state === "ready-for-publishing" ||
+    heartbeat.currentPlaylistId === "playlist-ready-for-publishing";
   const playbackHealthy = fresh && state === "playing";
 
   return {
     ageLabel: formatStatusAge(timestamp),
     host: heartbeat.localIpAddress ?? device.host,
     playbackHealthy,
-    playbackLabel: playbackHealthy ? "Playing" : fresh ? "Cloud heartbeat" : "Stale",
+    playbackLabel: playbackHealthy ? "Playing" : deploymentReady && fresh ? "Ready for deployment" : fresh ? "Cloud heartbeat" : "Stale",
     playerStatus: {
       playlistId: heartbeat.currentPlaylistId ?? undefined,
       playlistVersion: heartbeat.playlistVersion ?? undefined,

@@ -652,6 +652,49 @@ export async function readInventory(fallbackPlaylistId: string): Promise<Invento
   return config ? readCloudInventory(config) : readNormalizedInventory(fallbackPlaylistId);
 }
 
+export async function ensureCloudCallHomeDevice(input: {
+  deviceId: string;
+  hostname?: string | null;
+  localIpAddress?: string | null;
+}): Promise<{ created: boolean; device: DeviceRecord | null }> {
+  const config = cloudInventoryConfig();
+  if (!config) {
+    return { created: false, device: null };
+  }
+
+  const inventory = await readCloudInventory(config);
+  const existingDevice = inventory.devices.items.find((device) => device.id === input.deviceId);
+  if (existingDevice) {
+    return { created: false, device: existingDevice };
+  }
+
+  const timestamp = isoNow();
+  const hostname = input.hostname?.trim();
+  const localIpAddress = input.localIpAddress?.trim();
+  const device: DeviceRecord = {
+    group: "Unassigned",
+    host: localIpAddress || "Not configured",
+    id: input.deviceId,
+    location: "Unassigned",
+    name: hostname ? `${hostname} Pi` : `${input.deviceId} Pi`,
+    notes: "Created from device call-home.",
+    playlistId: null,
+    playerType: "vlc",
+    rootPath: "~",
+    screenId: null,
+    sshUser: "donnoel",
+    updatedAt: timestamp
+  };
+
+  await dynamoDb.send(new PutItemCommand({
+    ConditionExpression: "attribute_not_exists(deviceId)",
+    Item: deviceToItem(device),
+    TableName: config.devicesTableName
+  }));
+
+  return { created: true, device };
+}
+
 export function isCloudInventoryConfigured(): boolean {
   return cloudInventoryConfig() !== null;
 }

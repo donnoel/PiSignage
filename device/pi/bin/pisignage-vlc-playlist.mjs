@@ -1,11 +1,26 @@
 #!/usr/bin/env node
-import { constants as fsConstants } from "node:fs";
+import { constants as fsConstants, existsSync } from "node:fs";
 import { access, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
-const repoRoot = process.env.PISIGNAGE_REPO_ROOT ?? process.cwd();
+function defaultRepoRoot() {
+  const cwd = process.cwd();
+  if (existsSync(path.join(cwd, "sample-content", "playlist.local.json"))) {
+    return cwd;
+  }
+
+  const homeCheckout = path.join(process.env.HOME ?? "", "PiSignage");
+  if (existsSync(path.join(homeCheckout, "sample-content", "playlist.local.json"))) {
+    return homeCheckout;
+  }
+
+  return cwd;
+}
+
+const repoRoot = path.resolve(process.env.PISIGNAGE_REPO_ROOT ?? defaultRepoRoot());
 const contentRoot = path.resolve(
   repoRoot,
   process.env.PISIGNAGE_CONTENT_ROOT ?? "sample-content"
@@ -58,6 +73,32 @@ const assetQuarantineWindowMs = Number.parseInt(
   process.env.PISIGNAGE_ASSET_QUARANTINE_WINDOW_MS ?? "300000",
   10
 );
+const readyScreenPath = path.resolve(
+  process.env.PISIGNAGE_READY_SCREEN_PATH ??
+    path.join(process.env.HOME ?? repoRoot, ".local/state/pisignage/ready-screen.mp4")
+);
+const readyScreenTextPath = path.resolve(
+  process.env.PISIGNAGE_READY_SCREEN_TEXT_PATH ??
+    path.join(process.env.HOME ?? repoRoot, ".local/state/pisignage/ready-screen.txt")
+);
+const readyScreenFramePath = path.resolve(
+  process.env.PISIGNAGE_READY_SCREEN_FRAME_PATH ??
+    path.join(process.env.HOME ?? repoRoot, ".local/state/pisignage/ready-screen.ppm")
+);
+const readyScreenLogoPath = path.resolve(
+  process.env.PISIGNAGE_READY_SCREEN_LOGO_PATH ??
+    path.join(repoRoot, "device/pi/assets/ad-dad-logo.png")
+);
+const readyScreenLogoPpmPath = path.resolve(
+  process.env.PISIGNAGE_READY_SCREEN_LOGO_PPM_PATH ??
+    path.join(repoRoot, "device/pi/assets/ad-dad-logo.ppm")
+);
+const readyScreenDurationSeconds = Number.parseInt(
+  process.env.PISIGNAGE_READY_SCREEN_DURATION_SECONDS ?? "10",
+  10
+);
+const internetPingTarget = process.env.PISIGNAGE_READY_SCREEN_PING_TARGET ?? "1.1.1.1";
+const renderReadyScreenOnly = process.argv.includes("--render-ready-screen");
 
 let stopping = false;
 const activePlayers = new Set();
@@ -85,6 +126,14 @@ let activeStatus = {
   lastError: null
 };
 
+class StandbyPlaylistError extends Error {
+  constructor(message, metadata = {}) {
+    super(message);
+    this.name = "StandbyPlaylistError";
+    this.metadata = metadata;
+  }
+}
+
 function log(message) {
   console.log(`${new Date().toISOString()} ${message}`);
 }
@@ -97,6 +146,34 @@ function fail(message) {
 function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
+  });
+}
+
+function captureCommand(command, args, timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, {
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+    }, timeoutMs);
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      resolve({ ok: false, stdout, stderr: error.message });
+    });
+    child.on("exit", (code, signal) => {
+      clearTimeout(timer);
+      resolve({ ok: code === 0, stdout, stderr, code, signal });
+    });
   });
 }
 
@@ -252,11 +329,442 @@ async function writePlaybackStatus(playlist, state, extra = {}) {
   });
 }
 
+function isFirstRunFallbackPlaylist(playlist) {
+  const assets = Array.isArray(playlist?.assets) ? playlist.assets : [];
+  return (
+    playlist?.playlistId === "playlist-first-run-fallback" ||
+    assets.some((asset) => asset?.assetId === "asset-beam-ready-fallback")
+  );
+}
+
+function localIpAddressFallback() {
+  for (const addresses of Object.values(os.networkInterfaces())) {
+    for (const address of addresses ?? []) {
+      if (address.family === "IPv4" && !address.internal) {
+        return address.address;
+      }
+    }
+  }
+  return "Not assigned";
+}
+
+async function defaultRouteDetails() {
+  const route = await captureCommand("ip", ["route", "get", internetPingTarget], 2500);
+  const routeText = route.stdout.trim();
+  const sourceMatch = routeText.match(/\bsrc\s+(\S+)/);
+  const gatewayMatch = routeText.match(/\bvia\s+(\S+)/);
+  if (route.ok && (sourceMatch || gatewayMatch)) {
+    return {
+      ipAddress: sourceMatch?.[1] ?? localIpAddressFallback(),
+      gateway: gatewayMatch?.[1] ?? "Direct route"
+    };
+  }
+
+  const defaultRoute = await captureCommand("ip", ["route", "show", "default"], 2500);
+  const defaultText = defaultRoute.stdout.trim();
+  const defaultGatewayMatch = defaultText.match(/\bvia\s+(\S+)/);
+  return {
+    ipAddress: localIpAddressFallback(),
+    gateway: defaultGatewayMatch?.[1] ?? "Not detected"
+  };
+}
+
+async function readDeviceConfig() {
+  const configPath = path.join(process.env.HOME ?? "", ".config/pisignage/device.json");
+  if (!configPath.startsWith(path.sep)) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(await readFile(configPath, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+async function internetStatus() {
+  const ping = await captureCommand("ping", ["-c", "1", "-W", "2", internetPingTarget], 3500);
+  return ping.ok ? "connected" : "not connected";
+}
+
+async function collectReadyScreenDetails(reason) {
+  const [route, config, internet] = await Promise.all([
+    defaultRouteDetails(),
+    readDeviceConfig(),
+    internetStatus()
+  ]);
+  const hostname = os.hostname();
+  const deviceId =
+    process.env.PISIGNAGE_DEVICE_ID ??
+    (typeof config.deviceId === "string" && config.deviceId.trim() ? config.deviceId.trim() : null);
+  const deviceName = process.env.PISIGNAGE_DEVICE_NAME ?? hostname;
+
+  return {
+    generatedAt: new Date().toISOString(),
+    deviceName,
+    deviceId,
+    hostname,
+    ipAddress: route.ipAddress,
+    gateway: route.gateway,
+    internet,
+    readyForPublishing: true,
+    reason
+  };
+}
+
+function firstExistingPath(paths) {
+  return paths.find((candidate) => {
+    try {
+      return candidate && existsSync(candidate);
+    } catch {
+      return false;
+    }
+  });
+}
+
+function ffmpegBinaryCandidates() {
+  if (process.env.PISIGNAGE_FFMPEG_BIN) {
+    return [process.env.PISIGNAGE_FFMPEG_BIN];
+  }
+  return ["/usr/bin/ffmpeg", "/opt/homebrew/bin/ffmpeg", "ffmpeg"];
+}
+
+function safeReadyText(value) {
+  return String(value ?? "Not detected").replace(/[\r\n]+/g, " ").trim();
+}
+
+const bitmapGlyphs = {
+  " ": ["00000", "00000", "00000", "00000", "00000", "00000", "00000"],
+  "A": ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
+  "B": ["11110", "10001", "10001", "11110", "10001", "10001", "11110"],
+  "C": ["01111", "10000", "10000", "10000", "10000", "10000", "01111"],
+  "D": ["11110", "10001", "10001", "10001", "10001", "10001", "11110"],
+  "E": ["11111", "10000", "10000", "11110", "10000", "10000", "11111"],
+  "F": ["11111", "10000", "10000", "11110", "10000", "10000", "10000"],
+  "G": ["01111", "10000", "10000", "10011", "10001", "10001", "01111"],
+  "H": ["10001", "10001", "10001", "11111", "10001", "10001", "10001"],
+  "I": ["11111", "00100", "00100", "00100", "00100", "00100", "11111"],
+  "J": ["00111", "00010", "00010", "00010", "10010", "10010", "01100"],
+  "K": ["10001", "10010", "10100", "11000", "10100", "10010", "10001"],
+  "L": ["10000", "10000", "10000", "10000", "10000", "10000", "11111"],
+  "M": ["10001", "11011", "10101", "10101", "10001", "10001", "10001"],
+  "N": ["10001", "11001", "10101", "10011", "10001", "10001", "10001"],
+  "O": ["01110", "10001", "10001", "10001", "10001", "10001", "01110"],
+  "P": ["11110", "10001", "10001", "11110", "10000", "10000", "10000"],
+  "Q": ["01110", "10001", "10001", "10001", "10101", "10010", "01101"],
+  "R": ["11110", "10001", "10001", "11110", "10100", "10010", "10001"],
+  "S": ["01111", "10000", "10000", "01110", "00001", "00001", "11110"],
+  "T": ["11111", "00100", "00100", "00100", "00100", "00100", "00100"],
+  "U": ["10001", "10001", "10001", "10001", "10001", "10001", "01110"],
+  "V": ["10001", "10001", "10001", "10001", "10001", "01010", "00100"],
+  "W": ["10001", "10001", "10001", "10101", "10101", "10101", "01010"],
+  "X": ["10001", "10001", "01010", "00100", "01010", "10001", "10001"],
+  "Y": ["10001", "10001", "01010", "00100", "00100", "00100", "00100"],
+  "Z": ["11111", "00001", "00010", "00100", "01000", "10000", "11111"],
+  "0": ["01110", "10001", "10011", "10101", "11001", "10001", "01110"],
+  "1": ["00100", "01100", "00100", "00100", "00100", "00100", "01110"],
+  "2": ["01110", "10001", "00001", "00010", "00100", "01000", "11111"],
+  "3": ["11110", "00001", "00001", "01110", "00001", "00001", "11110"],
+  "4": ["00010", "00110", "01010", "10010", "11111", "00010", "00010"],
+  "5": ["11111", "10000", "10000", "11110", "00001", "00001", "11110"],
+  "6": ["00110", "01000", "10000", "11110", "10001", "10001", "01110"],
+  "7": ["11111", "00001", "00010", "00100", "01000", "01000", "01000"],
+  "8": ["01110", "10001", "10001", "01110", "10001", "10001", "01110"],
+  "9": ["01110", "10001", "10001", "01111", "00001", "00010", "01100"],
+  ".": ["00000", "00000", "00000", "00000", "00000", "01100", "01100"],
+  "-": ["00000", "00000", "00000", "11111", "00000", "00000", "00000"],
+  ":": ["00000", "01100", "01100", "00000", "01100", "01100", "00000"],
+  "(": ["00010", "00100", "01000", "01000", "01000", "00100", "00010"],
+  ")": ["01000", "00100", "00010", "00010", "00010", "00100", "01000"],
+  "/": ["00001", "00010", "00010", "00100", "01000", "01000", "10000"],
+  "_": ["00000", "00000", "00000", "00000", "00000", "00000", "11111"]
+};
+
+function readyScreenDuration() {
+  return Number.isFinite(readyScreenDurationSeconds)
+    ? Math.max(readyScreenDurationSeconds, 5)
+    : 30;
+}
+
+function fitReadyLine(value, maxLength = 35) {
+  const upper = safeReadyText(value).toUpperCase();
+  return upper.length > maxLength ? `${upper.slice(0, maxLength - 3)}...` : upper;
+}
+
+function blendPixel(buffer, width, height, x, y, color, alpha = 1) {
+  if (x < 0 || y < 0 || x >= width || y >= height) {
+    return;
+  }
+  const offset = (y * width + x) * 3;
+  const inverse = 1 - alpha;
+  buffer[offset] = Math.round(buffer[offset] * inverse + color[0] * alpha);
+  buffer[offset + 1] = Math.round(buffer[offset + 1] * inverse + color[1] * alpha);
+  buffer[offset + 2] = Math.round(buffer[offset + 2] * inverse + color[2] * alpha);
+}
+
+function fillRect(buffer, width, height, x, y, rectWidth, rectHeight, color, alpha = 1) {
+  for (let row = 0; row < rectHeight; row += 1) {
+    for (let col = 0; col < rectWidth; col += 1) {
+      blendPixel(buffer, width, height, x + col, y + row, color, alpha);
+    }
+  }
+}
+
+function strokeRect(buffer, width, height, x, y, rectWidth, rectHeight, color, thickness = 4) {
+  fillRect(buffer, width, height, x, y, rectWidth, thickness, color);
+  fillRect(buffer, width, height, x, y + rectHeight - thickness, rectWidth, thickness, color);
+  fillRect(buffer, width, height, x, y, thickness, rectHeight, color);
+  fillRect(buffer, width, height, x + rectWidth - thickness, y, thickness, rectHeight, color);
+}
+
+function drawText(buffer, width, height, text, x, y, scale, color, spacing = scale) {
+  let cursorX = x;
+  for (const character of fitReadyLine(text, 80).toUpperCase()) {
+    const glyph = bitmapGlyphs[character] ?? bitmapGlyphs[" "];
+    for (let row = 0; row < glyph.length; row += 1) {
+      for (let col = 0; col < glyph[row].length; col += 1) {
+        if (glyph[row][col] !== "1") {
+          continue;
+        }
+        fillRect(buffer, width, height, cursorX + col * scale, y + row * scale, scale, scale, color);
+      }
+    }
+    cursorX += glyph[0].length * scale + spacing;
+  }
+}
+
+function parsePpm(buffer) {
+  let offset = 0;
+  const tokens = [];
+  while (tokens.length < 4 && offset < buffer.length) {
+    while (/\s/.test(String.fromCharCode(buffer[offset] ?? 32))) {
+      offset += 1;
+    }
+    if (buffer[offset] === 35) {
+      while (offset < buffer.length && buffer[offset] !== 10) {
+        offset += 1;
+      }
+      continue;
+    }
+    const start = offset;
+    while (offset < buffer.length && !/\s/.test(String.fromCharCode(buffer[offset]))) {
+      offset += 1;
+    }
+    tokens.push(buffer.subarray(start, offset).toString("ascii"));
+  }
+  while (/\s/.test(String.fromCharCode(buffer[offset] ?? 32))) {
+    offset += 1;
+  }
+  if (tokens[0] !== "P6") {
+    throw new Error(`Unsupported logo PPM format: ${tokens[0] ?? "unknown"}`);
+  }
+  const width = Number.parseInt(tokens[1], 10);
+  const height = Number.parseInt(tokens[2], 10);
+  const max = Number.parseInt(tokens[3], 10);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || max !== 255) {
+    throw new Error("Unsupported logo PPM dimensions or color depth.");
+  }
+  return {
+    width,
+    height,
+    pixels: buffer.subarray(offset, offset + width * height * 3)
+  };
+}
+
+function overlayPpm(target, width, height, logo, x, y) {
+  for (let row = 0; row < logo.height; row += 1) {
+    for (let col = 0; col < logo.width; col += 1) {
+      const sourceOffset = (row * logo.width + col) * 3;
+      blendPixel(target, width, height, x + col, y + row, [
+        logo.pixels[sourceOffset],
+        logo.pixels[sourceOffset + 1],
+        logo.pixels[sourceOffset + 2]
+      ]);
+    }
+  }
+}
+
+async function renderReadyScreenFrame(details) {
+  const width = 1920;
+  const height = 1080;
+  const pixels = Buffer.alloc(width * height * 3);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 3;
+      const xRatio = x / width;
+      const yRatio = y / height;
+      pixels[offset] = Math.round(9 + 22 * xRatio + 9 * yRatio);
+      pixels[offset + 1] = Math.round(28 + 18 * yRatio + 5 * xRatio);
+      pixels[offset + 2] = Math.round(56 + 42 * xRatio + 18 * yRatio);
+    }
+  }
+
+  const logo = parsePpm(await readFile(readyScreenLogoPpmPath));
+  overlayPpm(pixels, width, height, logo, 68, 58);
+  fillRect(pixels, width, height, 500, 285, 920, 530, [6, 24, 45], 0.68);
+  strokeRect(pixels, width, height, 500, 285, 920, 530, [255, 138, 0], 4);
+  drawText(pixels, width, height, "BEAM DEVICE READY", 585, 348, 8, [255, 255, 255], 8);
+
+  const lines = [
+    `DEVICE: ${details.deviceId ? `${details.deviceName} (${details.deviceId})` : details.deviceName}`,
+    `HOSTNAME: ${details.hostname}`,
+    `IP ADDRESS: ${details.ipAddress}`,
+    `GATEWAY: ${details.gateway}`,
+    `INTERNET: ${details.internet}`,
+    "STATUS: READY FOR PUBLISHING"
+  ];
+  lines.forEach((line, index) => {
+    const color = index === lines.length - 1 ? [255, 179, 90] : [255, 255, 255];
+    drawText(pixels, width, height, fitReadyLine(line), 585, 452 + index * 54, 4, color, 4);
+  });
+  drawText(pixels, width, height, "WAITING FOR PLAYLIST PUBLISH", 585, 850, 5, [255, 179, 90], 5);
+
+  await mkdir(path.dirname(readyScreenFramePath), { recursive: true });
+  await writeFile(readyScreenFramePath, Buffer.concat([
+    Buffer.from(`P6\n${width} ${height}\n255\n`, "ascii"),
+    pixels
+  ]));
+  return readyScreenFramePath;
+}
+
+async function writeReadyScreenText(details) {
+  const lines = [
+    `Device name: ${safeReadyText(details.deviceName)}`,
+    `Device ID: ${safeReadyText(details.deviceId ?? "Not paired yet")}`,
+    `Hostname: ${safeReadyText(details.hostname)}`,
+    `IP address: ${safeReadyText(details.ipAddress)}`,
+    `Gateway: ${safeReadyText(details.gateway)}`,
+    `Internet: ${safeReadyText(details.internet)}`,
+    "Status: ready for publishing"
+  ];
+  await mkdir(path.dirname(readyScreenTextPath), { recursive: true });
+  await writeFile(readyScreenTextPath, `${lines.join("\n")}\n`, "utf8");
+}
+
+async function generateReadyScreenVideo(details) {
+  await access(readyScreenLogoPath, fsConstants.R_OK);
+  await access(readyScreenLogoPpmPath, fsConstants.R_OK);
+  await writeReadyScreenText(details);
+  const ffmpegBinary = firstExistingPath(ffmpegBinaryCandidates()) ?? "ffmpeg";
+  const framePath = await renderReadyScreenFrame(details);
+  const duration = readyScreenDuration();
+  const temporaryPath = `${readyScreenPath}.${process.pid}.tmp.mp4`;
+  await mkdir(path.dirname(readyScreenPath), { recursive: true });
+
+  const args = [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-y",
+    "-loop",
+    "1",
+    "-i",
+    framePath,
+    "-t",
+    String(duration),
+    "-r",
+    "30",
+    "-c:v",
+    "libx264",
+    "-preset",
+    "ultrafast",
+    "-tune",
+    "stillimage",
+    "-pix_fmt",
+    "yuv420p",
+    "-movflags",
+    "+faststart",
+    "-an",
+    temporaryPath
+  ];
+
+  await new Promise((resolve, reject) => {
+    const child = spawn(ffmpegBinary, args, { stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", reject);
+    child.on("exit", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(`ffmpeg ready-screen render failed: ${stderr.trim() || `exit ${code}`}`));
+    });
+  });
+
+  await rename(temporaryPath, readyScreenPath);
+  return readyScreenPath;
+}
+
+async function standbyVideoAsset(details) {
+  try {
+    const generatedPath = await generateReadyScreenVideo(details);
+    return {
+      assetId: "asset-beam-ready-for-publishing",
+      path: generatedPath,
+      type: "video",
+      durationSeconds: readyScreenDuration(),
+      generated: true,
+      renderError: null
+    };
+  } catch (error) {
+    const fallbackPath = path.join(contentRoot, "assets/beam-ready.signage-1080p.mp4");
+    await access(fallbackPath, fsConstants.R_OK);
+    return {
+      assetId: "asset-beam-ready-fallback",
+      path: fallbackPath,
+      type: "video",
+      durationSeconds: 10,
+      generated: false,
+      renderError: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+async function waitForPublishedPlaylist(timeoutMs) {
+  const deadline = Date.now() + Math.max(timeoutMs, 1_000);
+  let lastError = null;
+  while (!stopping && Date.now() < deadline) {
+    try {
+      const playlist = await playableAssetsFromPlaylist();
+      return { state: "ready", playlist };
+    } catch (error) {
+      lastError = error;
+      if (!(error instanceof StandbyPlaylistError)) {
+        log(`published playlist check failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    await sleep(Math.min(Math.max(playlistPollIntervalMs, 1_000), Math.max(deadline - Date.now(), 250)));
+  }
+  return { state: "waiting", lastError };
+}
+
 async function playableAssetsFromPlaylist() {
-  const rawPlaylist = await readFile(playlistPath, "utf8");
+  let rawPlaylist;
+  try {
+    rawPlaylist = await readFile(playlistPath, "utf8");
+  } catch (error) {
+    throw new StandbyPlaylistError(`Playlist file is not ready: ${playlistPath}`, {
+      playlistPath,
+      lastError: error instanceof Error ? error.message : String(error)
+    });
+  }
+
   const playlist = JSON.parse(rawPlaylist);
   const assets = Array.isArray(playlist.assets) ? playlist.assets : [];
   const playableAssets = [];
+  const signature = playlistSignature(rawPlaylist);
+
+  if (isFirstRunFallbackPlaylist(playlist)) {
+    throw new StandbyPlaylistError("First-run fallback playlist is waiting for a publish.", {
+      playlistId: playlist.playlistId ?? "playlist-first-run-fallback",
+      playlistVersion: playlist.version ?? "unknown",
+      assetCount: assets.length,
+      signature
+    });
+  }
 
   for (const asset of assets) {
     if (asset?.type !== "video") {
@@ -304,14 +812,19 @@ async function playableAssetsFromPlaylist() {
   }
 
   if (playableAssets.length === 0) {
-    throw new Error(`No playable media assets found in ${playlistPath}`);
+    throw new StandbyPlaylistError(`No playable media assets found in ${playlistPath}`, {
+      playlistId: playlist.playlistId ?? "local-playlist",
+      playlistVersion: playlist.version ?? "unknown",
+      assetCount: assets.length,
+      signature
+    });
   }
 
   return {
     playlistId: playlist.playlistId ?? "local-playlist",
     version: playlist.version ?? "unknown",
     assets: playableAssets,
-    signature: playlistSignature(rawPlaylist)
+    signature
   };
 }
 
@@ -463,6 +976,7 @@ async function writePlayingAssetStatus(playlist, asset, extra = {}) {
     currentAssetId: asset.assetId,
     currentAssetPath: asset.path,
     currentAssetDurationSeconds: asset.durationSeconds,
+    readyScreen: null,
     lastError: null,
     ...extra
   });
@@ -492,6 +1006,7 @@ async function writeContinuousPlaybackStatus(playlist, extra = {}) {
     currentAssetId: null,
     currentAssetPath: null,
     currentAssetDurationSeconds: null,
+    readyScreen: null,
     lastError: null,
     ...extra
   });
@@ -775,9 +1290,118 @@ async function playPlaylistContinuously(playlist) {
   }
 }
 
+async function writeReadyScreenStatus(playlist, details, asset, extra = {}) {
+  await writePlaybackStatus(playlist, "ready-for-publishing", {
+    currentAssetId: asset.assetId,
+    currentAssetPath: asset.path,
+    currentAssetDurationSeconds: asset.durationSeconds,
+    lastError: asset.renderError,
+    readyScreen: {
+      generated: asset.generated,
+      generatedAt: details.generatedAt,
+      deviceName: details.deviceName,
+      deviceId: details.deviceId,
+      hostname: details.hostname,
+      ipAddress: details.ipAddress,
+      gateway: details.gateway,
+      internet: details.internet,
+      readyForPublishing: details.readyForPublishing,
+      reason: details.reason
+    },
+    ...extra
+  });
+}
+
+async function playReadyScreen(standbyError) {
+  const standbyMetadata = standbyError instanceof StandbyPlaylistError ? standbyError.metadata : {};
+  const reason = standbyError instanceof Error ? standbyError.message : String(standbyError);
+
+  while (!stopping) {
+    const details = await collectReadyScreenDetails(reason);
+    const asset = await standbyVideoAsset(details);
+    const playlist = {
+      playlistId: "playlist-ready-for-publishing",
+      version: 0,
+      assets: [asset],
+      signature: standbyMetadata.signature ?? `standby-${details.generatedAt}`
+    };
+
+    log(
+      `showing Beam ready screen for ${details.deviceName} ` +
+      `(ip ${details.ipAddress}, gateway ${details.gateway}, internet ${details.internet})`
+    );
+    await writeReadyScreenStatus(playlist, details, asset, {
+      pendingPlaylistReload: false
+    });
+
+    let statusHeartbeatTimer;
+    const player = startAssetPlayer(asset);
+    if (statusHeartbeatIntervalMs > 0) {
+      statusHeartbeatTimer = setInterval(() => {
+        writeReadyScreenStatus(playlist, details, asset, {
+          pendingPlaylistReload: false
+        }).catch((error) => {
+          log(`ready-screen status heartbeat failed: ${error instanceof Error ? error.message : String(error)}`);
+        });
+      }, statusHeartbeatIntervalMs);
+    }
+
+    try {
+      while (!stopping) {
+        const waitResult = await Promise.race([
+          waitForPublishedPlaylist(Math.max(playlistPollIntervalMs, 1_000)),
+          player.exited.then((exit) => ({ state: "player-exited", exit }))
+        ]);
+
+        if (waitResult.state === "ready") {
+          stopAssetPlayer(player);
+          await player.exited.catch((error) => {
+            log(`ready-screen VLC exit check failed: ${error instanceof Error ? error.message : String(error)}`);
+          });
+          return waitResult.playlist;
+        }
+
+        if (waitResult.state === "player-exited") {
+          if (!isExpectedPlayerExit(player, waitResult.exit)) {
+            log(
+              `ready-screen VLC exited with code ${waitResult.exit.code ?? "unknown"} ` +
+              `signal ${waitResult.exit.signal ?? "none"}`
+            );
+          }
+          break;
+        }
+      }
+    } finally {
+      clearInterval(statusHeartbeatTimer);
+      stopAssetPlayer(player);
+    }
+  }
+
+  return null;
+}
+
 async function run() {
+  if (renderReadyScreenOnly) {
+    const details = await collectReadyScreenDetails("Manual ready-screen render.");
+    const asset = await standbyVideoAsset(details);
+    log(`rendered ready screen asset ${asset.path}`);
+    if (asset.renderError) {
+      log(`ready screen used fallback video: ${asset.renderError}`);
+    }
+    return;
+  }
+
   if (dryRun) {
-    const playlist = await playableAssetsFromPlaylist();
+    let playlist;
+    try {
+      playlist = await playableAssetsFromPlaylist();
+    } catch (error) {
+      if (error instanceof StandbyPlaylistError) {
+        log(`playlist is in standby state: ${error.message}`);
+        return;
+      }
+      throw error;
+    }
     log(
       `loaded ${playlist.assets.length} media asset(s) from ${playlist.playlistId} version ${playlist.version}`
     );
@@ -797,7 +1421,20 @@ async function run() {
   await waitForDisplay();
 
   while (!stopping) {
-    const playlist = await playableAssetsFromPlaylist();
+    let playlist;
+    try {
+      playlist = await playableAssetsFromPlaylist();
+    } catch (error) {
+      if (error instanceof StandbyPlaylistError) {
+        const publishedPlaylist = await playReadyScreen(error);
+        if (!publishedPlaylist) {
+          continue;
+        }
+        playlist = publishedPlaylist;
+      } else {
+        throw error;
+      }
+    }
     if (lastLoadedPlaylistSignature !== playlist.signature) {
       assetQuarantine.clear();
       lastLoadedPlaylistSignature = playlist.signature;
@@ -806,7 +1443,7 @@ async function run() {
     log(
       `loaded ${playlist.assets.length} media asset(s) from ${playlist.playlistId} version ${playlist.version}`
     );
-    await writePlaybackStatus(playlist, "playing", { lastError: null });
+    await writePlaybackStatus(playlist, "playing", { lastError: null, readyScreen: null });
     if (playlistPlaybackMode === "per-asset") {
       await playPlaylist(playlist);
     } else {

@@ -1,7 +1,7 @@
 import { DynamoDBClient, GetItemCommand, PutItemCommand } from "@aws-sdk/client-dynamodb";
 import { NextResponse } from "next/server";
 
-import { readInventory } from "../../../../lib/inventory-store";
+import { ensureCloudCallHomeDevice } from "../../../../lib/inventory-store";
 
 type RouteContext = {
   params: Promise<{
@@ -173,10 +173,11 @@ export async function POST(request: Request, context: RouteContext) {
     return errorResponse(400, "invalid_heartbeat", validationError);
   }
 
-  const inventory = await readInventory("playlist-main-playlist");
-  if (!inventory.devices.items.some((device) => device.id === deviceId)) {
-    return errorResponse(404, "device_not_found", "Device was not found.");
-  }
+  const registeredDevice = await ensureCloudCallHomeDevice({
+    deviceId,
+    hostname: stringOrNull(body.hostname),
+    localIpAddress: stringOrNull(body.localIpAddress)
+  });
 
   const receivedAt = new Date().toISOString();
   await dynamoDb.send(new PutItemCommand({
@@ -201,7 +202,7 @@ export async function POST(request: Request, context: RouteContext) {
   return NextResponse.json(
     {
       accepted: true,
-      registeredDevice: false,
+      registeredDevice: registeredDevice.created,
       serverTime: receivedAt,
       nextHeartbeatInSeconds
     },

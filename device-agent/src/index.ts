@@ -43,7 +43,7 @@ type Heartbeat = {
 type PlayerStatus = {
   currentAssetId?: string | null;
   playlistId?: string;
-  playlistVersion?: number;
+  playlistVersion?: unknown;
   state?: string;
 };
 
@@ -222,6 +222,16 @@ async function cachePlaylist(cacheDirectory: string, playlist: Playlist): Promis
 
 async function readCachedPlaylist(cacheDirectory: string): Promise<Playlist> {
   return readPlaylist(currentPlaylistCachePath(cacheDirectory));
+}
+
+function standbyPlaylist(): Playlist {
+  return {
+    assets: [],
+    name: "Ready for publishing",
+    playlistId: "playlist-ready-for-publishing",
+    updatedAt: new Date().toISOString(),
+    version: 0
+  };
 }
 
 async function readCurrentReleaseState(cacheDirectory: string): Promise<CachedReleaseState | null> {
@@ -524,7 +534,7 @@ function resetScriptPath(root: string): string {
 }
 
 function resetRebootEnabled(): boolean {
-  return process.env.PISIGNAGE_RESET_REBOOT_AFTER_SUCCESS?.trim().toLowerCase() !== "false";
+  return process.env.PISIGNAGE_RESET_REBOOT_AFTER_SUCCESS?.trim().toLowerCase() === "true";
 }
 
 function shutdownBinaryPath(): string {
@@ -677,7 +687,7 @@ async function runResetCommand(root: string, cacheDirectory: string, command: De
 
 async function fetchCloudPlaylist(cacheDirectory: string): Promise<{
   playlist: Playlist;
-  source: "cache" | "cloud";
+  source: "cache" | "cloud" | "standby";
 }> {
   const url = cloudPlaylistUrl();
   if (!url) {
@@ -693,6 +703,10 @@ async function fetchCloudPlaylist(cacheDirectory: string): Promise<{
   const body = (await response.json()) as CloudPlaylistResponse;
   if (body.command?.type === "reset-device" && body.command.status === "pending") {
     await runResetCommand(repoRoot(), cacheDirectory, body.command);
+    return {
+      playlist: standbyPlaylist(),
+      source: "standby"
+    };
   }
 
   if (body.unchanged && body.release) {
@@ -790,7 +804,7 @@ async function fetchCloudPlaylist(cacheDirectory: string): Promise<{
 async function loadPlaylist(
   playlistPath: string,
   cacheDirectory: string
-): Promise<{ playlist: Playlist; source: "playlist" | "cache" | "cloud" }> {
+): Promise<{ playlist: Playlist; source: "playlist" | "cache" | "cloud" | "standby" }> {
   if (cloudPlaylistUrl()) {
     try {
       return await fetchCloudPlaylist(cacheDirectory);
@@ -806,6 +820,11 @@ async function loadPlaylist(
           message: cacheError instanceof Error ? cacheError.message : String(cacheError)
         });
       }
+
+      return {
+        playlist: standbyPlaylist(),
+        source: "standby"
+      };
     }
   }
 
@@ -866,6 +885,10 @@ function heartbeatIntervalMs(): number {
   return seconds * 1_000;
 }
 
+function playlistVersionOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -918,7 +941,7 @@ async function runHeartbeatOnce(): Promise<void> {
     localIpAddress: localIpAddress(),
     networkOnline,
     playbackState: playerStatus?.state ?? null,
-    playlistVersion: playerStatus?.playlistVersion ?? playlist.version ?? null
+    playlistVersion: playlistVersionOrNull(playerStatus?.playlistVersion) ?? playlist.version ?? null
   };
 
   await writeJsonAtomic(heartbeatPath, heartbeat);

@@ -83,6 +83,8 @@ managed_bin_sources=(
   "device/pi/bin/pisignage-configure-wifi.sh"
   "device/pi/bin/pisignage-enforce-schedule.mjs"
   "device/pi/bin/pisignage-install-runtime.sh"
+  "device/pi/bin/pisignage-provision-device.sh"
+  "device/pi/bin/pisignage-reset-device.sh"
   "device/pi/bin/pisignage-serve-player.mjs"
   "device/pi/bin/pisignage-start-display.sh"
   "device/pi/bin/pisignage-vlc-playlist.mjs"
@@ -95,6 +97,11 @@ managed_unit_sources=(
   "device/pi/systemd/user/pisignage-schedule.service"
   "device/pi/systemd/user/pisignage-schedule.timer"
   "device/pi/systemd/user/pisignage-vlc.service"
+)
+
+required_asset_sources=(
+  "device/pi/assets/ad-dad-logo.png"
+  "device/pi/assets/ad-dad-logo.ppm"
 )
 
 print_step() {
@@ -175,7 +182,7 @@ echo "  preserves: ${config_dir}, hostname, network, SSH, OS users"
 echo "  clears: playlist publish state, stale media, schedules, player status, heartbeat, device-agent cache"
 
 print_step "checking required tracked files"
-for source in "${managed_bin_sources[@]}" "${managed_unit_sources[@]}" "sample-content/playlist.local.json"; do
+for source in "${managed_bin_sources[@]}" "${managed_unit_sources[@]}" "${required_asset_sources[@]}" "sample-content/playlist.local.json"; do
   [[ -f "${repo_root}/${source}" ]] || die "missing required reset source: ${source}"
 done
 

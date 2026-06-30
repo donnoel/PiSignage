@@ -138,8 +138,13 @@ managed_bin_sources=(
   "device/pi/bin/pisignage-vlc-playlist.mjs"
 )
 
-for source in "${managed_bin_sources[@]}"; do
-  [[ -f "${repo_root}/${source}" ]] || die "missing managed script: ${source}"
+required_asset_sources=(
+  "device/pi/assets/ad-dad-logo.png"
+  "device/pi/assets/ad-dad-logo.ppm"
+)
+
+for source in "${managed_bin_sources[@]}" "${required_asset_sources[@]}"; do
+  [[ -f "${repo_root}/${source}" ]] || die "missing runtime file: ${source}"
 done
 
 apply_or_print() {

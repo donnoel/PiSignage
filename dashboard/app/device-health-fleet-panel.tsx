@@ -251,6 +251,9 @@ function publishRequiredDetail(localVersion: number, reportedVersion: number): s
 }
 
 function plainPlaybackLabel(value: string): string {
+  if (value === "Ready for deployment") {
+    return "Ready screen";
+  }
   if (value === "Stale") {
     return "Old report";
   }
@@ -385,8 +388,8 @@ function rowActionFor(input: {
 
   if (!input.screenLinked) {
     return {
-      detail: "Link this called-home Pi to a screen name before field use.",
-      label: "Link screen",
+      detail: "Add or link this called-home Pi to a screen before publishing.",
+      label: "Add system",
       tone: "warn"
     };
   }
@@ -556,6 +559,7 @@ export function DeviceHealthFleetPanel({
         const reachable = status?.reachable ?? false;
         const rowPlaybackHealthy = status?.playbackHealthy ?? false;
         const rowPlaybackLabel = status?.playbackLabel ?? "unknown";
+        const deploymentReady = rowPlaybackLabel === "Ready for deployment";
         const rowStale = status?.stale ?? false;
         const reportedPlaylistId = status?.playerStatus?.playlistId ?? null;
         const reportedPlaylistVersion = status?.playerStatus?.playlistVersion;
@@ -586,6 +590,12 @@ export function DeviceHealthFleetPanel({
           healthLabel = "Set up needed";
           healthDetail = "Add the Pi address before Beam can check this screen.";
           healthTone = "warn";
+        } else if (isLive && deploymentReady) {
+          healthLabel = linkedScreen ? "Ready" : "Ready to add";
+          healthDetail = linkedScreen
+            ? "This Pi called home and is waiting on the deployment-ready screen."
+            : "This Pi called home and is ready to be added to a screen.";
+          healthTone = "good";
         } else if (isLive) {
           healthLabel = reachable ? "Online" : "Offline";
           healthDetail = reachable
@@ -601,7 +611,11 @@ export function DeviceHealthFleetPanel({
         let playbackLabel = "Not reported";
         let playbackDetail = "No live playback report is available for this saved screen.";
         let playbackTone: Tone = "muted";
-        if (isLive && !reachable) {
+        if (isLive && deploymentReady) {
+          playbackLabel = "Ready screen";
+          playbackDetail = "The Pi reports the deployment-ready screen is active.";
+          playbackTone = "good";
+        } else if (isLive && !reachable) {
           playbackLabel = "Not available";
           playbackDetail = "Playback may continue locally, but Beam cannot verify it until the screen is reachable.";
           playbackTone = "warn";
@@ -621,7 +635,11 @@ export function DeviceHealthFleetPanel({
         let syncDetail = "No playlist update report has been received from this screen yet.";
         let syncTone: Tone = "muted";
 
-        if (!assignedPlaylistId) {
+        if (deploymentReady && !linkedScreen) {
+          syncLabel = "Ready";
+          syncDetail = "Link this system to a screen, then publish a playlist.";
+          syncTone = "muted";
+        } else if (!assignedPlaylistId) {
           syncLabel = "Choose playlist";
           syncDetail = "Assign a playlist before publishing to this screen.";
           syncTone = "warn";
@@ -656,7 +674,7 @@ export function DeviceHealthFleetPanel({
           isOffline ||
           isStale ||
           syncTone === "warn" ||
-          (isLive && !rowPlaybackHealthy);
+          (isLive && !rowPlaybackHealthy && !deploymentReady);
         const attentionReason = !hostConfigured
           ? "setup needed"
           : !linkedScreen
@@ -667,7 +685,7 @@ export function DeviceHealthFleetPanel({
               ? "stale report"
               : syncTone === "warn"
                 ? "sync needed"
-                : isLive && !rowPlaybackHealthy
+                : isLive && !rowPlaybackHealthy && !deploymentReady
                   ? "playback not confirmed"
                   : "no action needed";
 
@@ -1439,7 +1457,7 @@ export function DeviceHealthFleetPanel({
                           {(row.syncLabel === "Publish required" || publishFeedback) && row.assignedPlaylistId ? (
                             <button
                               type="button"
-                              disabled={isBusy}
+                              disabled={!row.linkedScreen || isBusy}
                               onClick={() => void runAction("publish", row)}
                               title={syncState.detail}
                               aria-label={`Publish ${row.assignedPlaylistName} to ${screenName(row)}`}
@@ -1470,7 +1488,7 @@ export function DeviceHealthFleetPanel({
                         <button
                           type="button"
                           onClick={() => void runAction("publish", row)}
-                          disabled={!row.isLive || !row.assignedPlaylistId || isBusy}
+                          disabled={!row.linkedScreen || !row.isLive || !row.assignedPlaylistId || isBusy}
                           title={`Publish ${row.assignedPlaylistName} to ${screenName(row)}`}
                           aria-label={`Publish ${row.assignedPlaylistName} to ${screenName(row)}`}
                           aria-busy={publishPending}
@@ -1514,8 +1532,8 @@ export function DeviceHealthFleetPanel({
                             type="button"
                             onClick={() => void linkDeviceToScreen(row)}
                             disabled={isBusy}
-                            title="Link screen"
-                            aria-label={`Link ${row.device.name} to a screen`}
+                            title="Add system"
+                            aria-label={`Add ${row.device.name} to a screen`}
                             className={`inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white text-base font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${screenActionClass("primary")}`}
                           >
                             <ScreenActionIcon name="link" />
@@ -1621,7 +1639,7 @@ export function DeviceHealthFleetPanel({
                   </button>
                   <button
                     type="button"
-                    disabled={!selectedRow.isLive || !selectedRow.assignedPlaylistId || isBusy}
+                    disabled={!selectedRow.linkedScreen || !selectedRow.isLive || !selectedRow.assignedPlaylistId || isBusy}
                     onClick={() => void runAction("publish", selectedRow)}
                     aria-busy={selectedPublishPending}
                     className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
