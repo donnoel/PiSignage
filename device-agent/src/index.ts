@@ -534,7 +534,7 @@ function resetScriptPath(root: string): string {
 }
 
 function resetRebootEnabled(): boolean {
-  return process.env.PISIGNAGE_RESET_REBOOT_AFTER_SUCCESS?.trim().toLowerCase() === "true";
+  return process.env.PISIGNAGE_RESET_REBOOT_AFTER_SUCCESS?.trim().toLowerCase() !== "false";
 }
 
 function shutdownBinaryPath(): string {

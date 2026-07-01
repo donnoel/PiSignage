@@ -412,6 +412,30 @@ async function collectReadyScreenDetails(reason) {
   };
 }
 
+function readyScreenNetworkScore(details) {
+  let score = 0;
+  if (details.ipAddress !== "Not assigned") {
+    score += 1;
+  }
+  if (details.gateway !== "Not detected") {
+    score += 1;
+  }
+  if (details.internet === "connected") {
+    score += 1;
+  }
+  return score;
+}
+
+function shouldRefreshReadyScreenDetails(currentDetails, nextDetails) {
+  const currentScore = readyScreenNetworkScore(currentDetails);
+  const nextScore = readyScreenNetworkScore(nextDetails);
+  return (
+    nextScore > currentScore ||
+    (nextDetails.ipAddress !== "Not assigned" && nextDetails.ipAddress !== currentDetails.ipAddress) ||
+    (nextDetails.gateway !== "Not detected" && nextDetails.gateway !== currentDetails.gateway)
+  );
+}
+
 function firstExistingPath(paths) {
   return paths.find((candidate) => {
     try {
@@ -606,7 +630,7 @@ async function renderReadyScreenFrame(details) {
   drawText(pixels, width, height, "BEAM DEVICE READY", 585, 348, 8, [255, 255, 255], 8);
 
   const lines = [
-    `DEVICE: ${details.deviceId ? `${details.deviceName} (${details.deviceId})` : details.deviceName}`,
+    `DEVICE: ${details.deviceName}`,
     `HOSTNAME: ${details.hostname}`,
     `IP ADDRESS: ${details.ipAddress}`,
     `GATEWAY: ${details.gateway}`,
@@ -617,7 +641,6 @@ async function renderReadyScreenFrame(details) {
     const color = index === lines.length - 1 ? [255, 179, 90] : [255, 255, 255];
     drawText(pixels, width, height, fitReadyLine(line), 585, 452 + index * 54, 4, color, 4);
   });
-  drawText(pixels, width, height, "WAITING FOR PLAYLIST PUBLISH", 585, 850, 5, [255, 179, 90], 5);
 
   await mkdir(path.dirname(readyScreenFramePath), { recursive: true });
   await writeFile(readyScreenFramePath, Buffer.concat([
@@ -1359,6 +1382,17 @@ async function playReadyScreen(standbyError) {
             log(`ready-screen VLC exit check failed: ${error instanceof Error ? error.message : String(error)}`);
           });
           return waitResult.playlist;
+        }
+
+        if (waitResult.state === "waiting") {
+          const latestDetails = await collectReadyScreenDetails(reason);
+          if (shouldRefreshReadyScreenDetails(details, latestDetails)) {
+            log(
+              `ready-screen network details changed; refreshing ` +
+              `(ip ${latestDetails.ipAddress}, gateway ${latestDetails.gateway}, internet ${latestDetails.internet})`
+            );
+            break;
+          }
         }
 
         if (waitResult.state === "player-exited") {

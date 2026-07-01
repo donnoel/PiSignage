@@ -828,6 +828,7 @@ export function DeviceHealthFleetPanel({
   const selectedPublishPending = selectedPublishFeedback?.status === "pending";
   const selectedPlayerUrl = selectedRow ? playerUrlFor(selectedRow, liveHost, livePlayerUrl) : null;
   const selectedSshUrl = selectedRow ? sshUrlFor(selectedRow) : null;
+  const selectedTargetName = selectedRow ? screenName(selectedRow) : "selected screen";
   const onlineCount = rows.filter((row) => row.healthLabel === "Online").length;
   const offlineCount = rows.filter((row) => row.healthLabel === "Offline").length;
   const staleCount = rows.filter((row) => row.playbackLabel === "Old report").length;
@@ -1610,7 +1611,7 @@ export function DeviceHealthFleetPanel({
               <div className="mt-5 rounded-md border border-zinc-200 bg-zinc-50 p-4">
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <h4 className="text-sm font-semibold text-zinc-950">Actions for this screen</h4>
+                    <h4 className="text-sm font-semibold text-zinc-950">Actions for {selectedTargetName}</h4>
                     <p className="mt-1 text-sm text-zinc-600">
                       Safe checks are first. Recovery and reboot actions are grouped at the end.
                     </p>
@@ -1622,7 +1623,7 @@ export function DeviceHealthFleetPanel({
                 {selectedRow.resetLabel !== "No reset" ? (
                   <div className="mt-3 flex flex-col gap-2 rounded-md border border-zinc-200 bg-white p-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <p className="text-sm font-semibold text-zinc-950">Remote reset</p>
+                      <p className="text-sm font-semibold text-zinc-950">Remote reset for {selectedTargetName}</p>
                       <p className="mt-1 text-sm text-zinc-600">{selectedRow.resetDetail}</p>
                     </div>
                     <StatusPill label={selectedRow.resetLabel} tone={selectedRow.resetTone} />
@@ -1700,7 +1701,7 @@ export function DeviceHealthFleetPanel({
                       ? "Queueing reset..."
                       : selectedRow.resetActive
                         ? selectedRow.resetLabel
-                        : "Reset for deployment"}
+                        : `Reset ${selectedTargetName} for deployment`}
                   </button>
                 </div>
                 {rebootWatchApplies ? (
