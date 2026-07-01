@@ -598,12 +598,12 @@ async function requestResetReboot(): Promise<string> {
     "-n",
     shutdownPath,
     "-r",
-    "+1",
+    "now",
     "Beam deployment reset complete"
   ], {
     timeout: 10_000
   });
-  return "reboot_requested=true reboot_delay=1m";
+  return "reboot_requested=true reboot_delay=now";
 }
 
 async function runResetCommand(root: string, cacheDirectory: string, command: DeviceCommand): Promise<void> {
@@ -635,7 +635,15 @@ async function runResetCommand(root: string, cacheDirectory: string, command: De
 
     const result = await execFileAsync(
       scriptPath,
-      ["--repo-root", root, "--source", "git-head", "--agent-safe", "--apply"],
+      [
+        "--repo-root",
+        root,
+        "--source",
+        "git-head",
+        "--agent-safe",
+        ...(rebootAfterSuccess ? ["--defer-field-player-restart"] : []),
+        "--apply"
+      ],
       {
         maxBuffer: 1024 * 1024,
         timeout: 5 * 60_000

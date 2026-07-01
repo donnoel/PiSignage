@@ -664,13 +664,26 @@ export async function ensureCloudCallHomeDevice(input: {
 
   const inventory = await readCloudInventory(config);
   const existingDevice = inventory.devices.items.find((device) => device.id === input.deviceId);
+  const timestamp = isoNow();
+  const localIpAddress = input.localIpAddress?.trim();
   if (existingDevice) {
+    if (localIpAddress && existingDevice.host !== localIpAddress) {
+      const nextDevice: DeviceRecord = {
+        ...existingDevice,
+        host: localIpAddress,
+        updatedAt: timestamp
+      };
+      await dynamoDb.send(new PutItemCommand({
+        Item: deviceToItem(nextDevice),
+        TableName: config.devicesTableName
+      }));
+      return { created: false, device: nextDevice };
+    }
+
     return { created: false, device: existingDevice };
   }
 
-  const timestamp = isoNow();
   const hostname = input.hostname?.trim();
-  const localIpAddress = input.localIpAddress?.trim();
   const device: DeviceRecord = {
     group: "Unassigned",
     host: localIpAddress || "Not configured",
@@ -713,8 +726,8 @@ export async function resolveCloudPlaylistPublishTargets(input: {
   return publishTargetsForInventory(inventory, input);
 }
 
-function configuredDevice(device: DeviceRecord): boolean {
-  return Boolean(device.host.trim()) && device.host !== "Not configured";
+function publishableCloudDevice(device: DeviceRecord): boolean {
+  return Boolean(device.id.trim());
 }
 
 function publishTargetsForInventory(
@@ -730,7 +743,7 @@ function publishTargetsForInventory(
     const screen = device
       ? inventory.screens.items.find((item) => item.id === device.screenId || item.deviceId === device.id) ?? null
       : null;
-    return device && configuredDevice(device) ? [{ device, screen }] : [];
+    return device && publishableCloudDevice(device) ? [{ device, screen }] : [];
   }
 
   if (input.screenId) {
@@ -738,7 +751,7 @@ function publishTargetsForInventory(
     const device = screen
       ? inventory.devices.items.find((item) => item.id === screen.deviceId || item.screenId === screen.id) ?? null
       : null;
-    return device && configuredDevice(device) ? [{ device, screen: screen ?? null }] : [];
+    return device && publishableCloudDevice(device) ? [{ device, screen: screen ?? null }] : [];
   }
 
   if (!input.playlistId) {
@@ -753,7 +766,7 @@ function publishTargetsForInventory(
 
   return inventory.devices.items
     .filter((device) =>
-      configuredDevice(device) &&
+      publishableCloudDevice(device) &&
       (device.playlistId === input.playlistId ||
         deviceIds.has(device.id) ||
         (device.screenId ? screenIds.has(device.screenId) : false))

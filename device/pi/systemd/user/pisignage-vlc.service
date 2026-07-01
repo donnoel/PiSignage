@@ -17,7 +17,8 @@ Environment=PISIGNAGE_VLC_RESTART_BACKOFF_MS=15000
 Environment=PISIGNAGE_VLC_RESTART_BACKOFF_MAX_MS=120000
 Environment=PISIGNAGE_VLC_WAYLAND_DISPLAY=wayland-0
 Environment=PISIGNAGE_STATUS_PATH=%h/.local/state/pisignage/player-status.json
-Environment=PISIGNAGE_STARTUP_SETTLE_MS=8000
+Environment=PISIGNAGE_STARTUP_SETTLE_MS=0
+ExecStartPre=%h/.local/bin/pisignage-hide-desktop.sh
 ExecStart=/usr/bin/node %h/.local/bin/pisignage-vlc-playlist.mjs
 Restart=always
 RestartSec=5

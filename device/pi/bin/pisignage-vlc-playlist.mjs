@@ -630,7 +630,6 @@ async function renderReadyScreenFrame(details) {
   drawText(pixels, width, height, "BEAM DEVICE READY", 585, 348, 8, [255, 255, 255], 8);
 
   const lines = [
-    `DEVICE: ${details.deviceName}`,
     `HOSTNAME: ${details.hostname}`,
     `IP ADDRESS: ${details.ipAddress}`,
     `GATEWAY: ${details.gateway}`,
@@ -639,7 +638,7 @@ async function renderReadyScreenFrame(details) {
   ];
   lines.forEach((line, index) => {
     const color = index === lines.length - 1 ? [255, 179, 90] : [255, 255, 255];
-    drawText(pixels, width, height, fitReadyLine(line), 585, 452 + index * 54, 4, color, 4);
+    drawText(pixels, width, height, fitReadyLine(line), 585, 430 + index * 58, 4, color, 4);
   });
 
   await mkdir(path.dirname(readyScreenFramePath), { recursive: true });

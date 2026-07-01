@@ -275,19 +275,29 @@ function screenNameFromDeviceName(value: string): string {
   return value.trim().replace(/(?:\s+pi)+$/i, "").trim() || value.trim();
 }
 
+function operationalHostFor(row: RowState): string | null {
+  const reportedHost = row.addressValue.trim();
+  if (reportedHost && reportedHost !== "Not configured") {
+    return reportedHost;
+  }
+
+  const savedHost = row.device.host.trim();
+  return savedHost && savedHost !== "Not configured" ? savedHost : null;
+}
+
 function playerUrlFor(row: RowState, liveHost: string | null, livePlayerUrl: string | null): string | null {
-  const host = row.device.host.trim();
+  const host = operationalHostFor(row);
   if (!host) {
     return null;
   }
 
-  return deviceMatchesLiveHost(row.device, liveHost) && livePlayerUrl
+  return liveHost && normalize(host) === normalize(liveHost) && livePlayerUrl
     ? livePlayerUrl
     : `http://${host}:5173/?playlist=/playlist.local.json`;
 }
 
 function sshUrlFor(row: RowState): string | null {
-  const host = row.device.host.trim();
+  const host = operationalHostFor(row);
   return host ? `ssh://${host}` : null;
 }
 

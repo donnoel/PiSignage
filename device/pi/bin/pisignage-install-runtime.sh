@@ -130,6 +130,7 @@ managed_bin_sources=(
   "device/pi/bin/pisignage-call-home-now.sh"
   "device/pi/bin/pisignage-configure-wifi.sh"
   "device/pi/bin/pisignage-enforce-schedule.mjs"
+  "device/pi/bin/pisignage-hide-desktop.sh"
   "device/pi/bin/pisignage-install-runtime.sh"
   "device/pi/bin/pisignage-provision-device.sh"
   "device/pi/bin/pisignage-reset-device.sh"
@@ -293,7 +294,8 @@ Environment=PISIGNAGE_VLC_RESTART_BACKOFF_MS=15000
 Environment=PISIGNAGE_VLC_RESTART_BACKOFF_MAX_MS=120000
 Environment=PISIGNAGE_VLC_WAYLAND_DISPLAY=wayland-0
 Environment=PISIGNAGE_STATUS_PATH=%h/.local/state/pisignage/player-status.json
-Environment=PISIGNAGE_STARTUP_SETTLE_MS=8000
+Environment=PISIGNAGE_STARTUP_SETTLE_MS=0
+ExecStartPre=%h/.local/bin/pisignage-hide-desktop.sh
 ExecStart=${node_bin} %h/.local/bin/pisignage-vlc-playlist.mjs
 Restart=always
 RestartSec=5
