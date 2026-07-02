@@ -936,7 +936,7 @@ async function runHeartbeatOnce(): Promise<void> {
     cacheDirectory
   });
   const playerStatus = await readPlayerStatus();
-  const currentAssetId = playerStatus?.currentAssetId ?? playlist.assets[0]?.assetId ?? null;
+  const currentAssetId = playerStatus?.currentAssetId ?? null;
 
   const heartbeat: Heartbeat = {
     deviceId,

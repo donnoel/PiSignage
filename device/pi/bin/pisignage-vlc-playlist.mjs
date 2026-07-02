@@ -207,13 +207,37 @@ function playlistSignature(rawPlaylist) {
   return createHash("sha256").update(rawPlaylist).digest("hex");
 }
 
+function assetDurationMs(asset) {
+  const durationSeconds = Number.isFinite(asset.durationSeconds) && asset.durationSeconds > 0
+    ? asset.durationSeconds
+    : 30;
+  return Math.max(Math.round(durationSeconds * 1000), 1_000);
+}
+
 function playlistDurationMs(playlist) {
-  return playlist.assets.reduce((total, asset) => {
-    const durationSeconds = Number.isFinite(asset.durationSeconds) && asset.durationSeconds > 0
-      ? asset.durationSeconds
-      : 30;
-    return total + Math.max(Math.round(durationSeconds * 1000), 1_000);
-  }, 0);
+  return playlist.assets.reduce((total, asset) => total + assetDurationMs(asset), 0);
+}
+
+function currentContinuousAsset(playlist, loopStartedAtMs, nowMs = Date.now()) {
+  if (!Number.isFinite(loopStartedAtMs) || playlist.assets.length === 0) {
+    return null;
+  }
+
+  const durationMs = playlistDurationMs(playlist);
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    return null;
+  }
+
+  let elapsedMs = Math.max(nowMs - loopStartedAtMs, 0) % durationMs;
+  for (const asset of playlist.assets) {
+    const candidateDurationMs = assetDurationMs(asset);
+    if (elapsedMs < candidateDurationMs) {
+      return asset;
+    }
+    elapsedMs -= candidateDurationMs;
+  }
+
+  return playlist.assets[playlist.assets.length - 1] ?? null;
 }
 
 function millisecondsUntilPlaylistBoundary(playlist, loopStartedAtMs) {
@@ -1023,11 +1047,12 @@ async function loadPendingPlaylist(currentPlaylist) {
   }
 }
 
-async function writeContinuousPlaybackStatus(playlist, extra = {}) {
+async function writeContinuousPlaybackStatus(playlist, loopStartedAtMs, extra = {}) {
+  const currentAsset = currentContinuousAsset(playlist, loopStartedAtMs);
   await writePlaybackStatus(playlist, "playing", {
-    currentAssetId: null,
-    currentAssetPath: null,
-    currentAssetDurationSeconds: null,
+    currentAssetId: currentAsset?.assetId ?? null,
+    currentAssetPath: currentAsset?.path ?? null,
+    currentAssetDurationSeconds: currentAsset?.durationSeconds ?? null,
     readyScreen: null,
     lastError: null,
     ...extra
@@ -1172,7 +1197,7 @@ async function playPlaylistContinuously(playlist) {
   let pendingPlaylistReload = false;
   let continuousRestartAttempt = 0;
   let continuousRetryStatus = null;
-  await writeContinuousPlaybackStatus(activePlaylist, { pendingPlaylistReload });
+  await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, { pendingPlaylistReload });
   let player = startPlaylistPlayer(activePlaylist);
 
   if (statusHeartbeatIntervalMs > 0) {
@@ -1182,7 +1207,7 @@ async function playPlaylistContinuously(playlist) {
             ...continuousRetryStatus,
             pendingPlaylistReload
           })
-        : writeContinuousPlaybackStatus(activePlaylist, { pendingPlaylistReload });
+        : writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, { pendingPlaylistReload });
       statusWrite.catch((error) => {
         log(`status heartbeat failed: ${error instanceof Error ? error.message : String(error)}`);
       });
@@ -1204,7 +1229,7 @@ async function playPlaylistContinuously(playlist) {
       if (playbackResult.reloadRequested) {
         pendingPlaylistReload = true;
         log("playlist changed; staging continuous VLC handoff for playlist boundary");
-        await writeContinuousPlaybackStatus(activePlaylist, {
+        await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, {
           nextPlaylistReloadAt: new Date(Date.now() + millisecondsUntilPlaylistBoundary(activePlaylist, loopStartedAtMs)).toISOString(),
           pendingPlaylistReload
         });
@@ -1226,7 +1251,7 @@ async function playPlaylistContinuously(playlist) {
             `handoff at playlist boundary to ${activePlaylist.playlistId} version ${activePlaylist.version}`
           );
           player = startPlaylistPlayer(activePlaylist);
-          await writeContinuousPlaybackStatus(activePlaylist, {
+          await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, {
             handoffCompletedAt: new Date().toISOString(),
             pendingPlaylistReload
           });
@@ -1240,7 +1265,7 @@ async function playPlaylistContinuously(playlist) {
 
         if (pending.state === "unchanged") {
           pendingPlaylistReload = false;
-          await writeContinuousPlaybackStatus(activePlaylist, { pendingPlaylistReload });
+          await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, { pendingPlaylistReload });
         }
 
         continue;
@@ -1299,7 +1324,7 @@ async function playPlaylistContinuously(playlist) {
         loopStartedAtMs = Date.now();
         player = startPlaylistPlayer(activePlaylist);
         continuousRetryStatus = null;
-        await writeContinuousPlaybackStatus(activePlaylist, {
+        await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, {
           continuousRestartAttempt,
           recoveredFromUnexpectedExitAt: new Date().toISOString(),
           pendingPlaylistReload

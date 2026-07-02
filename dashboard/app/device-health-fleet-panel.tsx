@@ -1660,7 +1660,7 @@ export function DeviceHealthFleetPanel({
                             rel="noreferrer"
                             className="inline-flex min-h-9 items-center rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
                           >
-                            Open live report
+                            Current video
                           </a>
                         ) : null}
                         {selectedSshUrl ? (
