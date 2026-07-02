@@ -105,6 +105,18 @@ function playbackFilter() {
   return `scale=${size}:force_original_aspect_ratio=decrease:in_range=full:out_range=tv,pad=${size}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=${profile.fps},format=yuv420p`;
 }
 
+function isPlaybackSafe(probeResult) {
+  return (
+    probeResult.videoCodec === profile.videoCodec &&
+    probeResult.width === profile.width &&
+    probeResult.height === profile.height &&
+    probeResult.pixelFormat === profile.pixelFormat &&
+    probeResult.fps !== null &&
+    Math.abs(probeResult.fps - profile.fps) <= 0.05 &&
+    (probeResult.audioCodec === null || probeResult.audioCodec === profile.audioCodec)
+  );
+}
+
 function mediaSourceType(fileName) {
   const extension = path.extname(fileName).toLowerCase();
   if (extension === ".jpg" || extension === ".jpeg" || extension === ".png") {
@@ -144,7 +156,30 @@ async function createStillVideo(sourcePath, outputPath, durationSeconds) {
   ], { timeout: 120_000, maxBuffer: 1024 * 1024 * 4 });
 }
 
+async function copyPlaybackSafeVideo(sourcePath, outputPath) {
+  await execFileAsync("ffmpeg", [
+    "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+    "-i", sourcePath,
+    "-map", "0:v:0",
+    "-map", "0:a:0?",
+    "-dn",
+    "-c", "copy",
+    "-movflags", "+faststart",
+    outputPath
+  ], { timeout: 120_000, maxBuffer: 1024 * 1024 * 4 });
+  const playbackProbe = await probe(outputPath);
+  if (!isPlaybackSafe(playbackProbe)) {
+    throw new Error(`Prepared copy did not match ${profile.id}.`);
+  }
+}
+
 async function transcodeVideo(sourcePath, outputPath) {
+  const sourceProbe = await probe(sourcePath);
+  if (isPlaybackSafe(sourceProbe)) {
+    await copyPlaybackSafeVideo(sourcePath, outputPath);
+    return;
+  }
+
   await execFileAsync("ffmpeg", [
     "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
     "-i", sourcePath,

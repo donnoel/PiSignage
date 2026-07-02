@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -19,10 +19,12 @@ import {
 import type { MediaFolderRecord, MediaFolderStore, MediaRecord, MediaStore } from "./local-data-store";
 import {
   assertPlaybackSafeVideoFile,
+  createPlaybackSafeVideoCopy,
   createPlaybackSafeVideoClip,
   createStillVideoClip,
   defaultDurationSeconds,
   imageDurationFromForm,
+  isPlaybackSafeProbe,
   MediaUploadError,
   mediaSourceTypeFromFileName,
   playbackPrepProfile,
@@ -32,7 +34,6 @@ import {
   stillClipFileName,
   transcodedVideoFileName
 } from "./media-processing";
-import { isPlaybackSafeVideoFileName } from "./playback-safety";
 import {
   activeWorkspaceId,
   requireActiveWorkspacePermission,
@@ -61,6 +62,13 @@ type CloudMediaDeleteResult = {
   blockedIds: string[];
   deletedIds: string[];
   missingIds: string[];
+};
+
+type PreparedPlaybackCopy = {
+  bytes: Buffer;
+  checksumSha256: string;
+  probe: Awaited<ReturnType<typeof probeMediaFile>>;
+  sizeBytes: number;
 };
 
 const dynamoDb = new DynamoDBClient({});
@@ -93,13 +101,13 @@ function isoNow(): string {
   return new Date().toISOString();
 }
 
-async function sha256ForBuffer(value: Buffer): Promise<string> {
-  return createHash("sha256").update(value).digest("hex");
-}
-
 function baseTitleFromFileName(fileName: string): string {
   const title = path.basename(fileName, path.extname(fileName)).replace(/[-_]+/g, " ").trim();
   return title || "Untitled media";
+}
+
+function playbackVideoFileName(fileName: string): string {
+  return /\.signage-1080p(?:-\d+)?\.mp4$/i.test(fileName) ? fileName : transcodedVideoFileName(fileName);
 }
 
 function stringAttribute(value: string): AttributeValue {
@@ -424,17 +432,14 @@ export async function createCloudMediaUpload(config: CloudMediaConfig, input: Cl
   const id = `asset-${randomUUID()}`;
   const sourceObjectKey = `uploads/${now.slice(0, 10)}/${id}/${safeFileName}`;
   const isVideo = sourceType === "video";
-  const isPreparedVideo = isVideo && isPlaybackSafeVideoFileName(safeFileName);
   const playbackStorageBucket = config.playbackMediaBucketName ?? config.sourceMediaBucketName;
-  const playbackFileName = isPreparedVideo
-    ? safeFileName
-    : sourceType === "image"
+  const playbackFileName = sourceType === "image"
     ? stillClipFileName(safeFileName, input.durationSeconds)
-    : transcodedVideoFileName(safeFileName);
-  const playbackObjectKey = isPreparedVideo ? `playback/${now.slice(0, 10)}/${id}/${safeFileName}` : undefined;
-  const checksumSha256 = isPreparedVideo
-    ? await sha256ForBuffer(input.uploadedBytes)
-    : undefined;
+    : playbackVideoFileName(safeFileName);
+  const preparedVideo = isVideo
+    ? await tryCreatePreparedPlaybackCopy(safeFileName, playbackFileName, input.uploadedBytes)
+    : null;
+  const playbackObjectKey = preparedVideo ? `playback/${now.slice(0, 10)}/${id}/${playbackFileName}` : undefined;
 
   await s3.send(new PutObjectCommand({
     Body: input.uploadedBytes,
@@ -444,11 +449,11 @@ export async function createCloudMediaUpload(config: CloudMediaConfig, input: Cl
     Key: sourceObjectKey,
     ServerSideEncryption: "AES256"
   }));
-  if (isPreparedVideo && playbackObjectKey) {
+  if (preparedVideo && playbackObjectKey) {
     await s3.send(new PutObjectCommand({
-      Body: input.uploadedBytes,
+      Body: preparedVideo.bytes,
       Bucket: playbackStorageBucket,
-      ContentLength: input.uploadedBytes.byteLength,
+      ContentLength: preparedVideo.bytes.byteLength,
       ContentType: "video/mp4",
       Key: playbackObjectKey,
       ServerSideEncryption: "AES256"
@@ -456,31 +461,39 @@ export async function createCloudMediaUpload(config: CloudMediaConfig, input: Cl
   }
 
   const media: MediaRecord = {
-    cloudStatusDetail: isPreparedVideo
-      ? "Uploaded prepared MP4 source is ready for playlist use."
+    audioCodec: preparedVideo?.probe.audioCodec,
+    bitRate: preparedVideo?.probe.bitRate,
+    cloudStatusDetail: preparedVideo
+      ? "Uploaded video already matched the Pi-safe playback profile; prepared MP4 without re-encoding."
       : "Uploaded source is stored in AWS. Playback-safe MP4 processing is pending.",
-    checksumSha256,
+    checksumSha256: preparedVideo?.checksumSha256,
     createdAt: now,
     description: input.description?.trim().slice(0, 5000) ?? "",
-    durationSeconds: sourceType === "image" ? input.durationSeconds : defaultDurationSeconds,
+    durationSeconds: sourceType === "image" ? input.durationSeconds : preparedVideo?.probe.durationSeconds ?? defaultDurationSeconds,
+    fps: preparedVideo?.probe.averageFps ?? preparedVideo?.probe.fps,
+    height: preparedVideo?.probe.height,
     id,
-    mimeType: input.mimeType,
+    mimeType: preparedVideo ? "video/mp4" : input.mimeType,
+    pixelFormat: preparedVideo?.probe.pixelFormat,
     playbackFileName,
     playbackObjectKey,
-    playbackStorageBucket: isPreparedVideo ? playbackStorageBucket : undefined,
-    playbackProfile: isPreparedVideo ? playbackPrepProfile.id : "pending-playback-mp4-v1",
-    preparedAt: isPreparedVideo ? now : undefined,
-    sizeBytes: input.sizeBytes,
+    playbackStorageBucket: preparedVideo ? playbackStorageBucket : undefined,
+    playbackProfile: preparedVideo ? playbackPrepProfile.id : "pending-playback-mp4-v1",
+    preparedAt: preparedVideo ? now : undefined,
+    sizeBytes: preparedVideo?.sizeBytes ?? input.sizeBytes,
     sourceFileName: safeFileName,
     sourceObjectKey,
     sourceSizeBytes: input.sizeBytes,
     sourceStorageBucket: config.sourceMediaBucketName,
-    status: isPreparedVideo ? "ready" : "processing",
-    storageBucket: isPreparedVideo ? playbackStorageBucket : config.sourceMediaBucketName,
+    status: preparedVideo ? "ready" : "processing",
+    storageBucket: preparedVideo ? playbackStorageBucket : config.sourceMediaBucketName,
     storageProvider: "s3",
     tags: input.tags,
     title: input.title?.trim().slice(0, 120) || baseTitleFromFileName(safeFileName),
-    updatedAt: now
+    updatedAt: now,
+    videoCodec: preparedVideo?.probe.videoCodec,
+    videoProfile: preparedVideo?.probe.videoProfile,
+    width: preparedVideo?.probe.width
   };
 
   await dynamoDb.send(new PutItemCommand({
@@ -541,9 +554,6 @@ export async function prepareCloudMediaForPlayback(config: CloudMediaConfig, med
 
     if (sourceType === "image") {
       await createStillVideoClip(sourcePath, playbackPath, current.durationSeconds ?? defaultDurationSeconds);
-    } else if (isPlaybackSafeVideoFileName(current.sourceFileName)) {
-      await fs.copyFile(sourcePath, playbackPath);
-      await assertPlaybackSafeVideoFile(playbackPath);
     } else {
       await createPlaybackSafeVideoClip(sourcePath, playbackPath);
     }
@@ -596,6 +606,43 @@ export async function prepareCloudMediaForPlayback(config: CloudMediaConfig, med
     }));
 
     return updated;
+  } finally {
+    await fs.rm(tempDirectory, { force: true, recursive: true });
+  }
+}
+
+async function tryCreatePreparedPlaybackCopy(
+  sourceFileName: string,
+  playbackFileName: string,
+  uploadedBytes: Buffer
+): Promise<PreparedPlaybackCopy | null> {
+  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "beam-upload-probe-"));
+  const sourcePath = path.join(tempDirectory, sourceFileName);
+  const playbackPath = path.join(tempDirectory, playbackFileName);
+
+  try {
+    await fs.writeFile(sourcePath, uploadedBytes);
+    const sourceProbe = await probeMediaFile(sourcePath);
+    if (!isPlaybackSafeProbe(sourceProbe)) {
+      return null;
+    }
+
+    await createPlaybackSafeVideoCopy(sourcePath, playbackPath);
+    const [bytes, checksumSha256, outputStat, playbackProbe] = await Promise.all([
+      fs.readFile(playbackPath),
+      sha256ForFile(playbackPath),
+      fs.stat(playbackPath),
+      assertPlaybackSafeVideoFile(playbackPath)
+    ]);
+
+    return {
+      bytes,
+      checksumSha256,
+      probe: playbackProbe,
+      sizeBytes: outputStat.size
+    };
+  } catch {
+    return null;
   } finally {
     await fs.rm(tempDirectory, { force: true, recursive: true });
   }

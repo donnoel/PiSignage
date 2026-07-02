@@ -298,6 +298,10 @@ export function validatePlaybackSafeProbe(probe: MediaProbe): string[] {
   return failures;
 }
 
+export function isPlaybackSafeProbe(probe: MediaProbe): boolean {
+  return validatePlaybackSafeProbe(probe).length === 0;
+}
+
 export async function assertPlaybackSafeVideoFile(filePath: string): Promise<MediaProbe> {
   const probe = await probeMediaFile(filePath);
   const failures = validatePlaybackSafeProbe(probe);
@@ -309,6 +313,52 @@ export async function assertPlaybackSafeVideoFile(filePath: string): Promise<Med
   }
 
   return probe;
+}
+
+export async function createPlaybackSafeVideoCopy(
+  sourceVideoPath: string,
+  outputVideoPath: string
+): Promise<void> {
+  const temporaryOutputPath = `${outputVideoPath}.${process.pid}.tmp.mp4`;
+
+  try {
+    const sourceProbe = await probeMediaFile(sourceVideoPath);
+    const failures = validatePlaybackSafeProbe(sourceProbe);
+    if (failures.length > 0) {
+      throw new MediaUploadError(
+        `Source video did not match ${playbackPrepProfile.id}: ${failures.join("; ")}.`,
+        422
+      );
+    }
+
+    await execFileAsync(
+      ffmpegBinary,
+      [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        sourceVideoPath,
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a:0?",
+        "-dn",
+        "-c",
+        "copy",
+        "-movflags",
+        "+faststart",
+        temporaryOutputPath
+      ],
+      { timeout: 120_000, maxBuffer: 1024 * 1024 * 4 }
+    );
+    await assertPlaybackSafeVideoFile(temporaryOutputPath);
+    await fs.rename(temporaryOutputPath, outputVideoPath);
+  } catch (error) {
+    await fs.rm(temporaryOutputPath, { force: true });
+    throw error;
+  }
 }
 
 export async function createStillVideoClip(
@@ -416,7 +466,12 @@ export async function createPlaybackSafeVideoClip(
   const temporaryOutputPath = `${outputVideoPath}.${process.pid}.tmp.mp4`;
 
   try {
-    await probeMediaFile(sourceVideoPath);
+    const sourceProbe = await probeMediaFile(sourceVideoPath);
+    if (isPlaybackSafeProbe(sourceProbe)) {
+      await createPlaybackSafeVideoCopy(sourceVideoPath, outputVideoPath);
+      return;
+    }
+
     const targetVideoFilter = playbackSafeVideoFilter();
 
     await execFileAsync(
