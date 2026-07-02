@@ -122,7 +122,7 @@ type InventoryResponse = {
 
 type PublishFeedback = {
   detail: string;
-  status: "error" | "pending" | "success";
+  status: "error" | "pending" | "sent";
 };
 
 type ScreenActionTone = "danger" | "neutral" | "primary";
@@ -136,11 +136,19 @@ function displayedSyncState(row: RowState, publishFeedback: PublishFeedback | nu
     };
   }
 
-  if (publishFeedback?.status === "success") {
+  if (publishFeedback?.status === "sent") {
+    if (row.syncTone === "good") {
+      return {
+        detail: row.syncDetail,
+        label: row.syncLabel,
+        tone: row.syncTone
+      };
+    }
+
     return {
       detail: publishFeedback.detail,
       label: "Published",
-      tone: "good"
+      tone: "warn"
     };
   }
 
@@ -210,6 +218,15 @@ function ScreenActionIcon({ name }: { name: "details" | "link" | "playlist" | "r
     <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8">
       <circle cx="12" cy="12" r="8" />
       <path d="M12 11v5M12 8h.01" />
+    </svg>
+  );
+}
+
+function SortDirectionIcon({ direction }: { direction: SortDirection }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.9">
+      <path d={direction === "asc" ? "M12 19V5" : "M12 5v14"} />
+      <path d={direction === "asc" ? "m6 11 6-6 6 6" : "m6 13 6 6 6-6"} />
     </svg>
   );
 }
@@ -518,7 +535,7 @@ export function DeviceHealthFleetPanel({
   const [query, setQuery] = useState("");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [sortKey, setSortKey] = useState<SortKey>("screen");
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(devices[0]?.id ?? null);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [publishFeedbackByDeviceId, setPublishFeedbackByDeviceId] = useState<Record<string, PublishFeedback>>({});
   const [busyAction, setBusyAction] = useState<"assign" | "inventory" | "publish" | "reboot" | "recover" | "refresh" | "reset" | "restart" | null>(null);
@@ -832,7 +849,10 @@ export function DeviceHealthFleetPanel({
     });
 
   const selectedRow =
-    sortedVisibleRows.find((row) => row.device.id === selectedDeviceId) ?? sortedVisibleRows[0] ?? rows[0] ?? null;
+    (selectedDeviceId ? sortedVisibleRows.find((row) => row.device.id === selectedDeviceId) : null) ??
+    sortedVisibleRows[0] ??
+    rows[0] ??
+    null;
   const selectedPublishFeedback = selectedRow ? publishFeedbackByDeviceId[selectedRow.device.id] ?? null : null;
   const selectedSyncState = selectedRow ? displayedSyncState(selectedRow, selectedPublishFeedback) : null;
   const selectedPublishPending = selectedPublishFeedback?.status === "pending";
@@ -1180,12 +1200,12 @@ export function DeviceHealthFleetPanel({
         setPublishFeedbackByDeviceId((current) => ({
           ...current,
           [row.device.id]: {
-            detail: `${row.assignedPlaylistName} was published to ${targetName}.`,
-            status: "success"
+            detail: `Publish sent for ${targetName}. Waiting for the screen to confirm ${row.assignedPlaylistName}.`,
+            status: "sent"
           }
         }));
       }
-      setMessage(action === "publish" ? `${row.assignedPlaylistName} was published to ${targetName}.` : actionMessage);
+      setMessage(action === "publish" ? `Publish sent for ${targetName}. Waiting for screen confirmation.` : actionMessage);
       startTransition(() => router.refresh());
     } catch (error) {
       if (action === "reboot") {
@@ -1305,9 +1325,6 @@ export function DeviceHealthFleetPanel({
                 >
                   <span className="block text-xs font-semibold uppercase">{item.label}</span>
                   <span className="mt-1 block text-xl font-semibold">{item.count}</span>
-                  <span className={`mt-2 block text-xs font-medium ${isActive ? "text-teal-50" : "text-zinc-500"}`}>
-                    {isActive ? "Filtering list" : "Filter list"}
-                  </span>
                 </button>
               );
             })}
@@ -1335,10 +1352,10 @@ export function DeviceHealthFleetPanel({
             <div>
               <h3 className="text-base font-semibold text-zinc-950">Screens and Pis</h3>
               <p className="mt-1 text-sm text-zinc-600">
-                Select details, assign playlists, publish updates, rename or link screens, and remove stale records.
+                Assign playlists, publish updates, and manage screen details.
               </p>
             </div>
-            <div className="grid w-full gap-3 xl:max-w-3xl xl:grid-cols-[minmax(240px,1fr)_180px_auto] xl:items-end">
+            <div className="grid w-full gap-3 xl:max-w-3xl xl:grid-cols-[minmax(240px,1fr)_180px_44px] xl:items-end">
               <div>
                 <label htmlFor="device-health-search" className="text-xs font-semibold uppercase text-zinc-500">
                   Search screens
@@ -1375,9 +1392,11 @@ export function DeviceHealthFleetPanel({
               <button
                 type="button"
                 onClick={() => setSortDirection((current) => (current === "asc" ? "desc" : "asc"))}
-                className="min-h-11 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-teal-600"
+                aria-label={`Sort direction: ${sortDirectionLabel}`}
+                title={sortDirectionLabel}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-teal-600"
               >
-                {sortDirectionLabel}
+                <SortDirectionIcon direction={sortDirection} />
               </button>
             </div>
           </div>
@@ -1385,8 +1404,8 @@ export function DeviceHealthFleetPanel({
             Showing {formatCount(sortedVisibleRows.length, "screen")} from {formatCount(rows.length, "screen")}.
           </p>
 
-          <div className="mt-4 max-h-[620px] overflow-auto rounded-md border border-zinc-200">
-            <div className="grid min-w-[1320px] grid-cols-[minmax(170px,1fr)_260px_110px_120px_150px_210px_270px] gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-3 text-xs font-semibold uppercase text-zinc-500">
+          <div className="mt-4 max-h-[620px] overflow-y-auto overflow-x-hidden rounded-md border border-zinc-200">
+            <div className="hidden grid-cols-[minmax(130px,1fr)_minmax(190px,1.35fr)_90px_100px_125px_minmax(150px,1fr)_minmax(210px,auto)] gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-3 text-xs font-semibold uppercase text-zinc-500 xl:grid">
               <span>Screen</span>
               <span>Playlist</span>
               <span>Status</span>
@@ -1402,7 +1421,7 @@ export function DeviceHealthFleetPanel({
                 const publishPending = publishFeedback?.status === "pending";
                 const syncState = displayedSyncState(row, publishFeedback);
                 const publishPillClass =
-                  publishFeedback?.status === "success"
+                  publishFeedback?.status === "sent" && syncState.tone === "good"
                     ? "bg-emerald-100 text-emerald-800 ring-emerald-200 hover:bg-emerald-100 focus:ring-emerald-400"
                     : publishFeedback?.status === "error"
                       ? "bg-rose-100 text-rose-800 ring-rose-200 hover:bg-rose-100 focus:ring-rose-400"
@@ -1411,7 +1430,7 @@ export function DeviceHealthFleetPanel({
                 return (
                   <li key={row.device.id}>
                     <div
-                      className={`grid min-w-[1320px] gap-3 px-4 py-3 text-left text-sm lg:grid-cols-[minmax(170px,1fr)_260px_110px_120px_150px_210px_270px] lg:items-center ${
+                      className={`grid min-w-0 grid-cols-1 gap-3 px-4 py-3 text-left text-sm md:grid-cols-2 xl:grid-cols-[minmax(130px,1fr)_minmax(190px,1.35fr)_90px_100px_125px_minmax(150px,1fr)_minmax(210px,auto)] xl:items-center ${
                         isSelected ? "bg-teal-50" : "bg-white hover:bg-zinc-50"
                       }`}
                     >
@@ -1428,7 +1447,7 @@ export function DeviceHealthFleetPanel({
                           {row.linkedScreen?.location ?? row.device.location} · {row.linkedScreen?.group ?? row.device.group}
                         </span>
                       </button>
-                      <span className="min-w-0 text-left lg:w-full">
+                      <span className="min-w-0 text-left xl:w-full">
                         <label htmlFor={`device-playlist-${row.device.id}`} className="sr-only">
                           Playlist for {screenName(row)}
                         </label>
@@ -1457,13 +1476,13 @@ export function DeviceHealthFleetPanel({
                             : "Choose a saved playlist."}
                         </span>
                       </span>
-                      <span className="lg:justify-self-start">
+                      <span className="justify-self-start">
                         <StatusPill label={row.healthLabel} tone={row.healthTone} />
                       </span>
-                      <span className="lg:justify-self-start" title={row.playbackDetail}>
+                      <span className="justify-self-start" title={row.playbackDetail}>
                         <StatusPill label={row.playbackLabel} tone={row.playbackTone} />
                       </span>
-                      <span className="lg:justify-self-start">
+                      <span className="justify-self-start">
                         <span className="block">
                           {(row.syncLabel === "Publish required" || publishFeedback) && row.assignedPlaylistId ? (
                             <button
@@ -1484,7 +1503,7 @@ export function DeviceHealthFleetPanel({
                           )}
                         </span>
                       </span>
-                      <span className="min-w-0 text-left lg:w-full">
+                      <span className="min-w-0 text-left xl:w-full">
                         <span className="block truncate font-semibold text-zinc-800">{piLabel(row.device, row.linkedScreen)}</span>
                         <span className="mt-1 block truncate text-xs text-zinc-700" title={row.addressDetail}>
                           <span className="font-semibold">{row.addressLabel}:</span> {row.addressValue}
@@ -1495,7 +1514,7 @@ export function DeviceHealthFleetPanel({
                           </span>
                         ) : null}
                       </span>
-                      <span className="flex min-w-[260px] flex-nowrap gap-2">
+                      <span className="flex min-w-0 flex-wrap gap-2 md:col-span-2 xl:col-span-1 xl:justify-end">
                         <button
                           type="button"
                           onClick={() => void runAction("publish", row)}
@@ -1503,7 +1522,7 @@ export function DeviceHealthFleetPanel({
                           title={`Publish ${row.assignedPlaylistName} to ${screenName(row)}`}
                           aria-label={`Publish ${row.assignedPlaylistName} to ${screenName(row)}`}
                           aria-busy={publishPending}
-                          className={`inline-flex h-9 min-w-[92px] items-center justify-center gap-1.5 rounded-md border bg-white px-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${screenActionClass("primary")}`}
+                          className={`inline-flex h-9 min-w-[86px] items-center justify-center gap-1.5 rounded-md border bg-white px-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${screenActionClass("primary")}`}
                         >
                           <ScreenActionIcon name="playlist" />
                           <span>{publishPending ? "Publishing" : "Publish"}</span>
@@ -1618,140 +1637,111 @@ export function DeviceHealthFleetPanel({
                 </div>
               </dl>
 
-              <div className="mt-5 rounded-md border border-zinc-200 bg-zinc-50 p-4">
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <h4 className="text-sm font-semibold text-zinc-950">Actions for {selectedTargetName}</h4>
-                    <p className="mt-1 text-sm text-zinc-600">
-                      Safe checks are first. Recovery and reboot actions are grouped at the end.
-                    </p>
-                  </div>
-                  <div className="text-sm text-zinc-600">
+              <div className="mt-5 rounded-md border border-zinc-200 bg-white p-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-zinc-600">
                     Last check-in: <span className="font-semibold text-zinc-900">{selectedRow.lastSeenAge}</span>
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={isBusy}
+                      onClick={refreshStatus}
+                      className="min-h-10 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {busyAction === "refresh" ? "Refreshing..." : "Refresh"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!selectedRow.linkedScreen || !selectedRow.isLive || !selectedRow.assignedPlaylistId || isBusy}
+                      onClick={() => void runAction("publish", selectedRow)}
+                      aria-busy={selectedPublishPending}
+                      className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                    >
+                      {selectedPublishPending ? "Publishing..." : "Publish"}
+                    </button>
                   </div>
                 </div>
-                {selectedRow.resetLabel !== "No reset" ? (
-                  <div className="mt-3 flex flex-col gap-2 rounded-md border border-zinc-200 bg-white p-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-zinc-950">Remote reset for {selectedTargetName}</p>
-                      <p className="mt-1 text-sm text-zinc-600">{selectedRow.resetDetail}</p>
+                <details className="mt-3 border-t border-zinc-200 pt-3">
+                  <summary className="cursor-pointer text-sm font-semibold text-zinc-900">Advanced</summary>
+                  <div className="mt-3 flex flex-wrap items-start gap-x-8 gap-y-4">
+                    <div className="min-w-[180px]">
+                      <h5 className="text-xs font-semibold uppercase text-zinc-500">Diagnostics</h5>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {selectedPlayerUrl ? (
+                          <a
+                            href={selectedPlayerUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex min-h-9 items-center rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
+                          >
+                            Open Pi player
+                          </a>
+                        ) : null}
+                        {selectedSshUrl ? (
+                          <a
+                            href={selectedSshUrl}
+                            className="inline-flex min-h-9 items-center rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
+                          >
+                            Open SSH
+                          </a>
+                        ) : null}
+                      </div>
                     </div>
-                    <StatusPill label={selectedRow.resetLabel} tone={selectedRow.resetTone} />
+                    <div className="min-w-[360px] max-w-full">
+                      <h5 className="text-xs font-semibold uppercase text-zinc-500">Recovery</h5>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={!selectedRow.isLive || isBusy}
+                          onClick={() => void runAction("restart", selectedRow)}
+                          className="min-h-9 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {busyAction === "restart" ? "Restarting..." : "Restart playback"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!selectedRow.isLive || isBusy}
+                          onClick={() => void runAction("recover", selectedRow)}
+                          className="min-h-9 rounded-md border border-emerald-200 bg-white px-3 py-1.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {busyAction === "recover" ? "Recovering..." : "Run full recovery"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!selectedRow.isLive || isBusy}
+                          onClick={() => void runAction("reboot", selectedRow)}
+                          className="min-h-9 rounded-md border border-amber-200 bg-white px-3 py-1.5 text-sm font-semibold text-amber-800 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {busyAction === "reboot" ? "Rebooting..." : "Reboot Pi"}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="min-w-[190px]">
+                      <h5 className="text-xs font-semibold uppercase text-zinc-500">Deployment</h5>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={isBusy || selectedRow.resetActive}
+                          onClick={() => void runAction("reset", selectedRow)}
+                          className="min-h-9 rounded-md border border-red-200 bg-white px-3 py-1.5 text-sm font-semibold text-red-800 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {busyAction === "reset"
+                            ? "Queueing reset..."
+                            : selectedRow.resetActive
+                              ? selectedRow.resetLabel
+                              : "Reset for deployment"}
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                ) : null}
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={isBusy}
-                    onClick={refreshStatus}
-                    className="min-h-10 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {busyAction === "refresh" ? "Refreshing..." : "Refresh status"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!selectedRow.linkedScreen || !selectedRow.isLive || !selectedRow.assignedPlaylistId || isBusy}
-                    onClick={() => void runAction("publish", selectedRow)}
-                    aria-busy={selectedPublishPending}
-                    className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
-                  >
-                    {selectedPublishPending ? "Publishing..." : "Publish playlist"}
-                  </button>
-                  {selectedPlayerUrl ? (
-                    <a
-                      href={selectedPlayerUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex min-h-10 items-center rounded-md bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
-                    >
-                      Open Pi player
-                    </a>
-                  ) : null}
-                  {selectedSshUrl ? (
-                    <a
-                      href={selectedSshUrl}
-                      className="inline-flex min-h-10 items-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
-                    >
-                      Open SSH
-                    </a>
-                  ) : null}
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2 border-t border-zinc-200 pt-3">
-                  <button
-                    type="button"
-                    disabled={!selectedRow.isLive || isBusy}
-                    onClick={() => void runAction("restart", selectedRow)}
-                    className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {busyAction === "restart" ? "Restarting..." : "Restart playback"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!selectedRow.isLive || isBusy}
-                    onClick={() => void runAction("recover", selectedRow)}
-                    className="min-h-10 rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {busyAction === "recover" ? "Recovering..." : "Run full recovery"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!selectedRow.isLive || isBusy}
-                    onClick={() => void runAction("reboot", selectedRow)}
-                    className="min-h-10 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {busyAction === "reboot" ? "Rebooting..." : "Reboot Pi"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isBusy || selectedRow.resetActive}
-                    onClick={() => void runAction("reset", selectedRow)}
-                    className="min-h-10 rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-800 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {busyAction === "reset"
-                      ? "Queueing reset..."
-                      : selectedRow.resetActive
-                        ? selectedRow.resetLabel
-                        : `Reset ${selectedTargetName} for deployment`}
-                  </button>
-                </div>
+                </details>
                 {rebootWatchApplies ? (
                   <p className="mt-3 text-sm font-medium text-amber-800" role="status" aria-live="polite">
                     Waiting for a fresh check-in after reboot. Last check-in: {selectedRow.lastSeenAge}.
                   </p>
                 ) : null}
               </div>
-
-              <details className="mt-4 rounded-md border border-zinc-200 bg-white p-4">
-                <summary className="cursor-pointer text-sm font-semibold text-zinc-900">More details</summary>
-                <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-6">
-                  <div>
-                    <dt className="font-semibold text-zinc-500">{selectedRow.addressLabel} address</dt>
-                    <dd className="mt-1 break-words text-zinc-800">{selectedRow.addressValue}</dd>
-                  </div>
-                  <div>
-                    <dt className="font-semibold text-zinc-500">Saved inventory</dt>
-                    <dd className="mt-1 break-words text-zinc-800">{selectedRow.savedAddress}</dd>
-                  </div>
-                  <div>
-                    <dt className="font-semibold text-zinc-500">Group</dt>
-                    <dd className="mt-1 break-words text-zinc-800">{selectedRow.linkedScreen?.group ?? selectedRow.device.group}</dd>
-                  </div>
-                  <div>
-                    <dt className="font-semibold text-zinc-500">Assigned playlist</dt>
-                    <dd className="mt-1 break-words text-zinc-800">{selectedRow.assignedPlaylistName}</dd>
-                  </div>
-                  <div>
-                    <dt className="font-semibold text-zinc-500">Playlist versions</dt>
-                    <dd className="mt-1 break-words text-zinc-800">{selectedRow.syncVersionDetail}</dd>
-                  </div>
-                  <div>
-                    <dt className="font-semibold text-zinc-500">Live target</dt>
-                    <dd className="mt-1 break-words text-zinc-800">
-                      {selectedRow.isLive ? (dashboardMode === "cloud" ? "Calling home" : "Configured Pi") : "Inventory only"}
-                    </dd>
-                  </div>
-                </dl>
-              </details>
             </div>
           </section>
         ) : null}
