@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import { Socket } from "node:net";
+import { cookies } from "next/headers";
 import { DashboardAutoRefresh } from "./dashboard-auto-refresh";
 import { Metric, StatusPill } from "./dashboard-ui";
 import { DeviceHealthFleetPanel } from "./device-health-fleet-panel";
@@ -35,6 +36,8 @@ import { LocalPlaylistSequence } from "./local-playlist-sequence";
 import { LocalPlaylistTimeline } from "./local-playlist-timeline";
 import { SchedulingPanel } from "./scheduling-panel";
 import { ScreenFocusSelect } from "./screen-focus-select";
+import { ThemeCycleButton } from "./theme-cycle-button";
+import { beamThemeCookieName, normalizeBeamThemeId } from "./theme";
 import { TroubleshootingPanel } from "./troubleshooting-panel";
 
 export const dynamic = "force-dynamic";
@@ -1332,6 +1335,8 @@ function scalarSearchParam(value: string | string[] | undefined): string | null 
 }
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
+  const cookieStore = await cookies();
+  const currentThemeId = normalizeBeamThemeId(cookieStore.get(beamThemeCookieName)?.value);
   const workspaceSession = activeWorkspaceSession();
   const workspaceContext = workspaceContextFromSession(workspaceSession);
   const activeWorkspace = workspaceSession.workspaces.find((workspace) => workspace.workspaceId === workspaceContext.activeWorkspaceId);
@@ -1778,36 +1783,29 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     screenName: row.screenName
   }));
   return (
-    <main className="min-h-screen [overflow-x:clip] bg-[#f3f6f8] text-zinc-950">
+    <main className="beam-shell min-h-screen [overflow-x:clip] text-zinc-950">
       <DashboardAutoRefresh enabled={autoRefreshEnabledForView(selectedView)} />
       <div className="min-h-screen">
-        <aside className="border-b border-cyan-200 bg-[radial-gradient(circle_at_top_left,rgba(94,234,212,0.34),transparent_44%),linear-gradient(180deg,#e4fbf7_0%,#f1fbff_48%,#ffffff_100%)] px-5 py-5 text-slate-950 shadow-[inset_0_-1px_0_rgba(20,184,166,0.2)]">
+        <aside className="beam-topbar border-b px-5 py-5 text-slate-950">
           <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
             <div>
               <div className="inline-flex items-center gap-3" aria-label="Beam">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-950 shadow-sm" aria-hidden="true">
-                  <svg viewBox="0 0 36 36" className="h-9 w-9">
-                    <rect x="0" y="0" width="36" height="36" rx="8" fill="#0f172a" />
-                    <rect x="8" y="10" width="14" height="16" rx="2.5" fill="none" stroke="#f8fafc" strokeWidth="2.4" />
-                    <path d="M20 13.5L30 9.5V26.5L20 22.5V13.5Z" fill="#5eead4" />
-                    <path d="M20 16L30 13V23L20 20V16Z" fill="#ccfbf1" opacity="0.8" />
-                  </svg>
-                </span>
-                <span className="bg-gradient-to-r from-slate-950 via-teal-950 to-teal-700 bg-clip-text text-[2rem] font-black leading-none tracking-normal text-transparent [font-family:'Trebuchet_MS',ui-rounded,'Avenir_Next_Rounded','Arial_Rounded_MT_Bold',system-ui,sans-serif]">
+                <ThemeCycleButton initialThemeId={currentThemeId} />
+                <span className="beam-wordmark bg-clip-text text-[2rem] font-black leading-none tracking-normal text-transparent [font-family:'Trebuchet_MS',ui-rounded,'Avenir_Next_Rounded','Arial_Rounded_MT_Bold',system-ui,sans-serif]">
                   Beam
                 </span>
               </div>
               <details className="group relative mt-3 w-fit max-w-full">
                 <summary
-                  className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 border-l-2 border-teal-500 pl-3 text-xs text-slate-700 outline-none transition hover:text-teal-950 focus-visible:ring-2 focus-visible:ring-teal-500 marker:hidden [&::-webkit-details-marker]:hidden"
+                  className="beam-session-summary flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 border-l-2 pl-3 text-xs outline-none transition focus-visible:ring-2 marker:hidden [&::-webkit-details-marker]:hidden"
                   aria-label={`Current workspace session: ${workspaceName}; ${workspaceRoleLabel}; ${workspaceSession.user.displayName}`}
                 >
                   <span className="font-semibold text-slate-950">{workspaceName}</span>
                   <span>{workspaceRoleLabel}</span>
                   <span>{workspaceSession.user.displayName}</span>
-                  <span className="text-teal-700 transition group-open:rotate-180" aria-hidden="true">v</span>
+                  <span className="beam-accent-text transition group-open:rotate-180" aria-hidden="true">v</span>
                 </summary>
-                <div className="absolute left-0 z-20 mt-3 w-[min(22rem,calc(100vw-2.5rem))] rounded-md border border-cyan-200 bg-white p-4 text-sm shadow-lg">
+                <div className="beam-popover absolute left-0 z-20 mt-3 w-[min(22rem,calc(100vw-2.5rem))] rounded-md border bg-white p-4 text-sm shadow-lg">
                   <dl className="grid gap-3">
                     <div>
                       <dt className="text-xs font-semibold uppercase text-zinc-500">Workspace</dt>
@@ -1840,7 +1838,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                               <li key={workspace.workspaceId} className="rounded-md border border-zinc-200 p-2">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                   <span className="font-medium text-zinc-950">{workspace.name}</span>
-                                  <span className={active ? "text-xs font-semibold text-teal-700" : "text-xs text-zinc-500"}>
+                                  <span className={active ? "beam-accent-text text-xs font-semibold" : "text-xs text-zinc-500"}>
                                     {active ? "Active" : roleLabel(role)}
                                   </span>
                                 </div>
@@ -1855,7 +1853,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 </div>
               </details>
             </div>
-            <nav aria-label="Beam views" className="grid grid-cols-4 gap-2 text-xs font-medium text-slate-700 sm:text-sm lg:grid-cols-8 xl:flex xl:flex-wrap xl:justify-end">
+            <nav aria-label="Beam views" className="beam-nav grid grid-cols-4 gap-2 text-xs font-medium sm:text-sm lg:grid-cols-8 xl:flex xl:flex-wrap xl:justify-end">
               {navigationItems.map((item) => {
                 const selected = item.view === selectedView;
 
@@ -1864,8 +1862,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   key={item.view}
                   href={item.view === "dashboard" ? "/" : `/?view=${item.view}`}
                   aria-current={selected ? "page" : undefined}
-                  className={`flex min-h-10 items-center justify-center rounded-md px-2 py-2 text-center leading-tight transition focus:outline-none focus:ring-2 focus:ring-teal-500 sm:px-3 ${
-                    selected ? "bg-white text-teal-950 shadow-sm ring-1 ring-cyan-200" : "hover:bg-white/70 hover:text-teal-950"
+                  className={`beam-nav-link flex min-h-10 items-center justify-center rounded-md px-2 py-2 text-center leading-tight transition focus:outline-none focus:ring-2 sm:px-3 ${
+                    selected ? "beam-nav-link-active shadow-sm ring-1" : ""
                   }`}
                 >
                   {item.label}
@@ -1880,7 +1878,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           <header id="dashboard" className="flex flex-col gap-4 border-b border-zinc-200 pb-5 xl:flex-row xl:items-center xl:justify-between">
             <div>
               {currentViewCopy.eyebrow ? (
-                <p className="text-sm font-semibold uppercase text-teal-700">{currentViewCopy.eyebrow}</p>
+                <p className="beam-page-eyebrow text-sm font-semibold uppercase">{currentViewCopy.eyebrow}</p>
               ) : null}
               <h1 className="mt-1 text-3xl font-bold tracking-tight text-zinc-950 sm:text-4xl">{currentViewCopy.title}</h1>
               {currentViewCopy.description ? (
@@ -2008,13 +2006,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 </div>
                 <div className="p-5">
                   <div className="rounded-[1.25rem] border border-zinc-700 bg-zinc-900 p-3 shadow-xl shadow-zinc-300/60">
-                    <div className="relative overflow-hidden rounded-xl bg-[linear-gradient(145deg,#236b66_0%,#0f766e_38%,#0e7490_68%,#1e3a8a_100%)] px-4 pb-9 pt-5 text-white shadow-inner ring-1 ring-white/20">
-                      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.22)_0%,rgba(255,255,255,0.08)_34%,rgba(255,255,255,0)_70%)]" />
+                    <div className="beam-preview-panel relative overflow-hidden rounded-xl px-4 pb-9 pt-5 text-white shadow-inner ring-1 ring-white/20">
+                      <div className="beam-preview-sheen absolute inset-0" />
                       <div className="relative flex min-h-[260px] flex-col justify-between gap-5">
                         <div>
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div className="min-w-0">
-                              <p className="text-sm font-semibold uppercase text-cyan-100/80">{previewEyebrow}</p>
+                              <p className="beam-preview-overline text-sm font-semibold uppercase">{previewEyebrow}</p>
                               <p className="mt-2 break-words text-3xl font-black leading-tight sm:text-4xl">{focusedScreenTitle}</p>
                             </div>
                             {focusedPlayerUrl ? (
@@ -2023,29 +2021,29 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                                 target="_blank"
                                 rel="noreferrer"
                                 title="Open the selected screen's Pi player loop"
-                                className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-50 focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                                className="beam-preview-button inline-flex min-h-10 shrink-0 items-center justify-center rounded-md px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2"
                               >
                                 Open screen player
                               </a>
                             ) : null}
                           </div>
-                          <p className="mt-3 max-w-sm text-sm leading-6 text-cyan-50/80">{focusedScreenDetail}</p>
+                          <p className="beam-preview-detail mt-3 max-w-sm text-sm leading-6">{focusedScreenDetail}</p>
                         </div>
                         <div className="grid gap-2 text-sm sm:grid-cols-2">
-                          <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/10">
-                            <p className="font-semibold text-cyan-50/70">Current item</p>
+                          <div className="beam-preview-card rounded-lg p-3 ring-1">
+                            <p className="beam-preview-card-label font-semibold">Current item</p>
                             <p className="mt-1 break-words font-semibold text-white">{focusedCurrentItemLabel}</p>
                           </div>
-                          <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/10">
-                            <p className="font-semibold text-cyan-50/70">Playlist</p>
+                          <div className="beam-preview-card rounded-lg p-3 ring-1">
+                            <p className="beam-preview-card-label font-semibold">Playlist</p>
                             <p className="mt-1 break-words font-semibold text-white">{focusedPlaylistLoopLabel}</p>
                           </div>
-                          <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/10">
-                            <p className="font-semibold text-cyan-50/70">Screen</p>
+                          <div className="beam-preview-card rounded-lg p-3 ring-1">
+                            <p className="beam-preview-card-label font-semibold">Screen</p>
                             <p className="mt-1 break-words font-semibold text-white">{focusedScreenName}</p>
                           </div>
-                          <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/10">
-                            <p className="font-semibold text-cyan-50/70">Host</p>
+                          <div className="beam-preview-card rounded-lg p-3 ring-1">
+                            <p className="beam-preview-card-label font-semibold">Host</p>
                             <p className="mt-1 break-words font-semibold text-white">{focusedScreenHost}</p>
                           </div>
                         </div>

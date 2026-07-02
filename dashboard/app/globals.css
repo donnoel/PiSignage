@@ -4,8 +4,95 @@
 
 :root {
   color-scheme: light;
-  background: #f7f8fa;
-  color: #17202a;
+  --beam-shell-bg: #f3f6f8;
+  --beam-text: #17202a;
+  --beam-muted: #475569;
+  --beam-surface: #ffffff;
+  --beam-topbar-bg: radial-gradient(circle at top left, rgba(94, 234, 212, 0.34), transparent 44%), linear-gradient(180deg, #e4fbf7 0%, #f1fbff 48%, #ffffff 100%);
+  --beam-topbar-border: #a5f3fc;
+  --beam-topbar-shadow: rgba(20, 184, 166, 0.2);
+  --beam-accent: #0f766e;
+  --beam-accent-strong: #134e4a;
+  --beam-accent-soft: #ccfbf1;
+  --beam-accent-border: #99f6e4;
+  --beam-wordmark-gradient: linear-gradient(90deg, #020617 0%, #134e4a 48%, #0f766e 100%);
+  --beam-icon-bg: #0f172a;
+  --beam-icon-screen: #f8fafc;
+  --beam-icon-primary: #5eead4;
+  --beam-icon-secondary: #ccfbf1;
+  --beam-preview-gradient: linear-gradient(145deg, #236b66 0%, #0f766e 38%, #0e7490 68%, #1e3a8a 100%);
+  --beam-preview-card-bg: rgba(255, 255, 255, 0.1);
+  --beam-preview-card-ring: rgba(255, 255, 255, 0.12);
+  --beam-preview-muted: rgba(236, 254, 255, 0.78);
+  --beam-preview-button-bg: #ffffff;
+  --beam-preview-button-hover: #ecfeff;
+  --beam-preview-button-text: #09090b;
+  background: var(--beam-shell-bg);
+  color: var(--beam-text);
+}
+
+[data-beam-theme="midnight"] {
+  --beam-shell-bg: #eef3f7;
+  --beam-topbar-bg: linear-gradient(135deg, #e7f0f8 0%, #f5fbff 46%, #ffffff 100%);
+  --beam-topbar-border: #bae6fd;
+  --beam-topbar-shadow: rgba(14, 116, 144, 0.2);
+  --beam-accent: #0369a1;
+  --beam-accent-strong: #0c4a6e;
+  --beam-accent-soft: #e0f2fe;
+  --beam-accent-border: #7dd3fc;
+  --beam-wordmark-gradient: linear-gradient(90deg, #07111f 0%, #0c4a6e 48%, #155e75 100%);
+  --beam-icon-bg: #07111f;
+  --beam-icon-primary: #38bdf8;
+  --beam-icon-secondary: #a5f3fc;
+  --beam-preview-gradient: linear-gradient(145deg, #07111f 0%, #123451 42%, #075985 72%, #0f766e 100%);
+}
+
+[data-beam-theme="sunset"] {
+  --beam-shell-bg: #f8f5f2;
+  --beam-topbar-bg: linear-gradient(135deg, #fff1e8 0%, #fff7ed 50%, #ffffff 100%);
+  --beam-topbar-border: #fed7aa;
+  --beam-topbar-shadow: rgba(234, 88, 12, 0.18);
+  --beam-accent: #c2410c;
+  --beam-accent-strong: #7c2d12;
+  --beam-accent-soft: #ffedd5;
+  --beam-accent-border: #fdba74;
+  --beam-wordmark-gradient: linear-gradient(90deg, #111827 0%, #7c2d12 42%, #be123c 100%);
+  --beam-icon-bg: #1f2937;
+  --beam-icon-primary: #fb923c;
+  --beam-icon-secondary: #fed7aa;
+  --beam-preview-gradient: linear-gradient(145deg, #7c2d12 0%, #be123c 38%, #c2410c 66%, #0f766e 100%);
+}
+
+[data-beam-theme="indigo"] {
+  --beam-shell-bg: #f3f5fb;
+  --beam-topbar-bg: linear-gradient(135deg, #eef2ff 0%, #f8fbff 48%, #ffffff 100%);
+  --beam-topbar-border: #c7d2fe;
+  --beam-topbar-shadow: rgba(79, 70, 229, 0.16);
+  --beam-accent: #4f46e5;
+  --beam-accent-strong: #3730a3;
+  --beam-accent-soft: #e0e7ff;
+  --beam-accent-border: #a5b4fc;
+  --beam-wordmark-gradient: linear-gradient(90deg, #111827 0%, #3730a3 44%, #0e7490 100%);
+  --beam-icon-bg: #111827;
+  --beam-icon-primary: #818cf8;
+  --beam-icon-secondary: #bae6fd;
+  --beam-preview-gradient: linear-gradient(145deg, #1e3a8a 0%, #3730a3 40%, #2563eb 68%, #0e7490 100%);
+}
+
+[data-beam-theme="evergreen"] {
+  --beam-shell-bg: #f1f6f3;
+  --beam-topbar-bg: linear-gradient(135deg, #ecfdf5 0%, #f7fbf8 54%, #ffffff 100%);
+  --beam-topbar-border: #bbf7d0;
+  --beam-topbar-shadow: rgba(22, 101, 52, 0.16);
+  --beam-accent: #15803d;
+  --beam-accent-strong: #14532d;
+  --beam-accent-soft: #dcfce7;
+  --beam-accent-border: #86efac;
+  --beam-wordmark-gradient: linear-gradient(90deg, #111827 0%, #14532d 46%, #0f766e 100%);
+  --beam-icon-bg: #102018;
+  --beam-icon-primary: #4ade80;
+  --beam-icon-secondary: #bbf7d0;
+  --beam-preview-gradient: linear-gradient(145deg, #14532d 0%, #166534 40%, #0f766e 68%, #334155 100%);
 }
 
 * {
@@ -15,7 +102,111 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: #f7f8fa;
-  color: #17202a;
+  background: var(--beam-shell-bg);
+  color: var(--beam-text);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+.beam-shell {
+  background: var(--beam-shell-bg);
+}
+
+.beam-topbar {
+  background: var(--beam-topbar-bg);
+  border-color: var(--beam-topbar-border);
+  box-shadow: inset 0 -1px 0 var(--beam-topbar-shadow);
+}
+
+.beam-logo-button:focus-visible {
+  box-shadow: 0 0 0 3px var(--beam-accent-border);
+}
+
+.beam-logo-button:hover {
+  transform: translateY(-1px);
+}
+
+.beam-wordmark {
+  background-image: var(--beam-wordmark-gradient);
+}
+
+.beam-session-summary {
+  border-color: var(--beam-accent);
+  color: var(--beam-muted);
+}
+
+.beam-session-summary:hover,
+.beam-session-summary:focus-visible {
+  color: var(--beam-accent-strong);
+}
+
+.beam-session-summary:focus-visible,
+.beam-nav-link:focus-visible,
+.beam-control:focus,
+.beam-preview-button:focus-visible {
+  --tw-ring-color: var(--beam-accent-border);
+}
+
+.beam-accent-text {
+  color: var(--beam-accent);
+}
+
+.beam-popover {
+  border-color: var(--beam-accent-border);
+}
+
+.beam-nav {
+  color: var(--beam-muted);
+}
+
+.beam-nav-link:hover {
+  background: color-mix(in srgb, var(--beam-accent-soft) 72%, transparent);
+  color: var(--beam-accent-strong);
+}
+
+.beam-nav-link-active {
+  --tw-ring-color: var(--beam-accent-border);
+  background: var(--beam-surface);
+  color: var(--beam-accent-strong);
+}
+
+.beam-page-eyebrow {
+  color: var(--beam-accent);
+}
+
+.beam-control:focus {
+  border-color: var(--beam-accent);
+}
+
+.beam-theme-toast {
+  background: var(--beam-surface);
+  color: var(--beam-accent-strong);
+  --tw-ring-color: var(--beam-accent-border);
+}
+
+.beam-preview-panel {
+  background: var(--beam-preview-gradient);
+}
+
+.beam-preview-sheen {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.08) 34%, rgba(255, 255, 255, 0) 70%);
+}
+
+.beam-preview-overline,
+.beam-preview-detail,
+.beam-preview-card-label {
+  color: var(--beam-preview-muted);
+}
+
+.beam-preview-button {
+  background: var(--beam-preview-button-bg);
+  color: var(--beam-preview-button-text);
+}
+
+.beam-preview-button:hover {
+  background: var(--beam-preview-button-hover);
+}
+
+.beam-preview-card {
+  background: var(--beam-preview-card-bg);
+  --tw-ring-color: var(--beam-preview-card-ring);
 }

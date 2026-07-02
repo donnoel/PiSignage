@@ -32,7 +32,7 @@ export function ScreenFocusSelect({ options, selectedScreenId }: ScreenFocusSele
             router.refresh();
           });
         }}
-        className="min-h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-950 focus:outline-none focus:ring-2 focus:ring-teal-600 disabled:cursor-not-allowed disabled:bg-zinc-100"
+        className="beam-control min-h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-950 focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:bg-zinc-100"
       >
         {options.length === 0 ? (
           <option value="">No screens in inventory</option>
