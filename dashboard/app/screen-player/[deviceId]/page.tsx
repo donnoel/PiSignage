@@ -2,7 +2,7 @@ import Link from "next/link";
 import { assignedPlaylistIdForDevice } from "../../lib/inventory-assignment";
 import { readCloudHeartbeats } from "../../lib/cloud-heartbeat";
 import type { CloudHeartbeat } from "../../lib/cloud-heartbeat";
-import { readCloudRelease, releaseTargetsDevice, type CloudReleaseRecord } from "../../lib/cloud-release-store";
+import { readCloudRelease, type CloudReleaseRecord } from "../../lib/cloud-release-store";
 import { readInventory } from "../../lib/inventory-store";
 import type { DeviceRecord, ScreenRecord } from "../../lib/local-data-store";
 import type { Playlist, PlaylistAsset } from "../../lib/local-playlist";
@@ -57,10 +57,6 @@ function playerFallback(title: string, detail: string) {
       </section>
     </main>
   );
-}
-
-function assetUrlEndpoint(deviceId: string, releaseId: string, assetId: string): string {
-  return `/api/cloud/devices/${encodeURIComponent(deviceId)}/releases/${encodeURIComponent(releaseId)}/assets/${encodeURIComponent(assetId)}/url`;
 }
 
 function currentAssetUrlEndpoint(deviceId: string, assetId: string): string {
@@ -128,7 +124,7 @@ function remoteAssetFromPlaylist(asset: PlaylistAsset, deviceId: string | null):
   };
 }
 
-function remoteAssetFromRelease(release: CloudReleaseRecord, releaseDeviceId: string, assetId: string): RemoteScreenAsset | null {
+function remoteAssetFromRelease(release: CloudReleaseRecord, heartbeatDeviceId: string | null, assetId: string): RemoteScreenAsset | null {
   const asset = release.assets.find((candidate) => candidate.assetId === assetId);
   if (!asset) {
     return null;
@@ -136,7 +132,7 @@ function remoteAssetFromRelease(release: CloudReleaseRecord, releaseDeviceId: st
 
   return {
     assetId: asset.assetId,
-    assetUrlEndpoint: assetUrlEndpoint(releaseDeviceId, release.releaseId, asset.assetId),
+    assetUrlEndpoint: heartbeatDeviceId ? currentAssetUrlEndpoint(heartbeatDeviceId, asset.assetId) : null,
     durationSeconds: asset.durationSeconds ?? null,
     fileName: asset.fileName,
     title: asset.altText || asset.fileName,
@@ -185,9 +181,8 @@ function releaseMatchesHeartbeat(release: CloudReleaseRecord, heartbeat: CloudHe
 
 async function readHeartbeatMatchedRelease(
   releaseId: string | null | undefined,
-  candidateDeviceIds: string[],
   heartbeat: CloudHeartbeat | null
-): Promise<{ release: CloudReleaseRecord; releaseDeviceId: string } | null> {
+): Promise<CloudReleaseRecord | null> {
   if (!releaseId || !heartbeat) {
     return null;
   }
@@ -197,8 +192,7 @@ async function readHeartbeatMatchedRelease(
     return null;
   }
 
-  const releaseDeviceId = candidateDeviceIds.find((candidate) => releaseTargetsDevice(release, candidate)) ?? null;
-  return releaseDeviceId ? { release, releaseDeviceId } : null;
+  return release;
 }
 
 function playlistLabel(heartbeat: CloudHeartbeat | null, release: CloudReleaseRecord | null, playlist: Playlist | null): string {
@@ -243,17 +237,17 @@ export default async function ScreenPlayerPage({ params }: ScreenPlayerPageProps
     ? playlistStore.items.find((playlist) => playlist.playlistId === assignedPlaylistId) ?? null
     : null;
   const releaseId = screen?.desiredReleaseId ?? device.desiredReleaseId;
-  const matchedRelease = await readHeartbeatMatchedRelease(releaseId, candidateDeviceIds, heartbeat);
+  const matchedRelease = await readHeartbeatMatchedRelease(releaseId, heartbeat);
   const playlistForMetadata = reportedPlaylist ?? assignedPlaylist;
   const playlistAsset = reportedAssetId
     ? playlistForMetadata?.assets.find((asset) => asset.assetId === reportedAssetId) ?? null
     : null;
   const releaseAsset = reportedAssetId && matchedRelease
-    ? remoteAssetFromRelease(matchedRelease.release, matchedRelease.releaseDeviceId, reportedAssetId)
+    ? remoteAssetFromRelease(matchedRelease, heartbeatMatch?.heartbeatDeviceId ?? null, reportedAssetId)
     : null;
   const currentAsset = releaseAsset ?? (playlistAsset ? remoteAssetFromPlaylist(playlistAsset, heartbeatMatch?.heartbeatDeviceId ?? null) : null);
   const hasPlayableCurrentAsset = Boolean(currentAsset?.assetUrlEndpoint);
-  const displayPlaylistLabel = playlistLabel(heartbeat, matchedRelease?.release ?? null, playlistForMetadata);
+  const displayPlaylistLabel = playlistLabel(heartbeat, matchedRelease, playlistForMetadata);
   const screenName = screen?.name ?? device.name;
   const hostLabel = (heartbeat?.localIpAddress ?? device.host.trim()) || "No host";
   let detail = `Beam found ${screenName}, but it has not received a live Pi report for this screen yet.`;
