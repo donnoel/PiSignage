@@ -1600,11 +1600,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const screenCount = inventory.screens.items.length;
   const confirmedPlaybackLabel = screenCount > 0 ? `${playingDeviceCount}/${screenCount}` : "0";
   const onlineScreensLabel = screenCount > 0 ? `${onlineDeviceCount}/${screenCount}` : "0";
-  const playingDetail = playingDeviceCount > 0
-    ? staleDeviceCount > 0
-      ? `${staleDeviceCount} stale report`
-      : "live playback reports"
-    : disconnectedDeviceCount > 0
+  const playingDetail = staleDeviceCount > 0
+    ? `${staleDeviceCount} stale report`
+    : playingDeviceCount === screenCount && screenCount > 0
+      ? null
+      : disconnectedDeviceCount > 0
       ? "no live connection"
       : "waiting for playback";
   const onlineScreensDetail = screenCount === 0
@@ -1615,14 +1615,14 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       ? `${notReportingDeviceCount} not reporting`
       : onlineDeviceCount < screenCount
         ? `${screenCount - onlineDeviceCount} not online`
-      : "all screens online";
+      : null;
   const firstSyncIssue = fleetRows.find((row) => row.syncTone === "warn");
   const playlistSyncLabel = syncIssueCount > 0 ? `${syncIssueCount} issue${syncIssueCount === 1 ? "" : "s"}` : "In sync";
   const playlistSyncDetail = firstSyncIssue
     ? `${firstSyncIssue.name}: ${firstSyncIssue.detail}`
-    : screenCount > 0
-      ? "Assigned playlists match current reports."
-      : "Assign a screen to track playlist sync.";
+    : screenCount === 0
+      ? "Assign a screen to track playlist sync."
+      : null;
   const fleetAttentionCount = fleetRows.filter((row) => row.needsAttention).length;
   const fleetExceptions = fleetRows
     .filter((row) => row.needsAttention)
@@ -1906,19 +1906,19 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             </div>
             <dl className="mt-4 grid gap-3 lg:grid-cols-3">
               <div className={`rounded-lg border p-4 shadow-sm ${playingDeviceCount > 0 ? "border-sky-200 bg-sky-50" : "border-zinc-200 bg-white"}`}>
-                <dt className="text-xs font-semibold uppercase text-sky-800">Playback confirmed</dt>
+                <dt className="text-xs font-semibold uppercase text-sky-800">Live playback</dt>
                 <dd className="mt-2 text-2xl font-semibold text-zinc-950">{confirmedPlaybackLabel}</dd>
-                <dd className="mt-1 text-sm text-zinc-600">{playingDetail}</dd>
+                {playingDetail ? <dd className="mt-1 text-sm text-zinc-600">{playingDetail}</dd> : null}
               </div>
               <div className={`rounded-lg border p-4 shadow-sm ${onlineDeviceCount === screenCount && screenCount > 0 ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
                 <dt className={`text-xs font-semibold uppercase ${onlineDeviceCount === screenCount && screenCount > 0 ? "text-emerald-800" : "text-amber-800"}`}>Screens online</dt>
                 <dd className="mt-2 text-2xl font-semibold text-zinc-950">{onlineScreensLabel}</dd>
-                <dd className="mt-1 text-sm text-zinc-600">{onlineScreensDetail}</dd>
+                {onlineScreensDetail ? <dd className="mt-1 text-sm text-zinc-600">{onlineScreensDetail}</dd> : null}
               </div>
               <div className={`rounded-lg border p-4 shadow-sm ${syncIssueCount > 0 ? "border-amber-200 bg-amber-50" : "border-teal-200 bg-teal-50"}`}>
                 <dt className={`text-xs font-semibold uppercase ${syncIssueCount > 0 ? "text-amber-800" : "text-teal-800"}`}>Playlist sync</dt>
                 <dd className="mt-2 text-2xl font-semibold text-zinc-950">{playlistSyncLabel}</dd>
-                <dd className="mt-1 break-words text-sm text-zinc-600">{playlistSyncDetail}</dd>
+                {playlistSyncDetail ? <dd className="mt-1 break-words text-sm text-zinc-600">{playlistSyncDetail}</dd> : null}
               </div>
             </dl>
           </section>

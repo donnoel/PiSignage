@@ -265,6 +265,40 @@ async function appendLocalRecord(record: CloudReleaseRecord | CloudSyncResult): 
   await writeFileAtomic(filePath, `${JSON.stringify(current, null, 2)}\n`);
 }
 
+export async function deleteLocalCloudReleaseRecordsForPlaylists(playlistIds: Set<string>): Promise<void> {
+  if (playlistIds.size === 0) {
+    return;
+  }
+
+  const filePath = localReleaseStorePath();
+  let current: { releases: CloudReleaseRecord[]; syncResults: CloudSyncResult[] };
+  try {
+    current = JSON.parse(await fs.readFile(filePath, "utf8")) as typeof current;
+  } catch (error) {
+    const code = error instanceof Error && "code" in error ? error.code : undefined;
+    if (code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
+
+  const removedReleaseIds = new Set(
+    current.releases
+      .filter((release) => playlistIds.has(release.playlistId))
+      .map((release) => release.releaseId)
+  );
+  if (removedReleaseIds.size === 0) {
+    return;
+  }
+
+  const next = {
+    releases: current.releases.filter((release) => !removedReleaseIds.has(release.releaseId)),
+    syncResults: current.syncResults.filter((sync) => !removedReleaseIds.has(sync.releaseId))
+  };
+
+  await writeFileAtomic(filePath, `${JSON.stringify(next, null, 2)}\n`);
+}
+
 export function buildCloudReleaseManifest(
   playlist: Playlist,
   targets: InventoryPublishTarget[],

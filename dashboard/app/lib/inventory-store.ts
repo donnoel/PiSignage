@@ -99,6 +99,46 @@ function isoNow(): string {
   return new Date().toISOString();
 }
 
+function screenWithPlaylistUpdate(screen: ScreenRecord, playlistId: string | null | undefined, timestamp: string): ScreenRecord {
+  if (playlistId === undefined) {
+    return {
+      ...screen,
+      updatedAt: timestamp
+    };
+  }
+
+  return {
+    ...screen,
+    desiredReleaseId: playlistId === null ? null : screen.desiredReleaseId,
+    desiredReleaseManifestChecksum: playlistId === null ? null : screen.desiredReleaseManifestChecksum,
+    playlistId,
+    publishedAt: playlistId === null ? null : screen.publishedAt,
+    publishedPlaylistId: playlistId === null ? null : screen.publishedPlaylistId,
+    publishedPlaylistVersion: playlistId === null ? null : screen.publishedPlaylistVersion,
+    updatedAt: timestamp
+  };
+}
+
+function deviceWithPlaylistUpdate(device: DeviceRecord, playlistId: string | null | undefined, timestamp: string): DeviceRecord {
+  if (playlistId === undefined) {
+    return {
+      ...device,
+      updatedAt: timestamp
+    };
+  }
+
+  return {
+    ...device,
+    desiredReleaseId: playlistId === null ? null : device.desiredReleaseId,
+    desiredReleaseManifestChecksum: playlistId === null ? null : device.desiredReleaseManifestChecksum,
+    playlistId,
+    publishedAt: playlistId === null ? null : device.publishedAt,
+    publishedPlaylistId: playlistId === null ? null : device.publishedPlaylistId,
+    publishedPlaylistVersion: playlistId === null ? null : device.publishedPlaylistVersion,
+    updatedAt: timestamp
+  };
+}
+
 function stringOrDefault(value: string | undefined | null, fallback: string): string {
   const trimmed = value?.trim();
   return trimmed ? trimmed : fallback;
@@ -577,12 +617,10 @@ async function updateCloudInventory(config: { devicesTableName: string; screensT
     }
 
     const nextScreen = {
-      ...screen,
+      ...screenWithPlaylistUpdate(screen, input.playlistId, timestamp),
       group: input.group === undefined ? screen.group : stringOrDefault(input.group, "General"),
       location: input.location === undefined ? screen.location : stringOrDefault(input.location, "Unassigned"),
-      name: input.name?.trim() ?? screen.name,
-      playlistId: input.playlistId === undefined ? screen.playlistId : input.playlistId,
-      updatedAt: timestamp
+      name: input.name?.trim() ?? screen.name
     };
     const writes: Promise<unknown>[] = [
       dynamoDb.send(new PutItemCommand({
@@ -597,9 +635,7 @@ async function updateCloudInventory(config: { devicesTableName: string; screensT
         ...linkedDevicesForScreen(inventory.devices.items, screen).map((device) =>
           dynamoDb.send(new PutItemCommand({
             Item: deviceToItem({
-              ...device,
-              playlistId: assignedPlaylistId,
-              updatedAt: timestamp
+              ...deviceWithPlaylistUpdate(device, assignedPlaylistId, timestamp)
             }),
             TableName: config.devicesTableName
           }))
@@ -617,9 +653,7 @@ async function updateCloudInventory(config: { devicesTableName: string; screensT
   }
 
   const nextDevice = {
-    ...device,
-    playlistId: input.playlistId === undefined ? device.playlistId : input.playlistId,
-    updatedAt: timestamp
+    ...deviceWithPlaylistUpdate(device, input.playlistId, timestamp)
   };
   const writes: Promise<unknown>[] = [
     dynamoDb.send(new PutItemCommand({
@@ -634,9 +668,7 @@ async function updateCloudInventory(config: { devicesTableName: string; screensT
       ...linkedScreensForDevice(inventory.screens.items, device).map((screen) =>
         dynamoDb.send(new PutItemCommand({
           Item: screenToItem({
-            ...screen,
-            playlistId: assignedPlaylistId,
-            updatedAt: timestamp
+            ...screenWithPlaylistUpdate(screen, assignedPlaylistId, timestamp)
           }),
           TableName: config.screensTableName
         }))
@@ -1065,12 +1097,10 @@ export async function updateInventory(input: InventoryUpdateInput): Promise<void
     const nextItems = [...store.items];
     const previous = nextItems[index];
     nextItems[index] = {
-      ...previous,
+      ...screenWithPlaylistUpdate(previous, input.playlistId, timestamp),
       group: nextGroup ?? previous.group,
       location: nextLocation ?? previous.location,
-      name: nextName ?? previous.name,
-      playlistId: input.playlistId === undefined ? previous.playlistId : input.playlistId,
-      updatedAt: timestamp
+      name: nextName ?? previous.name
     };
     await writeScreenStore({
       ...store,
@@ -1104,11 +1134,7 @@ export async function updateInventory(input: InventoryUpdateInput): Promise<void
     throw new Error("Device was not found.");
   }
   const nextItems = [...store.items];
-  nextItems[index] = {
-    ...nextItems[index],
-    playlistId: input.playlistId === undefined ? nextItems[index].playlistId : input.playlistId,
-    updatedAt: timestamp
-  };
+  nextItems[index] = deviceWithPlaylistUpdate(nextItems[index], input.playlistId, timestamp);
   await writeDeviceStore({
     ...store,
     items: nextItems,

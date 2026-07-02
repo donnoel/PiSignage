@@ -362,6 +362,7 @@ function validateInventory(screensStore, devicesStore, validPlaylistIds) {
     assert(typeof screen.group === "string" && screen.group.trim(), `${label}: group is required`);
     assert(typeof screen.notes === "string", `${label}: notes must be present`);
     assert(screen.playlistId === null || validPlaylistIds.has(screen.playlistId), `${label}: playlistId must be null or a saved playlist`);
+    assert(screen.publishedPlaylistId === undefined || screen.publishedPlaylistId === null || validPlaylistIds.has(screen.publishedPlaylistId), `${label}: publishedPlaylistId must be null or a saved playlist`);
     assert(screen.deviceId === null || deviceIds.has(screen.deviceId), `${label}: deviceId must reference a known device`);
     assert(isValidDate(screen.updatedAt), `${label}: updatedAt must be valid`);
   }
@@ -380,6 +381,7 @@ function validateInventory(screensStore, devicesStore, validPlaylistIds) {
     assert(typeof device.rootPath === "string" && device.rootPath.trim(), `${label}: rootPath is required`);
     assert(typeof device.sshUser === "string" && device.sshUser.trim(), `${label}: sshUser is required`);
     assert(device.playlistId === null || validPlaylistIds.has(device.playlistId), `${label}: playlistId must be null or a saved playlist`);
+    assert(device.publishedPlaylistId === undefined || device.publishedPlaylistId === null || validPlaylistIds.has(device.publishedPlaylistId), `${label}: publishedPlaylistId must be null or a saved playlist`);
     assert(device.screenId === null || screenIds.has(device.screenId), `${label}: screenId must reference a known screen`);
     assert(isValidDate(device.updatedAt), `${label}: updatedAt must be valid`);
   }
@@ -441,13 +443,10 @@ function validatePublishStatus(status, playlistById, fallbackPlaylist) {
   assert(status.playlistId === undefined || (typeof status.playlistId === "string" && status.playlistId.trim()), "Publish status: playlistId must be a non-empty string when present");
 
   const statusPlaylist = status.playlistId ? playlistById.get(status.playlistId) : fallbackPlaylist;
-  if (statusPlaylist) {
-    const playlistAssetCount = Array.isArray(statusPlaylist.assets) ? statusPlaylist.assets.length : null;
-    assert(status.assetCount === playlistAssetCount, "Publish status: assetCount is stale");
-    assert(status.playlistVersion === statusPlaylist.version, "Publish status: playlistVersion is stale");
-  } else {
-    notes.push(`Publish status: freshness skipped because playlist ${status.playlistId} is not present in local state.`);
-  }
+  assert(statusPlaylist, `Publish status: playlistId ${status.playlistId} must reference a saved playlist`);
+  const playlistAssetCount = Array.isArray(statusPlaylist?.assets) ? statusPlaylist.assets.length : null;
+  assert(status.assetCount === playlistAssetCount, "Publish status: assetCount is stale");
+  assert(status.playlistVersion === statusPlaylist?.version, "Publish status: playlistVersion is stale");
 
   if (status.targets !== undefined) {
     assert(Array.isArray(status.targets), "Publish status: targets must be an array when present");
@@ -463,6 +462,33 @@ function validatePublishStatus(status, playlistById, fallbackPlaylist) {
     }
   }
   assert(isValidDate(status.timestamp), "Publish status: timestamp must be valid");
+}
+
+function validateCloudReleaseStore(store, validPlaylistIds) {
+  if (!store) {
+    return;
+  }
+
+  const releases = Array.isArray(store.releases) ? store.releases : [];
+  const syncResults = Array.isArray(store.syncResults) ? store.syncResults : [];
+  const releaseIds = new Set();
+
+  for (const release of releases) {
+    const label = `Cloud release ${release?.releaseId ?? "(missing id)"}`;
+    assert(typeof release.releaseId === "string" && release.releaseId.trim(), `${label}: releaseId is required`);
+    assert(!releaseIds.has(release.releaseId), `${label}: duplicate releaseId`);
+    releaseIds.add(release.releaseId);
+    assert(typeof release.playlistId === "string" && validPlaylistIds.has(release.playlistId), `${label}: playlistId must reference a saved playlist`);
+    assert(typeof release.playlistName === "string" && release.playlistName.trim(), `${label}: playlistName is required`);
+    assert(Number.isInteger(release.playlistVersion) && release.playlistVersion > 0, `${label}: playlistVersion must be positive`);
+    assert(isValidDate(release.publishedAt), `${label}: publishedAt must be valid`);
+  }
+
+  for (const sync of syncResults) {
+    const label = `Cloud sync ${sync?.releaseId ?? "(missing release)"}`;
+    assert(typeof sync.releaseId === "string" && releaseIds.has(sync.releaseId), `${label}: releaseId must reference a saved release`);
+    assert(isValidDate(sync.completedAt), `${label}: completedAt must be valid`);
+  }
 }
 
 function validateActivity(activityStore) {
@@ -568,6 +594,7 @@ validateSettings(await readOptionalJson("settings.local.json", "Settings"));
 if (playlist) {
   validatePublishStatus(await readOptionalJson("publish-status.json", "Publish status"), playlistById, playlist);
 }
+validateCloudReleaseStore(await readOptionalJson("cloud-releases.local.json", "Cloud release store"), validPlaylistIds);
 validateActivity(await readOptionalJson("activity.local.json", "Activity store"));
 validateRecovery(await readOptionalJson("recovery.local.json", "Recovery store"));
 

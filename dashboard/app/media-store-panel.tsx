@@ -2,7 +2,7 @@
 
 import type { InputHTMLAttributes } from "react";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { FileUp, FolderOpen, UploadCloud } from "lucide-react";
+import { FileUp, FolderOpen, Plus, Tag, Trash2, UploadCloud } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { StatusPill } from "./dashboard-ui";
 import { isPlaybackSafeVideoFileName, isStillClipFileName } from "./lib/playback-safety";
@@ -1224,10 +1224,10 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
         type="button"
         onClick={() => setFolderFilter(value)}
         aria-pressed={selected}
-        className={`flex min-h-10 max-w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-semibold ring-1 ${sidebarButtonClass(selected)}`}
+        className={`grid min-h-[68px] min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md px-4 py-3 text-left ring-1 transition ${sidebarButtonClass(selected)}`}
       >
-        <span className="truncate">{label}</span>
-        <span className="shrink-0 text-xs text-zinc-500">{count}</span>
+        <span className="min-w-0 truncate text-sm font-semibold">{label}</span>
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${selected ? "bg-teal-100 text-teal-900" : "bg-zinc-100 text-zinc-600"}`}>{count}</span>
       </button>
     );
   }
@@ -1241,10 +1241,10 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
         type="button"
         onClick={() => setTagFilter(selected ? "" : label)}
         aria-pressed={selected}
-        className={`flex min-h-9 max-w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm font-semibold ring-1 ${sidebarButtonClass(selected)}`}
+        className={`inline-flex min-h-9 max-w-full items-center gap-2 rounded-full px-3 py-1.5 text-left text-sm font-semibold ring-1 transition ${sidebarButtonClass(selected)}`}
       >
         <span className="truncate">{label}</span>
-        <span className="shrink-0 text-xs text-zinc-500">{count}</span>
+        <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-xs font-semibold ${selected ? "bg-teal-100 text-teal-900" : "bg-zinc-100 text-zinc-600"}`}>{count}</span>
       </button>
     );
   }
@@ -1283,13 +1283,16 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
               </span>
             </summary>
 
-            <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(280px,380px)] xl:items-start">
+            <div className="mt-4 grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-semibold text-zinc-950">Folders</span>
-                  <StatusPill label={`${folders.length}`} tone="muted" />
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <FolderOpen className="h-4 w-4 shrink-0 text-teal-700" aria-hidden="true" />
+                    <span className="text-sm font-semibold text-zinc-950">Browse folders</span>
+                  </div>
+                  <span className="text-xs font-semibold text-zinc-500">{folders.length} saved</span>
                 </div>
-                <div className="mt-2 flex flex-wrap gap-2">
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
                   {renderFolderButton("All media", items.length, "all")}
                   {renderFolderButton("Unfiled", unfiledItemCount, "unfiled")}
                   {folders.map((folder) =>
@@ -1300,51 +1303,66 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
                       type="button"
                       onClick={() => setSafetyFilter("review")}
                       aria-pressed={safetyFilter === "review"}
-                      className="flex min-h-10 max-w-full items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-left text-sm font-semibold text-amber-950 ring-1 ring-amber-200"
+                      className="grid min-h-[68px] min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-amber-50 px-4 py-3 text-left ring-1 ring-amber-200 transition hover:bg-amber-100"
                     >
-                      <span className="truncate">Needs attention</span>
-                      <span className="shrink-0 text-xs text-amber-700">{reviewItemCount}</span>
+                      <span className="min-w-0 truncate text-sm font-semibold text-amber-950">Needs attention</span>
+                      <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">{reviewItemCount}</span>
                     </button>
                   ) : null}
                 </div>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-semibold text-zinc-950">Tags</span>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {availableTags.map(renderTagFilterButton)}
-                </div>
               </div>
 
-              <div className="flex min-w-0 flex-col gap-2 sm:flex-row xl:justify-end">
-                <form onSubmit={handleCreateFolder} className="flex min-w-0 flex-1 gap-2 xl:max-w-[300px]">
-                  <label htmlFor="new-media-folder" className="sr-only">New folder name</label>
-                  <input
-                    id="new-media-folder"
-                    value={newFolderName}
-                    onChange={(event) => setNewFolderName(event.currentTarget.value)}
-                    placeholder="New folder"
-                    disabled={isBusy}
-                    className="min-h-10 min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
-                  />
-                  <button
-                    type="submit"
-                    disabled={isBusy}
-                    className="min-h-10 shrink-0 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100"
-                  >
-                    {isCreatingFolder ? "Creating" : "Add"}
-                  </button>
-                </form>
+              <div className="min-w-0 space-y-4 xl:border-l xl:border-zinc-200 xl:pl-5">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Plus className="h-4 w-4 shrink-0 text-teal-700" aria-hidden="true" />
+                    <span className="text-sm font-semibold text-zinc-950">Create folder</span>
+                  </div>
+                  <form onSubmit={handleCreateFolder} className="mt-2 flex min-w-0 gap-2">
+                    <label htmlFor="new-media-folder" className="sr-only">New folder name</label>
+                    <input
+                      id="new-media-folder"
+                      value={newFolderName}
+                      onChange={(event) => setNewFolderName(event.currentTarget.value)}
+                      placeholder="New folder"
+                      disabled={isBusy}
+                      className="min-h-10 min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isBusy}
+                      className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100"
+                    >
+                      <Plus className="h-4 w-4" aria-hidden="true" />
+                      {isCreatingFolder ? "Creating" : "Add"}
+                    </button>
+                  </form>
 
-                {selectedFolder ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleRemoveSelectedFolder()}
-                    disabled={isBusy}
-                    className="min-h-10 shrink-0 rounded-md border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-700 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
-                  >
-                    {deletingFolderId === selectedFolder.id ? "Removing" : "Remove folder"}
-                  </button>
-                ) : null}
+                  {selectedFolder ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleRemoveSelectedFolder()}
+                      disabled={isBusy}
+                      className="mt-2 inline-flex min-h-10 items-center gap-2 rounded-md border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-700 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
+                    >
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      {deletingFolderId === selectedFolder.id ? "Removing" : `Remove ${selectedFolder.name}`}
+                    </button>
+                  ) : null}
+                </div>
+
+                <div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Tag className="h-4 w-4 shrink-0 text-teal-700" aria-hidden="true" />
+                      <span className="text-sm font-semibold text-zinc-950">Tags</span>
+                    </div>
+                    <span className="text-xs font-semibold text-zinc-500">{availableTags.length} available</span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {availableTags.map(renderTagFilterButton)}
+                  </div>
+                </div>
               </div>
             </div>
           </details>
