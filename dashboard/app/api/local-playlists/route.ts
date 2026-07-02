@@ -16,13 +16,17 @@ import {
   readLivePlaylist,
   writePlaylist,
 } from "../../lib/local-playlist";
-import type { Playlist } from "../../lib/local-playlist";
+import type { Playlist, PlaylistAsset } from "../../lib/local-playlist";
 import { isCloudInventoryConfigured, readInventory, updateInventory } from "../../lib/inventory-store";
 import { apiErrorResponse } from "../../lib/api-error-response";
 import { readPlaylistStore, writePlaylistStore } from "../../lib/playlist-store";
 import { slugify } from "../../lib/media-processing";
 import { activeWorkspaceSession, workspaceContextFromSession } from "../../lib/workspace";
-import { deleteLocalCloudReleaseRecordsForPlaylists } from "../../lib/cloud-release-store";
+import {
+  deleteLocalCloudReleaseRecordsForPlaylists,
+  readLatestCloudReleaseForPlaylist,
+  type CloudReleaseAsset
+} from "../../lib/cloud-release-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -172,6 +176,24 @@ async function clearDeletedPlaylistRuntimeRecords(playlists: Playlist[], timesta
   ]);
 }
 
+function releaseAssetsToPlaylistAssets(releaseAssets: CloudReleaseAsset[]): PlaylistAsset[] {
+  return releaseAssets.map((asset) => ({
+    altText: asset.altText,
+    assetId: asset.assetId,
+    checksumSha256: asset.checksumSha256,
+    durationSeconds: asset.durationSeconds,
+    playbackObjectKey: asset.playbackObjectKey,
+    playbackStorageBucket: asset.playbackStorageBucket,
+    sizeBytes: asset.sizeBytes,
+    sourceObjectKey: asset.sourceObjectKey,
+    sourceStorageBucket: asset.sourceStorageBucket,
+    storageBucket: asset.storageBucket,
+    storageProvider: asset.storageProvider,
+    type: asset.type,
+    uri: asset.uri
+  }));
+}
+
 export async function POST(request: Request) {
   try {
     const session = activeWorkspaceSession();
@@ -292,6 +314,7 @@ export async function DELETE(request: Request) {
     const session = activeWorkspaceSession();
     const context = workspaceContextFromSession(session);
     const body = (await request.json()) as {
+      discardDraft?: boolean;
       resetLibrary?: boolean;
       resetName?: string;
       playlistId?: string;
@@ -344,13 +367,69 @@ export async function DELETE(request: Request) {
     }
 
     const store = await readPlaylistStore();
-    if (store.items.length <= 1) {
-      return NextResponse.json({ error: "Keep at least one playlist." }, { status: 400 });
-    }
-
-    const playlist = store.items.find((item) => item.playlistId === playlistId);
+    const index = store.items.findIndex((item) => item.playlistId === playlistId);
+    const playlist = index >= 0 ? store.items[index] : null;
     if (!playlist) {
       return NextResponse.json({ error: "Playlist was not found." }, { status: 404 });
+    }
+
+    if (body.discardDraft) {
+      const latestRelease = await readLatestCloudReleaseForPlaylist(playlist.playlistId);
+      if (latestRelease) {
+        const restoredPlaylist: Playlist = {
+          ...playlist,
+          assets: releaseAssetsToPlaylistAssets(latestRelease.assets),
+          name: latestRelease.playlistName || playlist.name,
+          updatedAt: timestamp,
+          version: latestRelease.playlistVersion,
+          workspaceId: latestRelease.workspaceId
+        };
+        const nextItems = [...store.items];
+        nextItems[index] = restoredPlaylist;
+
+        await writePlaylistStore({
+          ...store,
+          items: nextItems,
+          updatedAt: timestamp,
+          version: store.version + 1
+        });
+
+        if (!isCloudInventoryConfigured()) {
+          const livePlaylist = await readLivePlaylist();
+          if (livePlaylist.playlistId === playlist.playlistId) {
+            await writePlaylist(livePlaylistPath(), restoredPlaylist);
+          }
+        }
+
+        await clearDeletedPlaylistPublishStatus(new Set([playlist.playlistId]));
+        await appendActivityRecord({
+          id: randomUUID(),
+          action: "playlist-draft-discard",
+          actor: context.userId,
+          entityId: playlist.playlistId,
+          entityType: "playlist",
+          message: `Discarded draft changes to ${playlist.name} and restored published v${latestRelease.playlistVersion}.`,
+          result: "success",
+          timestamp
+        });
+
+        return NextResponse.json({
+          action: "restored",
+          nextPlaylistId: restoredPlaylist.playlistId,
+          playlist: restoredPlaylist
+        });
+      }
+
+      if (store.items.length <= 1) {
+        return NextResponse.json(
+          { error: "This playlist has no published version to restore, and it is the only saved playlist." },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (store.items.length <= 1) {
+      return NextResponse.json({ error: "Keep at least one playlist." }, { status: 400 });
     }
 
     const nextItems = store.items.filter((item) => item.playlistId !== playlistId);
@@ -387,6 +466,7 @@ export async function DELETE(request: Request) {
     });
 
     return NextResponse.json({
+      action: "deleted",
       nextPlaylistId: fallbackPlaylist.playlistId,
       playlistId: playlist.playlistId
     });

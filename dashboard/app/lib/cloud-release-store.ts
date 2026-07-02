@@ -373,6 +373,60 @@ export async function readCloudRelease(releaseId: string): Promise<CloudReleaseR
   return result.Item ? releaseRecordFromItem(result.Item) : null;
 }
 
+export async function readLatestCloudReleaseForPlaylist(playlistId: string): Promise<CloudReleaseRecord | null> {
+  const config = cloudReleaseConfig();
+
+  if (!config) {
+    const filePath = localReleaseStorePath();
+    try {
+      const current = JSON.parse(await fs.readFile(filePath, "utf8")) as { releases?: unknown };
+      const releases = Array.isArray(current.releases)
+        ? current.releases.filter((release): release is CloudReleaseRecord =>
+            Boolean(
+              release &&
+              typeof release === "object" &&
+              "playlistId" in release &&
+              release.playlistId === playlistId &&
+              workspaceMatches(release)
+            )
+          )
+        : [];
+      return releases.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))[0] ?? null;
+    } catch (error) {
+      const code = error instanceof Error && "code" in error ? error.code : undefined;
+      if (code === "ENOENT") {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  const items: Record<string, AttributeValue>[] = [];
+  let exclusiveStartKey: Record<string, AttributeValue> | undefined;
+  do {
+    const result = await dynamoDb.send(new QueryCommand({
+      ExclusiveStartKey: exclusiveStartKey,
+      ExpressionAttributeValues: {
+        ":workspaceId": stringAttribute(activeWorkspaceId())
+      },
+      IndexName: "byWorkspace",
+      KeyConditionExpression: "workspaceId = :workspaceId",
+      TableName: config.releasesTableName
+    }));
+    items.push(...(result.Items ?? []));
+    exclusiveStartKey = result.LastEvaluatedKey;
+  } while (exclusiveStartKey);
+
+  return items
+    .map(releaseRecordFromItem)
+    .filter((release): release is CloudReleaseRecord =>
+      release !== null &&
+      release.playlistId === playlistId &&
+      workspaceMatches(release)
+    )
+    .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))[0] ?? null;
+}
+
 export function releaseTargetsDevice(release: CloudReleaseRecord, deviceId: string): boolean {
   return release.targetDeviceIds.includes(deviceId);
 }

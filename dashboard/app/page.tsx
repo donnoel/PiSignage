@@ -27,8 +27,8 @@ import { MediaStorePanel } from "./media-store-panel";
 import { LocalPlaylistBuilder, LocalPlaylistScreenAssignment } from "./local-playlist-builder";
 import { LocalPlaylistCreateForm } from "./local-playlist-create-form";
 import { LocalPlaylistDeleteButton } from "./local-playlist-delete-button";
+import { LocalPlaylistDiscardButton } from "./local-playlist-discard-button";
 import { LocalPlaylistRenameButton } from "./local-playlist-rename-button";
-import { LocalPlaylistResetButton } from "./local-playlist-reset-button";
 import { LocalPlaylistSwitcher } from "./local-playlist-switcher";
 import { LocalPublishForm } from "./local-publish-form";
 import { LocalPlaylistSequence } from "./local-playlist-sequence";
@@ -1493,6 +1493,16 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const assignedScreens = playlistScreens(playlist.playlistId);
   const assignedScreensLabel = nameList(assignedScreens, (screen) => screen.name, "No screens assigned");
+  const selectedPlaylistHasUnpublishedChanges = Boolean(
+    (publishStatusForSelected && !publishStatusForSelected.ok && !publishStatusForSelected.piPublishEnabled) ||
+      (dashboardMode === "cloud" &&
+        assignedScreens.some((screen) => {
+          const device = linkedDeviceForScreen(screen);
+          const publishedPlaylistId = screen.publishedPlaylistId ?? device?.publishedPlaylistId ?? null;
+          const publishedPlaylistVersion = screen.publishedPlaylistVersion ?? device?.publishedPlaylistVersion ?? null;
+          return publishedPlaylistId === playlist.playlistId && publishedPlaylistVersion !== playlist.version;
+        }))
+  );
   const selectedPlaylistLiveState = playlistLiveStatus(
     playlistSyncState,
     publishStatusForSelected,
@@ -2294,9 +2304,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                         <LocalPlaylistCreateForm />
                       </div>
                     </div>
-                    <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 pt-4">
-                      <LocalPlaylistResetButton playlistCount={playlistOptions.length} />
-                    </div>
                   </div>
                 </section>
               ) : null}
@@ -2334,6 +2341,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     playlistId={playlist.playlistId}
                     screenAssignmentHref={playlistWorkflowStepHref("screens")}
                   />
+                  {selectedPlaylistHasUnpublishedChanges ? (
+                    <div className="mt-3">
+                      <LocalPlaylistDiscardButton name={playlist.name} playlistId={playlist.playlistId} />
+                    </div>
+                  ) : null}
                 </section>
               ) : null}
             </div>
