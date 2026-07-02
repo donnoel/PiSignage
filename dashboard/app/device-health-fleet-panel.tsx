@@ -38,8 +38,6 @@ type FleetDeviceHealthPanelProps = {
   deviceStatuses: Record<string, DeviceLiveStatus>;
   devices: DeviceRecord[];
   screens: ScreenRecord[];
-  liveHost: string | null;
-  livePlayerUrl: string | null;
   playlists: Array<{
     assetCount?: number;
     name: string;
@@ -259,10 +257,6 @@ function normalize(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
 
-function deviceMatchesLiveHost(device: DeviceRecord, liveHost: string | null): boolean {
-  return Boolean(liveHost && normalize(device.host) === normalize(liveHost));
-}
-
 function publishRequiredDetail(localVersion: number, reportedVersion: number): string {
   return `Beam v${localVersion}; Pi v${reportedVersion}. Publish required.`;
 }
@@ -302,15 +296,8 @@ function operationalHostFor(row: RowState): string | null {
   return savedHost && savedHost !== "Not configured" ? savedHost : null;
 }
 
-function playerUrlFor(row: RowState, liveHost: string | null, livePlayerUrl: string | null): string | null {
-  const host = operationalHostFor(row);
-  if (!host) {
-    return null;
-  }
-
-  return liveHost && normalize(host) === normalize(liveHost) && livePlayerUrl
-    ? livePlayerUrl
-    : `http://${host}:5173/?playlist=/playlist.local.json`;
+function liveReportUrlFor(row: RowState): string {
+  return `/screen-player/${encodeURIComponent(row.device.id)}`;
 }
 
 function sshUrlFor(row: RowState): string | null {
@@ -526,8 +513,6 @@ export function DeviceHealthFleetPanel({
   deviceStatuses,
   devices,
   screens,
-  liveHost,
-  livePlayerUrl,
   playlists
 }: FleetDeviceHealthPanelProps) {
   const router = useRouter();
@@ -856,7 +841,7 @@ export function DeviceHealthFleetPanel({
   const selectedPublishFeedback = selectedRow ? publishFeedbackByDeviceId[selectedRow.device.id] ?? null : null;
   const selectedSyncState = selectedRow ? displayedSyncState(selectedRow, selectedPublishFeedback) : null;
   const selectedPublishPending = selectedPublishFeedback?.status === "pending";
-  const selectedPlayerUrl = selectedRow ? playerUrlFor(selectedRow, liveHost, livePlayerUrl) : null;
+  const selectedLiveReportUrl = selectedRow ? liveReportUrlFor(selectedRow) : null;
   const selectedSshUrl = selectedRow ? sshUrlFor(selectedRow) : null;
   const selectedTargetName = selectedRow ? screenName(selectedRow) : "selected screen";
   const onlineCount = rows.filter((row) => row.healthLabel === "Online").length;
@@ -1668,14 +1653,14 @@ export function DeviceHealthFleetPanel({
                     <div className="min-w-[180px]">
                       <h5 className="text-xs font-semibold uppercase text-zinc-500">Diagnostics</h5>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        {selectedPlayerUrl ? (
+                        {selectedLiveReportUrl ? (
                           <a
-                            href={selectedPlayerUrl}
+                            href={selectedLiveReportUrl}
                             target="_blank"
                             rel="noreferrer"
                             className="inline-flex min-h-9 items-center rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
                           >
-                            Open Pi player
+                            Open live report
                           </a>
                         ) : null}
                         {selectedSshUrl ? (

@@ -1334,6 +1334,10 @@ function scalarSearchParam(value: string | string[] | undefined): string | null 
   return candidate?.trim() || null;
 }
 
+function screenLiveReportUrl(deviceId: string | null | undefined): string | null {
+  return deviceId ? `/screen-player/${encodeURIComponent(deviceId)}` : null;
+}
+
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const cookieStore = await cookies();
   const currentThemeId = normalizeBeamThemeId(cookieStore.get(beamThemeCookieName)?.value);
@@ -1465,9 +1469,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   }
 
   const playlistSyncState = syncStateForPlaylist(playlist);
-  const piPlayerUrl =
-    process.env.PISIGNAGE_PLAYER_URL?.trim() ||
-    (pi.host ? `http://${pi.host}:5173/?playlist=/playlist.local.json` : null);
   const readyAssetCount = playlist.assets.filter((asset) => {
     const fileName = asset.uri.split("/").filter(Boolean).at(-1) ?? asset.uri;
     return asset.type === "video" && isPlaybackSafeVideoFileName(fileName);
@@ -1771,12 +1772,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     ? `${focusedLiveSummary} · ${focusedSyncLabel} · Last report ${focusedLastReportLabel}`
     : [focusedLiveSummary, focusedScreenIsLive ? "Playback unknown" : "No live report"].join(" · ");
   const previewEyebrow = focusedScreenIsLive && focusedScreenReachable ? "Showing now" : "Screen status";
-  const focusedPlayerUrl =
-    focusedScreen?.host && focusedScreen.host !== "Not configured"
-      ? `http://${focusedScreen.host}:5173/?playlist=/playlist.local.json`
-      : !focusedScreen && piPlayerUrl
-        ? piPlayerUrl
-        : null;
+  const focusedLiveReportUrl = focusedScreen ? screenLiveReportUrl(focusedScreen.id) : null;
   const screenFocusOptions = fleetRows.map((row) => ({
     location: row.location,
     screenId: row.screenId,
@@ -2015,15 +2011,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                               <p className="beam-preview-overline text-sm font-semibold uppercase">{previewEyebrow}</p>
                               <p className="mt-2 break-words text-3xl font-black leading-tight sm:text-4xl">{focusedScreenTitle}</p>
                             </div>
-                            {focusedPlayerUrl ? (
+                            {focusedLiveReportUrl ? (
                               <a
-                                href={focusedPlayerUrl}
+                                href={focusedLiveReportUrl}
                                 target="_blank"
                                 rel="noreferrer"
-                                title="Open the selected screen's Pi player loop"
+                                title="Open the selected screen's latest live report"
                                 className="beam-preview-button inline-flex min-h-10 shrink-0 items-center justify-center rounded-md px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2"
                               >
-                                Open screen player
+                                Open live report
                               </a>
                             ) : null}
                           </div>
@@ -2065,8 +2061,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               deviceStatuses={deviceStatuses}
               devices={inventory.devices.items}
               screens={inventory.screens.items}
-              liveHost={pi.host}
-              livePlayerUrl={piPlayerUrl}
               playlists={playlistStore.items.map((item) => ({
                 assetCount: item.assets.length,
                 name: item.name,
