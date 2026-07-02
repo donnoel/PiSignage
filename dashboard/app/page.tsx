@@ -184,7 +184,7 @@ const navigationItems: Array<{ label: string; view: DashboardView }> = [
   { label: "Library", view: "media-store" },
   { label: "Playlists", view: "playlist" },
   { label: "Screens", view: "screens" },
-  { label: "Troubleshooting", view: "troubleshooting" },
+  { label: "Diagnostics", view: "troubleshooting" },
   { label: "Layouts", view: "layouts" },
   { label: "Scheduling", view: "scheduling" }
 ];
@@ -221,8 +221,8 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
   },
   troubleshooting: {
     eyebrow: "Support",
-    title: "Troubleshooting",
-    description: "Pi evidence, setup details, logs, and recovery history for deeper troubleshooting."
+    title: "Diagnostics",
+    description: "Live screen status, raw logs, and recovery history for deeper diagnostics."
   }
 };
 
@@ -467,31 +467,6 @@ function statusFreshnessDetail(
   }
 
   return `Last VLC heartbeat was ${formatStatusAge(playerStatus.updatedAt)}.`;
-}
-
-function serviceLabel(activeState: string | null, subState: string | null): string {
-  if (!activeState) {
-    return "Unknown";
-  }
-
-  return subState ? `${activeState} / ${subState}` : activeState;
-}
-
-function serviceTone(activeState: string | null): "good" | "warn" | "muted" {
-  return activeState === "active" ? "good" : "warn";
-}
-
-function bootRecoveryLabel(pi: PiProbe, playbackHealthy: boolean): string {
-  if (!pi.reachable) {
-    return "Unknown";
-  }
-
-  return playbackHealthy ? "Recovered" : "Check";
-}
-
-function bootRecoveryDetail(pi: PiProbe): string {
-  const bootLabel = pi.bootId ? `boot ${pi.bootId.slice(0, 8)}` : "boot not reported";
-  return pi.uptime ? `${pi.uptime} · ${bootLabel}` : bootLabel;
 }
 
 function lastKnownPlaybackPath(): string {
@@ -1130,14 +1105,6 @@ function shortScreenDetail(playlistLiveState: PlaylistSyncState): string {
   return playlistLiveState.detail;
 }
 
-type EvidenceItem = {
-  label: string;
-  value: string;
-  detail: string;
-  tone: "good" | "warn" | "muted";
-  timestamp?: string | null;
-};
-
 type AttentionItem = {
   detail: string;
   label: string;
@@ -1353,7 +1320,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     : playlist.playlistId === firstPlaylistId
       ? publishStatus
       : null;
-  const piPlaylistVersion = playerStatus?.playlistVersion;
   function playlistScreens(playlistId: string) {
     return inventory.screens.items
       .filter((screen) => screen.playlistId === playlistId)
@@ -1462,16 +1428,57 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       const assignedPlaylist = screen.playlistId
         ? playlistStore.items.find((item) => item.playlistId === screen.playlistId)
         : null;
+      const status = linkedDevice ? deviceStatuses[linkedDevice.id] ?? null : null;
+      const reportedPlaylistId = status?.playerStatus?.playlistId ?? null;
+      const reportsAssignedPlaylist = Boolean(
+        assignedPlaylist?.playlistId && reportedPlaylistId === assignedPlaylist.playlistId
+      );
+      const liveSync = assignedPlaylist
+        ? reportsAssignedPlaylist
+          ? syncState(assignedPlaylist.version, status?.playerStatus?.playlistVersion, status?.reachable ?? false)
+          : status
+            ? {
+                detail: `${screen.name} has not reported ${assignedPlaylist.name} yet.`,
+                label: "Waiting",
+                tone: "muted" as const
+              }
+            : {
+                detail: `${screen.name} has not checked in with playlist evidence yet.`,
+                label: "No check-in",
+                tone: "muted" as const
+              }
+        : {
+            detail: "No playlist is assigned to this screen.",
+            label: "Unassigned",
+            tone: "muted" as const
+          };
 
       return {
+        assignedPlaylistVersion: assignedPlaylist?.version ?? null,
         deviceHost: linkedDevice?.host ?? null,
         deviceId: linkedDevice?.id ?? null,
         deviceName: linkedDevice?.name ?? null,
         group: screen.group,
         id: screen.id,
+        liveStatus: status
+          ? {
+              ageLabel: status.ageLabel,
+              playbackHealthy: status.playbackHealthy,
+              playbackLabel: status.playbackLabel,
+              playlistId: status.playerStatus?.playlistId ?? null,
+              playlistVersion: status.playerStatus?.playlistVersion ?? null,
+              reachable: status.reachable,
+              stale: status.stale,
+              state: status.playerStatus?.state ?? null,
+              timestampLabel: status.timestampLabel
+            }
+          : null,
         location: screen.location,
         name: screen.name,
-        playlistName: assignedPlaylist?.name ?? null
+        playlistName: assignedPlaylist?.name ?? null,
+        syncDetail: liveSync.detail,
+        syncLabel: liveSync.label,
+        syncTone: liveSync.tone
       };
     })
     .sort(
@@ -1692,102 +1699,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       : !focusedScreen && piPlayerUrl
         ? piPlayerUrl
         : null;
-  const setupLocationName = focusedScreen?.location ?? localLocationName;
-  const setupScreenName = focusedScreen?.screenName ?? localScreenName;
-  const setupDeviceIdentifier =
-    focusedScreen ? focusedScreen.host || "No host" : localDeviceIdentifier;
-  const focusedScreenMatchesPrimaryPi = Boolean(
-    focusedScreen?.host &&
-      pi.host &&
-      normalizeIdentity(focusedScreen.host) === normalizeIdentity(pi.host)
-  );
-  const setupStatusLabel = focusedScreen
-    ? focusedScreen.reachable
-      ? "Online"
-      : focusedScreen.isLive
-        ? "Offline"
-        : "Not reporting"
-    : pi.reachable
-      ? "Online"
-      : "Offline";
-  const setupStatusTone: "good" | "warn" | "muted" = focusedScreen?.reachable || (!focusedScreen && pi.reachable)
-    ? "good"
-    : focusedScreen?.isLive || !focusedScreen
-      ? "warn"
-      : "muted";
-  const setupStatusTimestamp = focusedScreen ? focusedScreen.lastReportLabel : playerUpdatedAt;
-  const setupStatusDetail = focusedScreen ? focusedScreen.detail : pi.message;
-  const setupTemperature = focusedScreenMatchesPrimaryPi ? formatTemperature(pi.temp) : "Not reported";
-  const setupThrottle = focusedScreenMatchesPrimaryPi ? formatThrottle(pi.throttled) : "Not reported";
-  const setupUptime = focusedScreenMatchesPrimaryPi ? pi.uptime ?? "Unknown" : "Not reported";
-  const setupDiskFree =
-    focusedScreenMatchesPrimaryPi && isHeartbeatFresh ? formatBytes(heartbeat?.diskFreeBytes) : "Not reported";
-  const recoveryEvidence: EvidenceItem[] = [
-    {
-      label: "Playback report",
-      value: playbackHealthy ? "Fresh and playing" : isPlaying ? "Playing but stale" : "Needs attention",
-      detail: `${playerFreshnessDetail} ${playerStatus?.lastError ? `Last error: ${playerStatus.lastError}` : "No VLC error reported."}`,
-      tone: playbackHealthy ? "good" : "warn",
-      timestamp: playerStatus?.updatedAt
-    },
-    {
-      label: "Playback service",
-      value: serviceLabel(pi.serviceActiveState, pi.serviceSubState),
-      detail: `Systemd reports ${pi.serviceRestartCount ?? "unknown"} restart(s) this boot.`,
-      tone: serviceTone(pi.serviceActiveState)
-    },
-    {
-      label: "Restart recovery",
-      value: bootRecoveryLabel(pi, playbackHealthy),
-      detail: bootRecoveryDetail(pi),
-      tone: playbackHealthy ? "good" : pi.reachable ? "warn" : "muted"
-    },
-    {
-      label: "Playlist update",
-      value: playlistSyncState.label,
-      detail: `${playlistSyncState.detail} Local v${playlist.version}; Pi ${piPlaylistVersion ? `v${piPlaylistVersion}` : "unknown"}.`,
-      tone: playlistSyncState.tone
-    },
-    {
-      label: "Last send",
-      value: publishStatusForSelected
-        ? publishStatusForSelected.ok
-          ? "Succeeded"
-          : publishStatusForSelected.piPublishEnabled
-            ? "Needs attention"
-            : "Pending publish"
-        : "Not recorded",
-      detail: publishStatusForSelected
-        ? `${actionLabel(publishStatusForSelected.action)} wrote playlist v${publishStatusForSelected.playlistVersion}. ${publishStatusDisplayMessage(publishStatusForSelected)} ${publishAssetSyncDetail(publishStatusForSelected)}`
-        : "No local publish status file has been written yet.",
-      tone: publishStatusForSelected
-        ? publishStatusForSelected.ok
-          ? "good"
-          : "warn"
-        : "muted",
-      timestamp: publishStatusForSelected?.timestamp
-    },
-    {
-      label: "TV output",
-      value: formatDisplayMode(playerStatus?.displayMode) ?? pi.displayMode ?? "Unknown",
-      detail: playerStatus?.displayOutput ? `Output ${playerStatus.displayOutput}.` : "No display output was reported by VLC status.",
-      tone: playerStatus?.displayMode || pi.displayMode ? "good" : "warn"
-    },
-    {
-      label: "Pi temperature",
-      value: formatTemperature(pi.temp),
-      detail: `Throttle ${formatThrottle(pi.throttled)}.`,
-      tone: pi.temp && pi.throttled ? "good" : "warn"
-    }
-  ];
-  const supportEvidence = recoveryEvidence
-    .slice()
-    .sort((left, right) => {
-      const rank = { warn: 0, muted: 1, good: 2 };
-      return rank[left.tone] - rank[right.tone];
-    });
-  const supportAttentionCount = recoveryEvidence.filter((item) => item.tone === "warn").length;
-
   return (
     <main className="min-h-screen [overflow-x:clip] bg-[#f3f6f8] text-zinc-950">
       <DashboardAutoRefresh enabled={autoRefreshEnabledForView(selectedView)} />
@@ -2110,87 +2021,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           <section
             id="troubleshooting"
             aria-labelledby="troubleshooting-heading"
-            className={selectedView === "troubleshooting" ? "mt-6 space-y-6" : "hidden"}
+            className={selectedView === "troubleshooting" ? "mt-6" : "hidden"}
           >
-            <h2 id="troubleshooting-heading" className="sr-only">Troubleshooting</h2>
-            <section aria-labelledby="recovery-history-heading" className="rounded-lg border border-zinc-200 bg-white shadow-sm">
-              <div className="flex flex-col gap-2 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <h3 id="recovery-history-heading" className="text-xl font-semibold">Playback evidence</h3>
-                  <p className="mt-1 text-sm text-zinc-600">
-                    Detailed local evidence from the connected Pi. Items that need attention appear first.
-                  </p>
-                </div>
-                <StatusPill
-                  label={
-                    supportAttentionCount === 0
-                      ? "All clear"
-                      : `${supportAttentionCount} ${supportAttentionCount === 1 ? "item needs" : "items need"} attention`
-                  }
-                  tone={supportAttentionCount === 0 ? "good" : "warn"}
-                />
-              </div>
-                  <ol className="divide-y divide-zinc-200">
-                    {supportEvidence.map((item) => (
-                      <li key={item.label} className="grid gap-3 px-5 py-4 text-sm md:grid-cols-[180px_1fr_auto] md:items-start">
-                        <div>
-                          <p className="font-semibold text-zinc-950">{item.label}</p>
-                          <p className="mt-1 text-xs font-medium text-zinc-500">{item.timestamp ? formatTimestamp(item.timestamp) : "Latest check"}</p>
-                        </div>
-                        <div>
-                          <p className="font-semibold text-zinc-950">{item.value}</p>
-                          <p className="mt-1 leading-6 text-zinc-600">{item.detail}</p>
-                        </div>
-                        <div className="md:justify-self-end">
-                          <StatusPill label={item.tone === "good" ? "OK" : item.tone === "warn" ? "Check" : "Info"} tone={item.tone} />
-                        </div>
-                      </li>
-                    ))}
-                  </ol>
-                </section>
-
-                <section id="field-setup" aria-labelledby="field-setup-heading" className="rounded-lg border border-zinc-200 bg-white shadow-sm">
-                  <div className="border-b border-zinc-200 p-5">
-                    <h3 id="field-setup-heading" className="text-xl font-semibold">Setup and Pi details</h3>
-                  </div>
-                  <div className="grid gap-4 p-5 xl:grid-cols-[1.1fr_0.9fr]">
-                    <div className="rounded-md border border-zinc-200 bg-zinc-50">
-                      <div className="border-b border-zinc-200 p-5">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div>
-                            <h4 className="text-lg font-semibold">{setupLocationName}</h4>
-                            <p className="mt-1 text-sm text-zinc-600">Local setup from saved configuration and the latest Pi check.</p>
-                          </div>
-                          <StatusPill label={setupStatusLabel} tone={setupStatusTone} />
-                        </div>
-                      </div>
-                      <dl className="grid gap-0 divide-y divide-zinc-200 text-sm sm:grid-cols-2 sm:divide-x sm:divide-y-0">
-                        <div className="p-5">
-                          <dt className="font-semibold text-zinc-500">Screen</dt>
-                          <dd className="mt-2 text-lg font-semibold">{setupScreenName}</dd>
-                          <dd className="mt-1 text-zinc-600">Pi: {setupDeviceIdentifier}</dd>
-                        </div>
-                        <div className="p-5">
-                          <dt className="font-semibold text-zinc-500">Last local status</dt>
-                          <dd className="mt-2 text-lg font-semibold">{setupStatusTimestamp}</dd>
-                          <dd className="mt-1 text-zinc-600">{setupStatusDetail}</dd>
-                        </div>
-                      </dl>
-                    </div>
-
-                    <div id="device-health" className="rounded-md border border-zinc-200 bg-zinc-50 p-5">
-                      <h4 className="text-lg font-semibold">Pi readings</h4>
-                      <dl className="mt-5 grid gap-3 sm:grid-cols-2">
-                        <Metric label="Temperature" value={setupTemperature} />
-                        <Metric label="Throttle" value={setupThrottle} />
-                        <Metric label="Uptime" value={setupUptime} />
-                        <Metric label="Disk free" value={setupDiskFree} />
-                      </dl>
-                    </div>
-                  </div>
-                </section>
-
-                <TroubleshootingPanel screens={troubleshootingScreens} />
+            <h2 id="troubleshooting-heading" className="sr-only">Diagnostics</h2>
+            <TroubleshootingPanel screens={troubleshootingScreens} />
           </section>
 
           <section
