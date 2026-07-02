@@ -34,6 +34,7 @@ import { LocalPublishForm } from "./local-publish-form";
 import { LocalPlaylistSequence } from "./local-playlist-sequence";
 import { LocalPlaylistTimeline } from "./local-playlist-timeline";
 import { SchedulingPanel } from "./scheduling-panel";
+import { ScreenFocusSelect } from "./screen-focus-select";
 import { TroubleshootingPanel } from "./troubleshooting-panel";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +50,9 @@ type Heartbeat = {
 };
 
 type PlayerStatus = {
+  currentAssetDurationSeconds?: number | null;
+  currentAssetId?: string | null;
+  currentAssetPath?: string | null;
   mode?: string;
   state?: string;
   startedAt?: string;
@@ -135,6 +139,15 @@ type PublishStatus = {
 };
 
 type StatusTone = "good" | "warn" | "muted";
+
+type CurrentPlaybackItem = {
+  assetId: string;
+  durationLabel: string | null;
+  index: number;
+  title: string;
+  total: number;
+  type: PlaylistAsset["type"];
+};
 
 type PlaylistSyncState = {
   detail: string;
@@ -292,6 +305,14 @@ function formatDuration(assets: PlaylistAsset[]): string {
   return `${minutes}m`;
 }
 
+function formatAssetDuration(totalSeconds: number | null | undefined): string | null {
+  if (typeof totalSeconds !== "number" || !Number.isFinite(totalSeconds) || totalSeconds <= 0) {
+    return null;
+  }
+
+  return formatSeconds(Math.round(totalSeconds));
+}
+
 function formatSeconds(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
@@ -305,6 +326,34 @@ function formatSeconds(totalSeconds: number): string {
 
 function fileNameFromUri(uri: string): string {
   return uri.split("/").filter(Boolean).at(-1) ?? uri;
+}
+
+function assetDisplayTitle(asset: PlaylistAsset): string {
+  return asset.altText?.trim() || fileNameFromUri(asset.uri) || asset.assetId;
+}
+
+function currentPlaybackItemFromPlaylist(
+  playlist: Playlist | null,
+  currentAssetId: string | null | undefined
+): CurrentPlaybackItem | null {
+  if (!playlist || !currentAssetId) {
+    return null;
+  }
+
+  const index = playlist.assets.findIndex((asset) => asset.assetId === currentAssetId);
+  if (index === -1) {
+    return null;
+  }
+
+  const asset = playlist.assets[index];
+  return {
+    assetId: asset.assetId,
+    durationLabel: formatAssetDuration(asset.durationSeconds),
+    index,
+    title: assetDisplayTitle(asset),
+    total: playlist.assets.length,
+    type: asset.type
+  };
 }
 
 function parseVlcStats(rawValue: string): Pick<PiProbe, "vlcMemoryMb" | "vlcCpuPercent"> {
@@ -822,7 +871,7 @@ function cloudDeviceStatus(device: DeviceRecord, cloudHeartbeat: CloudHeartbeatS
   const timestamp = heartbeat.receivedAt ?? heartbeat.timestamp ?? undefined;
   const ageMs = statusAgeMs(timestamp);
   const fresh = ageMs !== null && ageMs <= staleHeartbeatThresholdMs;
-  const state = heartbeat.playbackState ?? (heartbeat.currentAssetId ? "playing" : "unknown");
+  const state = heartbeat.playbackState ?? "unknown";
   const deploymentReady =
     state === "ready-for-publishing" ||
     heartbeat.currentPlaylistId === "playlist-ready-for-publishing";
@@ -834,6 +883,7 @@ function cloudDeviceStatus(device: DeviceRecord, cloudHeartbeat: CloudHeartbeatS
     playbackHealthy,
     playbackLabel: playbackHealthy ? "Playing" : deploymentReady && fresh ? "Ready for deployment" : fresh ? "Cloud heartbeat" : "Stale",
     playerStatus: {
+      currentAssetId: heartbeat.currentAssetId,
       playlistId: heartbeat.currentPlaylistId ?? undefined,
       playlistVersion: heartbeat.playlistVersion ?? undefined,
       state,
@@ -1115,6 +1165,7 @@ type FleetCommandRow = {
   assignedPlaylistAssetCount: number | null;
   assignedPlaylistDuration: string | null;
   assignedPlaylistName: string;
+  currentItem: CurrentPlaybackItem | null;
   detail: string;
   group: string;
   healthLabel: string;
@@ -1130,6 +1181,7 @@ type FleetCommandRow = {
   reachable: boolean;
   screenId: string;
   screenName: string;
+  reportedCurrentAssetId: string | null;
   syncLabel: string;
   syncTone: "good" | "warn" | "muted";
 };
@@ -1193,6 +1245,10 @@ function fleetCommandRows({
       const rowPlaybackHealthy = deviceStatus?.playbackHealthy ?? false;
       const rowPlaybackLabel = deviceStatus?.playbackLabel ?? "Unknown";
       const livePlaybackStale = deviceStatus?.stale ?? false;
+      const reportedPlaylist = reportedPlaylistId ? playlistsById.get(reportedPlaylistId) ?? null : null;
+      const playbackStatusIsPlaying = deviceStatus?.playerStatus?.state === "playing";
+      const reportedCurrentAssetId = playbackStatusIsPlaying ? deviceStatus?.playerStatus?.currentAssetId ?? null : null;
+      const currentItem = currentPlaybackItemFromPlaylist(reportedPlaylist ?? assignedPlaylist, reportedCurrentAssetId);
       const healthLabel = !hostConfigured ? "No host" : isLive ? (reachable ? "Online" : "Offline") : "Not reporting";
       const healthTone = !hostConfigured ? "warn" : isLive ? (reachable ? "good" : "warn") : "muted";
       let syncDetail = "No playlist is assigned to this screen.";
@@ -1214,8 +1270,8 @@ function fleetCommandRows({
         syncDetail = "The screen has not reported a playlist update yet.";
         syncLabel = "Unknown";
       } else if (assignedPlaylist && reportedPlaylistId !== assignedPlaylist.playlistId) {
-        const reportedPlaylist = reportedPlaylistId ? playlistsById.get(reportedPlaylistId)?.name ?? "another playlist" : "another playlist";
-        syncDetail = `Beam expects ${assignedPlaylist.name}; Pi reports ${reportedPlaylist}. Publish required.`;
+        const reportedPlaylistName = reportedPlaylist?.name ?? "another playlist";
+        syncDetail = `Beam expects ${assignedPlaylist.name}; Pi reports ${reportedPlaylistName}. Publish required.`;
         syncLabel = "Publish required";
       } else if (assignedPlaylist && reportedPlaylistVersion === assignedPlaylist.version) {
         syncDetail = `${assignedPlaylist.name} is on the screen.`;
@@ -1247,6 +1303,7 @@ function fleetCommandRows({
         assignedPlaylistAssetCount: assignedPlaylist?.assets.length ?? null,
         assignedPlaylistDuration: assignedPlaylist ? formatDuration(assignedPlaylist.assets) : null,
         assignedPlaylistName: assignedPlaylist?.name ?? "No playlist assigned",
+        currentItem,
         detail,
         group: linkedScreen?.group ?? device.group,
         healthLabel,
@@ -1260,6 +1317,7 @@ function fleetCommandRows({
         lastReportLabel: isLive ? deviceStatus?.ageLabel ?? "No timestamp" : "not checking in",
         playbackLabel: playback,
         reachable,
+        reportedCurrentAssetId,
         screenId: linkedScreen?.id ?? device.screenId ?? device.id,
         screenName: linkedScreen?.name ?? "No screen linked",
         syncLabel,
@@ -1665,18 +1723,33 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const focusedPlaybackLabel = focusedScreen?.playbackLabel ?? playbackLabel;
   const focusedSyncLabel = focusedScreen?.syncLabel ?? playlistSyncState.label;
   const focusedScreenHost = focusedScreen ? focusedScreen.host || "No host" : pi.host || "No host";
+  const focusedCurrentItem = focusedScreen?.currentItem ?? null;
+  const focusedPlaylistLoopLabel =
+    `${focusedScreen?.assignedPlaylistName ?? playlist.name} · ${focusedScreen?.assignedPlaylistAssetCount ?? playlist.assets.length} items · ${focusedScreen?.assignedPlaylistDuration ?? totalDuration}`;
+  const focusedCurrentItemLabel = focusedCurrentItem
+    ? `${focusedCurrentItem.title}${focusedCurrentItem.durationLabel ? ` · ${focusedCurrentItem.durationLabel}` : ""}`
+    : focusedScreen?.reportedCurrentAssetId
+      ? "Reported but not matched"
+      : "Not reported";
   const focusedScreenTitle = focusedScreenIsLive
     ? focusedScreenReachable
-      ? focusedScreen.assignedPlaylistName
+      ? focusedCurrentItem?.title ?? focusedScreen.assignedPlaylistName
       : "Screen offline"
     : "Waiting for check-in";
-  const focusedScreenDetail = focusedScreenIsLive
-    ? focusedScreenReachable
-      ? focusedScreen.syncTone === "good"
-        ? `VLC reports ${focusedScreen.assignedPlaylistName} is in sync. Exact item position is not reported yet across the ${pluralize(focusedScreen.assignedPlaylistAssetCount ?? 0, "item")} loop.`
-        : focusedScreen.detail
-      : focusedScreen.detail
-    : "This screen is saved in Beam. Once it checks in, its current playback will appear here.";
+  let focusedScreenDetail = "This screen is saved in Beam. Once it checks in, its current playback will appear here.";
+  if (focusedScreenIsLive && focusedScreen) {
+    focusedScreenDetail = focusedScreen.detail;
+
+    if (focusedScreenReachable) {
+      if (focusedCurrentItem) {
+        focusedScreenDetail = `VLC reports item ${focusedCurrentItem.index + 1} of ${focusedCurrentItem.total} from ${focusedScreen.assignedPlaylistName}${focusedCurrentItem.durationLabel ? ` (${focusedCurrentItem.durationLabel})` : ""}.`;
+      } else if (focusedScreen.reportedCurrentAssetId) {
+        focusedScreenDetail = "VLC reports a current item id, but Beam cannot match it to this playlist yet.";
+      } else if (focusedScreen.syncTone === "good") {
+        focusedScreenDetail = `VLC reports ${focusedScreen.assignedPlaylistName} is in sync. Current item is not reported yet for this screen.`;
+      }
+    }
+  }
   const focusedLastReportLabel = focusedScreenIsLive
     ? focusedScreenReachable
       ? focusedScreen.lastReportLabel
@@ -1699,6 +1772,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       : !focusedScreen && piPlayerUrl
         ? piPlayerUrl
         : null;
+  const screenFocusOptions = fleetRows.map((row) => ({
+    location: row.location,
+    screenId: row.screenId,
+    screenName: row.screenName
+  }));
   return (
     <main className="min-h-screen [overflow-x:clip] bg-[#f3f6f8] text-zinc-950">
       <DashboardAutoRefresh enabled={autoRefreshEnabledForView(selectedView)} />
@@ -1923,31 +2001,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     <h2 className="mt-1 text-2xl font-semibold">Selected screen</h2>
                     <p className="mt-1 text-sm text-zinc-600">{focusedScreenLocation} · {focusedScreenSummary}</p>
                   </div>
-                  <form method="get" className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                    <label htmlFor="screen-focus" className="sr-only">Choose screen to preview</label>
-                    <select
-                      id="screen-focus"
-                      name="screen"
-                      defaultValue={focusedScreen?.screenId ?? ""}
-                      className="min-h-10 rounded-md border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-950 focus:outline-none focus:ring-2 focus:ring-teal-600"
-                    >
-                      {fleetRows.length === 0 ? (
-                        <option value="">No screens in inventory</option>
-                      ) : (
-                        fleetRows.map((row) => (
-                          <option key={row.id} value={row.screenId}>
-                            {row.screenName} · {row.location}
-                          </option>
-                        ))
-                      )}
-                    </select>
-                    <button
-                      type="submit"
-                      className="inline-flex min-h-10 items-center justify-center rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-600"
-                    >
-                      Show
-                    </button>
-                  </form>
+                  <ScreenFocusSelect
+                    options={screenFocusOptions}
+                    selectedScreenId={focusedScreen?.screenId ?? ""}
+                  />
                 </div>
                 <div className="p-5">
                   <div className="rounded-[1.25rem] border border-zinc-700 bg-zinc-900 p-3 shadow-xl shadow-zinc-300/60">
@@ -1965,9 +2022,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                                 href={focusedPlayerUrl}
                                 target="_blank"
                                 rel="noreferrer"
+                                title="Open the selected screen's Pi player loop"
                                 className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-zinc-950 hover:bg-cyan-50 focus:outline-none focus:ring-2 focus:ring-cyan-200"
                               >
-                                Open player
+                                Open screen player
                               </a>
                             ) : null}
                           </div>
@@ -1975,18 +2033,20 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                         </div>
                         <div className="grid gap-2 text-sm sm:grid-cols-2">
                           <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/10">
+                            <p className="font-semibold text-cyan-50/70">Current item</p>
+                            <p className="mt-1 break-words font-semibold text-white">{focusedCurrentItemLabel}</p>
+                          </div>
+                          <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/10">
+                            <p className="font-semibold text-cyan-50/70">Playlist</p>
+                            <p className="mt-1 break-words font-semibold text-white">{focusedPlaylistLoopLabel}</p>
+                          </div>
+                          <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/10">
                             <p className="font-semibold text-cyan-50/70">Screen</p>
                             <p className="mt-1 break-words font-semibold text-white">{focusedScreenName}</p>
                           </div>
                           <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/10">
                             <p className="font-semibold text-cyan-50/70">Host</p>
                             <p className="mt-1 break-words font-semibold text-white">{focusedScreenHost}</p>
-                          </div>
-                          <div className="rounded-lg bg-white/10 p-3 ring-1 ring-white/10">
-                            <p className="font-semibold text-cyan-50/70">Loop</p>
-                            <p className="mt-1 font-semibold text-white">
-                              {focusedScreen?.assignedPlaylistAssetCount ?? playlist.assets.length} items · {focusedScreen?.assignedPlaylistDuration ?? totalDuration}
-                            </p>
                           </div>
                         </div>
                       </div>
