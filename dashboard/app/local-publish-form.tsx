@@ -22,15 +22,15 @@ type PublishResponse = {
 type LocalPublishFormProps = {
   assetCount: number;
   assignedScreenCount: number;
-  assignmentTargetId: string;
   playlistId: string;
+  screenAssignmentHref: string;
 };
 
 export function LocalPublishForm({
   assetCount,
   assignedScreenCount,
-  assignmentTargetId,
-  playlistId
+  playlistId,
+  screenAssignmentHref
 }: LocalPublishFormProps) {
   const router = useRouter();
   const [message, setMessage] = useState("");
@@ -41,21 +41,9 @@ export function LocalPublishForm({
   const canPublish = assetCount > 0;
 
   function guideToScreenAssignment() {
-    const target = document.getElementById(assignmentTargetId);
-
     setMessage("Choose at least one screen before publishing.");
     setMessageKind("warning");
-
-    if (!target) {
-      return;
-    }
-
-    target.scrollIntoView({ behavior: "smooth", block: "center" });
-    target.focus({ preventScroll: true });
-    target.classList.add("ring-2", "ring-amber-300", "ring-offset-2", "ring-offset-[#f3f6f8]");
-    window.setTimeout(() => {
-      target.classList.remove("ring-2", "ring-amber-300", "ring-offset-2", "ring-offset-[#f3f6f8]");
-    }, 2200);
+    startTransition(() => router.push(screenAssignmentHref));
   }
 
   async function publishNow() {

@@ -32,3 +32,9 @@ CONFIG
 
 write_pcmanfm_config "LXDE-pi"
 write_pcmanfm_config "default"
+
+# Raspberry Pi OS starts the Wayland panel from the global labwc autostart file.
+# Stop the respawner first, then the panel, so signage playback is not framed by
+# the desktop menu bar while VLC is starting.
+pkill -f "/usr/bin/lwrespawn /usr/bin/wf-panel-pi" 2>/dev/null || true
+pkill -x wf-panel-pi 2>/dev/null || true

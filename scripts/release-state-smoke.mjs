@@ -428,19 +428,27 @@ function validateSettings(settings) {
   assert(isValidDate(settings.updatedAt), "Settings: updatedAt must be valid");
 }
 
-function validatePublishStatus(status, playlist) {
+function validatePublishStatus(status, playlistById, fallbackPlaylist) {
   if (!status) {
     return;
   }
 
-  const playlistAssetCount = Array.isArray(playlist.assets) ? playlist.assets.length : null;
   assert(typeof status.action === "string" && status.action.trim(), "Publish status: action is required");
   assert(Number.isInteger(status.assetCount) && status.assetCount >= 0, "Publish status: assetCount must be a non-negative integer");
-  assert(status.assetCount === playlistAssetCount, "Publish status: assetCount is stale");
   assert(typeof status.message === "string" && status.message.trim(), "Publish status: message is required");
   assert(typeof status.ok === "boolean", "Publish status: ok must be boolean");
   assert(typeof status.piPublishEnabled === "boolean", "Publish status: piPublishEnabled must be boolean");
-  assert(status.playlistVersion === playlist.version, "Publish status: playlistVersion is stale");
+  assert(status.playlistId === undefined || (typeof status.playlistId === "string" && status.playlistId.trim()), "Publish status: playlistId must be a non-empty string when present");
+
+  const statusPlaylist = status.playlistId ? playlistById.get(status.playlistId) : fallbackPlaylist;
+  if (statusPlaylist) {
+    const playlistAssetCount = Array.isArray(statusPlaylist.assets) ? statusPlaylist.assets.length : null;
+    assert(status.assetCount === playlistAssetCount, "Publish status: assetCount is stale");
+    assert(status.playlistVersion === statusPlaylist.version, "Publish status: playlistVersion is stale");
+  } else {
+    notes.push(`Publish status: freshness skipped because playlist ${status.playlistId} is not present in local state.`);
+  }
+
   if (status.targets !== undefined) {
     assert(Array.isArray(status.targets), "Publish status: targets must be an array when present");
     for (const target of status.targets) {
@@ -525,6 +533,7 @@ const playlistStore = (await fileExists(playlistStorePath))
   ? await readJson(playlistStorePath, "Playlist store")
   : null;
 const validPlaylistIds = new Set(playlist?.playlistId ? [playlist.playlistId] : []);
+const playlistById = new Map(playlist?.playlistId ? [[playlist.playlistId, playlist]] : []);
 if (playlistStore) {
   if (validateStoreShell(playlistStore, "Playlist store")) {
     const seenPlaylistIds = new Set();
@@ -534,6 +543,7 @@ if (playlistStore) {
       seenPlaylistIds.add(storedPlaylist?.playlistId);
       if (typeof storedPlaylist?.playlistId === "string") {
         validPlaylistIds.add(storedPlaylist.playlistId);
+        playlistById.set(storedPlaylist.playlistId, storedPlaylist);
       }
       await validatePlaylist(storedPlaylist, label);
     }
@@ -556,7 +566,7 @@ validateSchedules(scheduleStore, screensStore);
 
 validateSettings(await readOptionalJson("settings.local.json", "Settings"));
 if (playlist) {
-  validatePublishStatus(await readOptionalJson("publish-status.json", "Publish status"), playlist);
+  validatePublishStatus(await readOptionalJson("publish-status.json", "Publish status"), playlistById, playlist);
 }
 validateActivity(await readOptionalJson("activity.local.json", "Activity store"));
 validateRecovery(await readOptionalJson("recovery.local.json", "Recovery store"));
