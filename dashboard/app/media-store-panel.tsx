@@ -594,6 +594,19 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
         .sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" })),
     [items]
   );
+  const tagCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const tag of availableTags) {
+      counts.set(normalizeTag(tag), 0);
+    }
+    for (const item of items) {
+      const itemTags = new Set(item.tags.map(normalizeTag));
+      for (const tag of itemTags) {
+        counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [availableTags, items]);
   const selectedFolderId = selectedCustomFolderId(folderFilter);
   const selectedFolder = folders.find((folder) => folder.id === selectedFolderId) ?? null;
   const visibleIds = visibleItems.map((item) => item.id);
@@ -1234,16 +1247,16 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
 
   function renderTagFilterButton(label: string) {
     const selected = normalizeTag(tagFilter) === normalizeTag(label);
-    const count = items.filter((item) => item.tags.some((tag) => normalizeTag(tag) === normalizeTag(label))).length;
+    const count = tagCounts.get(normalizeTag(label)) ?? 0;
     return (
       <button
         key={label}
         type="button"
         onClick={() => setTagFilter(selected ? "" : label)}
         aria-pressed={selected}
-        className={`inline-flex min-h-9 max-w-full items-center gap-2 rounded-full px-3 py-1.5 text-left text-sm font-semibold ring-1 transition ${sidebarButtonClass(selected)}`}
+        className={`grid min-h-10 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md px-3 py-2 text-left text-sm font-semibold ring-1 transition ${sidebarButtonClass(selected)}`}
       >
-        <span className="truncate">{label}</span>
+        <span className="min-w-0 truncate">{label}</span>
         <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-xs font-semibold ${selected ? "bg-teal-100 text-teal-900" : "bg-zinc-100 text-zinc-600"}`}>{count}</span>
       </button>
     );
@@ -1355,11 +1368,22 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-2">
                       <Tag className="h-4 w-4 shrink-0 text-teal-700" aria-hidden="true" />
-                      <span className="text-sm font-semibold text-zinc-950">Tags</span>
+                      <span className="text-sm font-semibold text-zinc-950">Filter by tag</span>
                     </div>
                     <span className="text-xs font-semibold text-zinc-500">{availableTags.length} available</span>
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
+                  <div className="mt-2 rounded-md border border-zinc-200 bg-white p-2">
+                    <button
+                      type="button"
+                      onClick={() => setTagFilter("")}
+                      aria-pressed={!tagFilter}
+                      className={`grid min-h-10 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md px-3 py-2 text-left text-sm font-semibold ring-1 transition ${sidebarButtonClass(!tagFilter)}`}
+                    >
+                      <span className="min-w-0 truncate">All tags</span>
+                      <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-xs font-semibold ${!tagFilter ? "bg-teal-100 text-teal-900" : "bg-zinc-100 text-zinc-600"}`}>{items.length}</span>
+                    </button>
+                  </div>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
                     {availableTags.map(renderTagFilterButton)}
                   </div>
                 </div>

@@ -10,7 +10,8 @@ import {
   type ScheduleStore,
   writeScheduleStore
 } from "../../lib/local-data-store";
-import { readNormalizedInventory, repairSchedulesForScreens } from "../../lib/local-inventory";
+import { readInventory } from "../../lib/inventory-store";
+import { repairSchedulesForScreens } from "../../lib/local-inventory";
 import { apiErrorResponse } from "../../lib/api-error-response";
 import { readLivePlaylist, readPlaylistStore } from "../../lib/local-playlist";
 import {
@@ -36,6 +37,18 @@ type ScheduleInput = {
 
 function isoNow(): string {
   return new Date().toISOString();
+}
+
+function compareScreensByName(
+  left: { id: string; name: string },
+  right: { id: string; name: string }
+): number {
+  const byName = left.name.localeCompare(right.name, undefined, {
+    numeric: true,
+    sensitivity: "base"
+  });
+
+  return byName || left.id.localeCompare(right.id);
 }
 
 function normalizeDays(daysOfWeek: unknown): number[] {
@@ -98,7 +111,7 @@ function validateInput(input: ScheduleInput, screenIds: Set<string>): {
 
 async function inventoryForSchedules() {
   const playlist = await readLivePlaylist();
-  return readNormalizedInventory(playlist.playlistId);
+  return readInventory(playlist.playlistId);
 }
 
 async function scheduleResponse(publish?: {
@@ -110,14 +123,15 @@ async function scheduleResponse(publish?: {
   const session = activeWorkspaceSession();
   const context = workspaceContextFromSession(session);
   const inventory = await inventoryForSchedules();
-  await repairSchedulesForScreens(inventory.screens.items.map((screen) => screen.id));
+  const inventoryScreens = [...inventory.screens.items].sort(compareScreensByName);
+  await repairSchedulesForScreens(inventoryScreens.map((screen) => screen.id));
   const [scheduleStore, settings, playlistStore, activityStore] = await Promise.all([
     readScheduleStore(),
     readSettingsRecord(),
     readPlaylistStore(),
     readActivityStore()
   ]);
-  const screenStates = inventory.screens.items.map((screen) =>
+  const screenStates = inventoryScreens.map((screen) =>
     scheduleStateForScreen(scheduleStore.items, screen)
   );
   const lastSchedulePublish =
@@ -139,7 +153,7 @@ async function scheduleResponse(publish?: {
       .filter((device) => device.screenId)
       .map((device) => [device.screenId as string, device])
   );
-  const screens = inventory.screens.items.map((screen) => {
+  const screens = inventoryScreens.map((screen) => {
     const linkedDevice =
       (screen.deviceId ? devicesById.get(screen.deviceId) : null) ??
       devicesByScreenId.get(screen.id) ??
