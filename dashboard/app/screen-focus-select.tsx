@@ -27,6 +27,11 @@ export function ScreenFocusSelect({ options, selectedScreenId }: ScreenFocusSele
     }
 
     const params = new URLSearchParams(window.location.search);
+    const currentView = params.get("view");
+    if (currentView && currentView !== "dashboard") {
+      return;
+    }
+
     const hasExplicitScreen = params.has("screen");
 
     if (hasExplicitScreen) {
