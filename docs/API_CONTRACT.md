@@ -232,6 +232,29 @@ Device behavior:
 - The tracked first-run fallback asset is only for a device with no valid local cache.
 - If a new release references assets that fail to download or verify, the device must not delete or replace the current working asset set.
 
+### Device Command Plane
+
+The dev dashboard-hosted playlist check can include one pending command. This
+is the first Beam control-plane slice: the Pi initiates the request, receives an
+allowlisted command type, runs the local implementation, and posts status back
+to the provided result URL. The dashboard must not send arbitrary shell.
+
+Implemented command types:
+
+- `reset-device`: deployment reset, already guarded by explicit operator action.
+- `collect-diagnostics`: read-only evidence collection for VLC service state,
+  player status, heartbeat, schedule status, display, network, health,
+  playback cache footprint, and capped recent VLC logs.
+
+Command behavior:
+
+- Commands are tiny JSON and must not include media URLs or media payloads.
+- Read-only diagnostics must not restart services, reboot the Pi, change
+  playlists, delete cache, or modify device identity.
+- Device failures to fetch or report command status must not stop cached
+  playback.
+- Reset commands take precedence over diagnostics if both are pending.
+
 ### Release Manifest And Asset URL
 
 Release manifests are fetched only after the release check reports a new desired

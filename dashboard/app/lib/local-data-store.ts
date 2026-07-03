@@ -84,7 +84,9 @@ export type ScreenStore = {
   version: number;
 };
 
-export type DeviceResetStatus = "failed" | "pending" | "running" | "succeeded";
+export type DeviceCommandStatus = "failed" | "pending" | "running" | "succeeded";
+export type DeviceDiagnosticsStatus = DeviceCommandStatus;
+export type DeviceResetStatus = DeviceCommandStatus;
 
 export type DeviceRecord = {
   group: string;
@@ -103,6 +105,14 @@ export type DeviceRecord = {
   publishedAt?: string | null;
   publishedPlaylistId?: string | null;
   publishedPlaylistVersion?: number | null;
+  diagnosticsCommandId?: string | null;
+  diagnosticsFinishedAt?: string | null;
+  diagnosticsRequestedAt?: string | null;
+  diagnosticsResult?: string | null;
+  diagnosticsStartedAt?: string | null;
+  diagnosticsStatus?: DeviceDiagnosticsStatus | null;
+  diagnosticsStatusMessage?: string | null;
+  diagnosticsUpdatedAt?: string | null;
   resetCommandId?: string | null;
   resetFinishedAt?: string | null;
   resetRequestedAt?: string | null;

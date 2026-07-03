@@ -54,6 +54,7 @@ type CloudHeartbeatConfig = {
 
 type CloudPlaylistResponse = {
   command?: DeviceCommand | null;
+  localFirst?: boolean;
   playlist?: Playlist | null;
   release?: CloudReleaseCheck | null;
   unchanged?: boolean;
@@ -103,10 +104,16 @@ type DeviceCommand = {
   requestedAt: string;
   status: "pending" | "running";
   statusUrl?: string;
-  type: "reset-device";
+  type: "collect-diagnostics" | "reset-device";
 };
 
-type ResetStatus = "failed" | "running" | "succeeded";
+type CommandStatus = "failed" | "running" | "succeeded";
+
+type DiagnosticProbe = {
+  detail: string;
+  label: string;
+  ok: boolean;
+};
 
 const appVersion = "0.1.0";
 const currentPlaylistFileName = "current.json";
@@ -549,12 +556,117 @@ function summarizeOutput(stdout: string | undefined, stderr: string | undefined)
   return lines.slice(-12).join(" ") || "No reset output was returned.";
 }
 
-async function postResetStatus(
+function truncateDiagnosticDetail(value: string, maxLength = 2_000): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "Not reported.";
+  }
+
+  return trimmed.length > maxLength
+    ? `${trimmed.slice(0, maxLength)}\n...truncated...`
+    : trimmed;
+}
+
+async function readDiagnosticFile(label: string, filePath: string, fallback: string): Promise<DiagnosticProbe> {
+  try {
+    return {
+      detail: truncateDiagnosticDetail(await fs.readFile(filePath, "utf8"), 3_000),
+      label,
+      ok: true
+    };
+  } catch {
+    return {
+      detail: fallback,
+      label,
+      ok: false
+    };
+  }
+}
+
+async function runReadOnlyProbe(label: string, command: string, timeoutMs = 10_000): Promise<DiagnosticProbe> {
+  try {
+    const { stdout, stderr } = await execFileAsync("/bin/sh", ["-lc", command], {
+      timeout: timeoutMs,
+      maxBuffer: 128 * 1024
+    });
+    const detail = truncateDiagnosticDetail(`${stdout}\n${stderr}`);
+    return {
+      detail,
+      label,
+      ok: !/not-found|missing|failed|inactive|degraded/i.test(detail)
+    };
+  } catch (error) {
+    const execError = error as Error & { stderr?: string; stdout?: string };
+    return {
+      detail: truncateDiagnosticDetail(`${execError.message}\n${execError.stdout ?? ""}\n${execError.stderr ?? ""}`),
+      label,
+      ok: false
+    };
+  }
+}
+
+async function collectRemoteDiagnostics(cacheDirectory: string): Promise<{
+  capturedAt: string;
+  deviceId: string;
+  hostname: string | null;
+  localIpAddress: string | null;
+  probes: DiagnosticProbe[];
+}> {
+  const statusRoot = process.env.PISIGNAGE_STATUS_DIR?.trim() || path.join(os.homedir(), ".local", "state", "pisignage");
+  const playerStatusPath = process.env.PISIGNAGE_PLAYER_STATUS_PATH?.trim() || path.join(statusRoot, "player-status.json");
+  const heartbeatPath = process.env.PISIGNAGE_HEARTBEAT_PATH ?? path.join(statusRoot, "heartbeat.json");
+  const scheduleStatusPath = process.env.PISIGNAGE_SCHEDULE_STATUS_PATH?.trim() || path.join(statusRoot, "schedule-status.json");
+  const playlistPath = currentPlaylistCachePath(cacheDirectory);
+  const assetsPath = path.join(cacheDirectory, "assets");
+  const quotedPlaylistPath = JSON.stringify(playlistPath);
+  const quotedAssetsPath = JSON.stringify(assetsPath);
+  const probes: DiagnosticProbe[] = [
+    await readDiagnosticFile("Player status", playerStatusPath, "player-status.json is missing."),
+    await readDiagnosticFile("Heartbeat", heartbeatPath, "heartbeat.json is missing."),
+    await readDiagnosticFile("Schedule status", scheduleStatusPath, "schedule-status.json is missing."),
+    await runReadOnlyProbe(
+      "VLC service",
+      "systemctl --user show pisignage-vlc.service --property=ActiveState --property=SubState --property=NRestarts 2>/dev/null || echo service-status-unavailable"
+    ),
+    await runReadOnlyProbe(
+      "Display",
+      "kmsprint 2>/dev/null | sed -n '1,24p' || echo display-status-unavailable"
+    ),
+    await runReadOnlyProbe(
+      "Health",
+      "printf 'uptime='; uptime -p 2>/dev/null || uptime; printf '\\ntemp='; vcgencmd measure_temp 2>/dev/null || echo temp-unavailable; printf '\\nthrottle='; vcgencmd get_throttled 2>/dev/null || echo throttle-unavailable"
+    ),
+    await runReadOnlyProbe(
+      "Network",
+      "printf 'defaultRoute='; ip route get 1.1.1.1 2>/dev/null | head -n 1 || echo route-unavailable; printf '\\ninterfaces\\n'; for iface in eth0 wlan0; do ip -br -4 addr show dev \"$iface\" 2>/dev/null | awk '{print $1\" \"$2\" \"$3}'; done"
+    ),
+    await runReadOnlyProbe(
+      "Playback cache",
+      `printf 'playlistSha='; sha256sum ${quotedPlaylistPath} 2>/dev/null || echo playlist-missing; printf '\\nassetFiles='; find ${quotedAssetsPath} -maxdepth 1 -type f 2>/dev/null | wc -l`
+    ),
+    await runReadOnlyProbe(
+      "Recent VLC logs",
+      "journalctl --user -u pisignage-vlc.service -n 40 --no-pager 2>/dev/null || echo logs-unavailable",
+      15_000
+    )
+  ];
+
+  return {
+    capturedAt: new Date().toISOString(),
+    deviceId: configuredDeviceId(),
+    hostname: os.hostname() || null,
+    localIpAddress: localIpAddress(),
+    probes
+  };
+}
+
+async function postCommandStatus(
   command: DeviceCommand,
-  status: ResetStatus,
+  status: CommandStatus,
   input: {
     finishedAt?: string;
     message: string;
+    result?: unknown;
     startedAt: string;
   }
 ): Promise<void> {
@@ -571,6 +683,7 @@ async function postResetStatus(
       commandId: command.id,
       finishedAt: input.finishedAt,
       message: input.message,
+      result: input.result,
       startedAt: input.startedAt,
       status
     }),
@@ -581,7 +694,7 @@ async function postResetStatus(
   });
 
   if (!response.ok) {
-    throw new Error(`Reset status returned ${response.status}.`);
+    throw new Error(`Command status returned ${response.status}.`);
   }
 }
 
@@ -616,7 +729,7 @@ async function runResetCommand(root: string, cacheDirectory: string, command: De
     status: "running",
     type: command.type
   });
-  await postResetStatus(command, "running", {
+  await postCommandStatus(command, "running", {
     message: "Reset is running on the Pi.",
     startedAt
   });
@@ -662,7 +775,7 @@ async function runResetCommand(root: string, cacheDirectory: string, command: De
       status: "succeeded",
       type: command.type
     });
-    await postResetStatus(command, "succeeded", {
+    await postCommandStatus(command, "succeeded", {
       finishedAt,
       message,
       startedAt
@@ -684,7 +797,75 @@ async function runResetCommand(root: string, cacheDirectory: string, command: De
       status: "failed",
       type: command.type
     });
-    await postResetStatus(command, "failed", {
+    await postCommandStatus(command, "failed", {
+      finishedAt,
+      message,
+      startedAt
+    });
+    throw error;
+  }
+}
+
+async function runDiagnosticsCommand(cacheDirectory: string, command: DeviceCommand): Promise<void> {
+  const startedAt = new Date().toISOString();
+  const commandPath = commandStatusPath(cacheDirectory, command.id);
+  await writeJsonAtomic(commandPath, {
+    commandId: command.id,
+    requestedAt: command.requestedAt,
+    startedAt,
+    status: "running",
+    type: command.type
+  });
+  await postCommandStatus(command, "running", {
+    message: "Remote diagnostics are running on the Pi.",
+    startedAt
+  });
+
+  log("info", "cloud.command.diagnostics.start", {
+    commandId: command.id
+  });
+
+  try {
+    const result = await collectRemoteDiagnostics(cacheDirectory);
+    const finishedAt = new Date().toISOString();
+    const failedProbeCount = result.probes.filter((probe) => !probe.ok).length;
+    const message =
+      failedProbeCount === 0
+        ? "Remote diagnostics completed."
+        : `Remote diagnostics completed with ${failedProbeCount} warning(s).`;
+    await writeJsonAtomic(commandPath, {
+      commandId: command.id,
+      finishedAt,
+      message,
+      requestedAt: command.requestedAt,
+      result,
+      startedAt,
+      status: "succeeded",
+      type: command.type
+    });
+    await postCommandStatus(command, "succeeded", {
+      finishedAt,
+      message,
+      result,
+      startedAt
+    });
+    log("info", "cloud.command.diagnostics.complete", {
+      commandId: command.id,
+      failedProbeCount
+    });
+  } catch (error) {
+    const finishedAt = new Date().toISOString();
+    const message = error instanceof Error ? error.message : String(error);
+    await writeJsonAtomic(commandPath, {
+      commandId: command.id,
+      finishedAt,
+      message,
+      requestedAt: command.requestedAt,
+      startedAt,
+      status: "failed",
+      type: command.type
+    });
+    await postCommandStatus(command, "failed", {
       finishedAt,
       message,
       startedAt
@@ -709,12 +890,18 @@ async function fetchCloudPlaylist(cacheDirectory: string): Promise<{
   }
 
   const body = (await response.json()) as CloudPlaylistResponse;
-  if (body.command?.type === "reset-device" && body.command.status === "pending") {
-    await runResetCommand(repoRoot(), cacheDirectory, body.command);
-    return {
-      playlist: standbyPlaylist(),
-      source: "standby"
-    };
+  if (body.command?.status === "pending") {
+    if (body.command.type === "reset-device") {
+      await runResetCommand(repoRoot(), cacheDirectory, body.command);
+      return {
+        playlist: standbyPlaylist(),
+        source: "standby"
+      };
+    }
+
+    if (body.command.type === "collect-diagnostics") {
+      await runDiagnosticsCommand(cacheDirectory, body.command);
+    }
   }
 
   if (body.unchanged && body.release) {
@@ -788,6 +975,13 @@ async function fetchCloudPlaylist(cacheDirectory: string): Promise<{
     return {
       playlist: cachedPlaylist,
       source: "cloud"
+    };
+  }
+
+  if (body.localFirst) {
+    return {
+      playlist: await readCachedPlaylist(cacheDirectory),
+      source: "cache"
     };
   }
 

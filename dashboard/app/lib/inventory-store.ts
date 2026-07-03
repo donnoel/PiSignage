@@ -7,7 +7,14 @@ import {
   TransactWriteItemsCommand
 } from "@aws-sdk/client-dynamodb";
 import type { AttributeValue } from "@aws-sdk/client-dynamodb";
-import type { DeviceRecord, DeviceResetStatus, DeviceStore, ScreenRecord, ScreenStore } from "./local-data-store";
+import type {
+  DeviceDiagnosticsStatus,
+  DeviceRecord,
+  DeviceResetStatus,
+  DeviceStore,
+  ScreenRecord,
+  ScreenStore
+} from "./local-data-store";
 import {
   createDevice,
   createScreen,
@@ -74,7 +81,18 @@ export type DeviceResetCommand = {
   type: "reset-device";
 };
 
+export type DeviceDiagnosticsCommand = {
+  id: string;
+  requestedAt: string;
+  status: "pending" | "running";
+  statusUrl?: string;
+  type: "collect-diagnostics";
+};
+
+export type DeviceCommand = DeviceDiagnosticsCommand | DeviceResetCommand;
+
 const dynamoDb = new DynamoDBClient({});
+const maxDiagnosticsResultLength = 16_000;
 
 function trimmedEnv(name: string): string | null {
   const value = process.env[name]?.trim();
@@ -245,11 +263,19 @@ function numberOrNullAttribute(value: AttributeValue | undefined): number | null
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function resetStatusOrNull(value: AttributeValue | undefined): DeviceResetStatus | null {
+function commandStatusOrNull(value: AttributeValue | undefined): DeviceResetStatus | null {
   const status = stringOrNullAttribute(value);
   return status === "failed" || status === "pending" || status === "running" || status === "succeeded"
     ? status
     : null;
+}
+
+function diagnosticsStatusOrNull(value: AttributeValue | undefined): DeviceDiagnosticsStatus | null {
+  return commandStatusOrNull(value);
+}
+
+function resetStatusOrNull(value: AttributeValue | undefined): DeviceResetStatus | null {
+  return commandStatusOrNull(value);
 }
 
 function nullableNumber(value: number | undefined | null): AttributeValue {
@@ -294,6 +320,14 @@ function deviceToItem(device: DeviceRecord): Record<string, AttributeValue> {
     publishedAt: nullableString(normalizedDevice.publishedAt),
     publishedPlaylistId: nullableString(normalizedDevice.publishedPlaylistId),
     publishedPlaylistVersion: nullableNumber(normalizedDevice.publishedPlaylistVersion),
+    diagnosticsCommandId: nullableString(normalizedDevice.diagnosticsCommandId),
+    diagnosticsFinishedAt: nullableString(normalizedDevice.diagnosticsFinishedAt),
+    diagnosticsRequestedAt: nullableString(normalizedDevice.diagnosticsRequestedAt),
+    diagnosticsResult: nullableString(normalizedDevice.diagnosticsResult),
+    diagnosticsStartedAt: nullableString(normalizedDevice.diagnosticsStartedAt),
+    diagnosticsStatus: nullableString(normalizedDevice.diagnosticsStatus),
+    diagnosticsStatusMessage: nullableString(normalizedDevice.diagnosticsStatusMessage),
+    diagnosticsUpdatedAt: nullableString(normalizedDevice.diagnosticsUpdatedAt),
     resetCommandId: nullableString(normalizedDevice.resetCommandId),
     resetFinishedAt: nullableString(normalizedDevice.resetFinishedAt),
     resetRequestedAt: nullableString(normalizedDevice.resetRequestedAt),
@@ -345,6 +379,14 @@ function deviceFromItem(item: Record<string, AttributeValue>): DeviceRecord {
     publishedAt: stringOrNullAttribute(item.publishedAt),
     publishedPlaylistId: stringOrNullAttribute(item.publishedPlaylistId),
     publishedPlaylistVersion: numberOrNullAttribute(item.publishedPlaylistVersion),
+    diagnosticsCommandId: stringOrNullAttribute(item.diagnosticsCommandId),
+    diagnosticsFinishedAt: stringOrNullAttribute(item.diagnosticsFinishedAt),
+    diagnosticsRequestedAt: stringOrNullAttribute(item.diagnosticsRequestedAt),
+    diagnosticsResult: stringOrNullAttribute(item.diagnosticsResult),
+    diagnosticsStartedAt: stringOrNullAttribute(item.diagnosticsStartedAt),
+    diagnosticsStatus: diagnosticsStatusOrNull(item.diagnosticsStatus),
+    diagnosticsStatusMessage: stringOrNullAttribute(item.diagnosticsStatusMessage),
+    diagnosticsUpdatedAt: stringOrNullAttribute(item.diagnosticsUpdatedAt),
     resetCommandId: stringOrNullAttribute(item.resetCommandId),
     resetFinishedAt: stringOrNullAttribute(item.resetFinishedAt),
     resetRequestedAt: stringOrNullAttribute(item.resetRequestedAt),
@@ -889,6 +931,31 @@ export function resetCommandForDevice(device: DeviceRecord, statusUrl?: string):
   };
 }
 
+export function diagnosticsCommandForDevice(device: DeviceRecord, statusUrl?: string): DeviceDiagnosticsCommand | null {
+  if (
+    !device.diagnosticsCommandId ||
+    !device.diagnosticsRequestedAt ||
+    (device.diagnosticsStatus !== "pending" && device.diagnosticsStatus !== "running")
+  ) {
+    return null;
+  }
+
+  return {
+    id: device.diagnosticsCommandId,
+    requestedAt: device.diagnosticsRequestedAt,
+    status: device.diagnosticsStatus,
+    statusUrl,
+    type: "collect-diagnostics"
+  };
+}
+
+export function commandForDevice(device: DeviceRecord, input: {
+  diagnosticsStatusUrl?: string;
+  resetStatusUrl?: string;
+}): DeviceCommand | null {
+  return resetCommandForDevice(device, input.resetStatusUrl) ?? diagnosticsCommandForDevice(device, input.diagnosticsStatusUrl);
+}
+
 export async function requestDeviceReset(deviceId: string): Promise<DeviceRecord> {
   requireActiveWorkspacePermission("recover");
   const config = cloudInventoryConfig();
@@ -912,6 +979,108 @@ export async function requestDeviceReset(deviceId: string): Promise<DeviceRecord
     resetStatus: "pending",
     resetStatusMessage: "Reset is queued. The Pi will run it on its next cloud check-in.",
     resetUpdatedAt: timestamp,
+    updatedAt: timestamp
+  };
+
+  await dynamoDb.send(new PutItemCommand({
+    Item: deviceToItem(nextDevice),
+    TableName: config.devicesTableName
+  }));
+
+  return nextDevice;
+}
+
+export async function requestDeviceDiagnostics(deviceId: string): Promise<DeviceRecord> {
+  requireActiveWorkspacePermission("recover");
+  const config = cloudInventoryConfig();
+  if (!config) {
+    throw new Error("Cloud inventory is required for remote Pi diagnostics.");
+  }
+
+  const inventory = await readCloudInventory(config);
+  const device = inventory.devices.items.find((item) => item.id === deviceId);
+  if (!device) {
+    throw new Error("Device was not found.");
+  }
+  if (device.diagnosticsStatus === "pending" || device.diagnosticsStatus === "running") {
+    throw new Error("Remote diagnostics are already queued or running for this device.");
+  }
+
+  const timestamp = isoNow();
+  const nextDevice: DeviceRecord = {
+    ...device,
+    diagnosticsCommandId: randomUUID(),
+    diagnosticsFinishedAt: null,
+    diagnosticsRequestedAt: timestamp,
+    diagnosticsResult: null,
+    diagnosticsStartedAt: null,
+    diagnosticsStatus: "pending",
+    diagnosticsStatusMessage: "Remote diagnostics are queued. The Pi will collect read-only evidence on its next cloud check-in.",
+    diagnosticsUpdatedAt: timestamp,
+    updatedAt: timestamp
+  };
+
+  await dynamoDb.send(new PutItemCommand({
+    Item: deviceToItem(nextDevice),
+    TableName: config.devicesTableName
+  }));
+
+  return nextDevice;
+}
+
+function cappedDiagnosticsResult(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed.length > maxDiagnosticsResultLength
+    ? `${trimmed.slice(0, maxDiagnosticsResultLength)}\n...diagnostics result truncated...`
+    : trimmed;
+}
+
+export async function updateDeviceDiagnosticsStatus(input: {
+  commandId: string;
+  deviceId: string;
+  finishedAt?: string | null;
+  message?: string | null;
+  result?: string | null;
+  startedAt?: string | null;
+  status: DeviceDiagnosticsStatus;
+}): Promise<DeviceRecord> {
+  requireActiveWorkspacePermission("recover");
+  const config = cloudInventoryConfig();
+  if (!config) {
+    throw new Error("Cloud inventory is required for remote Pi diagnostics.");
+  }
+
+  const inventory = await readCloudInventory(config);
+  const device = inventory.devices.items.find((item) => item.id === input.deviceId);
+  if (!device) {
+    throw new Error("Device was not found.");
+  }
+  if (device.diagnosticsCommandId !== input.commandId) {
+    throw new Error("Diagnostics command does not match the current pending command.");
+  }
+
+  const timestamp = isoNow();
+  const finished = input.status === "succeeded" || input.status === "failed";
+  const nextDevice: DeviceRecord = {
+    ...device,
+    diagnosticsFinishedAt: input.finishedAt ?? (finished ? timestamp : null),
+    diagnosticsResult: cappedDiagnosticsResult(input.result) ?? device.diagnosticsResult ?? null,
+    diagnosticsStartedAt: input.startedAt ?? device.diagnosticsStartedAt ?? (input.status === "running" ? timestamp : null),
+    diagnosticsStatus: input.status,
+    diagnosticsStatusMessage: input.message?.trim() || (
+      input.status === "running"
+        ? "Remote diagnostics are running on the Pi."
+        : input.status === "succeeded"
+          ? "Remote diagnostics completed."
+          : input.status === "failed"
+            ? "Remote diagnostics failed on the Pi."
+            : "Remote diagnostics are queued."
+    ),
+    diagnosticsUpdatedAt: timestamp,
     updatedAt: timestamp
   };
 

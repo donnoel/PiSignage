@@ -4,7 +4,7 @@ import {
   releaseTargetsDevice,
   type CloudReleaseRecord
 } from "../../../../../lib/cloud-release-store";
-import { readInventory, resetCommandForDevice } from "../../../../../lib/inventory-store";
+import { commandForDevice, readInventory } from "../../../../../lib/inventory-store";
 import { publicUrlForRequest } from "../../../../../lib/public-origin";
 
 type RouteContext = {
@@ -51,7 +51,11 @@ export async function GET(request: Request, context: RouteContext) {
     request,
     `/api/cloud/devices/${encodeURIComponent(deviceId)}/reset-result`
   );
-  const command = resetCommandForDevice(device, resetStatusUrl);
+  const diagnosticsStatusUrl = publicUrlForRequest(
+    request,
+    `/api/cloud/devices/${encodeURIComponent(deviceId)}/diagnostics-result`
+  );
+  const command = commandForDevice(device, { diagnosticsStatusUrl, resetStatusUrl });
   const desiredReleaseId = screen?.desiredReleaseId ?? device.desiredReleaseId ?? null;
   const desiredManifestChecksum =
     screen?.desiredReleaseManifestChecksum ?? device.desiredReleaseManifestChecksum ?? null;
@@ -61,6 +65,7 @@ export async function GET(request: Request, context: RouteContext) {
       return NextResponse.json({
         command,
         deviceId,
+        localFirst: true,
         playlist: null,
         release: null,
         serverTime: new Date().toISOString()

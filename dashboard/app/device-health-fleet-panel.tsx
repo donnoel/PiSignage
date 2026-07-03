@@ -22,6 +22,13 @@ type DeviceRecord = {
   name: string;
   playlistId: string | null;
   sshUser?: string;
+  diagnosticsFinishedAt?: string | null;
+  diagnosticsRequestedAt?: string | null;
+  diagnosticsResult?: string | null;
+  diagnosticsStartedAt?: string | null;
+  diagnosticsStatus?: "failed" | "pending" | "running" | "succeeded" | null;
+  diagnosticsStatusMessage?: string | null;
+  diagnosticsUpdatedAt?: string | null;
   resetFinishedAt?: string | null;
   resetRequestedAt?: string | null;
   resetStartedAt?: string | null;
@@ -76,6 +83,11 @@ type RowState = {
   assignedPlaylistVersion: number | null;
   attentionReason: string;
   device: DeviceRecord;
+  diagnosticsActive: boolean;
+  diagnosticsDetail: string;
+  diagnosticsLabel: string;
+  diagnosticsResult: string | null;
+  diagnosticsTone: Tone;
   nextActionDetail: string;
   nextActionLabel: string;
   nextActionTone: Tone;
@@ -508,6 +520,62 @@ function resetStateFor(device: DeviceRecord): { active: boolean; detail: string;
   };
 }
 
+function diagnosticsStateFor(device: DeviceRecord): {
+  active: boolean;
+  detail: string;
+  label: string;
+  result: string | null;
+  tone: Tone;
+} {
+  if (device.diagnosticsStatus === "pending") {
+    return {
+      active: true,
+      detail: device.diagnosticsStatusMessage ?? "Remote diagnostics are queued and will run on the next Pi check-in.",
+      label: "Diagnostics pending",
+      result: device.diagnosticsResult ?? null,
+      tone: "warn"
+    };
+  }
+
+  if (device.diagnosticsStatus === "running") {
+    return {
+      active: true,
+      detail: device.diagnosticsStatusMessage ?? "Remote diagnostics are running on the Pi.",
+      label: "Diagnostics running",
+      result: device.diagnosticsResult ?? null,
+      tone: "warn"
+    };
+  }
+
+  if (device.diagnosticsStatus === "succeeded") {
+    return {
+      active: false,
+      detail: device.diagnosticsStatusMessage ?? "Remote diagnostics completed.",
+      label: "Diagnostics complete",
+      result: device.diagnosticsResult ?? null,
+      tone: "good"
+    };
+  }
+
+  if (device.diagnosticsStatus === "failed") {
+    return {
+      active: false,
+      detail: device.diagnosticsStatusMessage ?? "Remote diagnostics failed on the Pi.",
+      label: "Diagnostics failed",
+      result: device.diagnosticsResult ?? null,
+      tone: "warn"
+    };
+  }
+
+  return {
+    active: false,
+    detail: "No remote diagnostics have been requested for this Pi.",
+    label: "Not run",
+    result: null,
+    tone: "muted"
+  };
+}
+
 export function DeviceHealthFleetPanel({
   dashboardMode,
   deviceStatuses,
@@ -523,7 +591,7 @@ export function DeviceHealthFleetPanel({
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [publishFeedbackByDeviceId, setPublishFeedbackByDeviceId] = useState<Record<string, PublishFeedback>>({});
-  const [busyAction, setBusyAction] = useState<"assign" | "inventory" | "publish" | "reboot" | "recover" | "refresh" | "reset" | "restart" | null>(null);
+  const [busyAction, setBusyAction] = useState<"assign" | "diagnostics" | "inventory" | "publish" | "reboot" | "recover" | "refresh" | "reset" | "restart" | null>(null);
   const [busyDeviceId, setBusyDeviceId] = useState<string | null>(null);
   const [rebootWatch, setRebootWatch] = useState<{
     baselineStatusUpdatedAt: string | null;
@@ -713,6 +781,7 @@ export function DeviceHealthFleetPanel({
           syncTone
         });
         const resetState = resetStateFor(device);
+        const diagnosticsState = diagnosticsStateFor(device);
 
         return {
           device,
@@ -725,6 +794,11 @@ export function DeviceHealthFleetPanel({
           assignedPlaylistName: assignedPlaylist?.name ?? "No playlist assigned",
           assignedPlaylistVersion: assignedPlaylist?.version ?? null,
           attentionReason,
+          diagnosticsActive: diagnosticsState.active,
+          diagnosticsDetail: diagnosticsState.detail,
+          diagnosticsLabel: diagnosticsState.label,
+          diagnosticsResult: diagnosticsState.result,
+          diagnosticsTone: diagnosticsState.tone,
           nextActionDetail: nextAction.detail,
           nextActionLabel: nextAction.label,
           nextActionTone: nextAction.tone,
@@ -1098,8 +1172,13 @@ export function DeviceHealthFleetPanel({
     }
   }
 
-  async function runAction(action: "publish" | "reboot" | "recover" | "reset" | "restart", row: RowState) {
-    if ((action !== "reset" && !row.isLive) || isBusy || (action === "reset" && row.resetActive)) {
+  async function runAction(action: "diagnostics" | "publish" | "reboot" | "recover" | "reset" | "restart", row: RowState) {
+    if (
+      ((action !== "reset" && action !== "diagnostics") && !row.isLive) ||
+      isBusy ||
+      (action === "reset" && row.resetActive) ||
+      (action === "diagnostics" && row.diagnosticsActive)
+    ) {
       return;
     }
 
@@ -1114,6 +1193,10 @@ export function DeviceHealthFleetPanel({
     }
     if (action === "reset" && dashboardMode !== "cloud") {
       setMessage("Remote Pi reset is available from the AWS dashboard after the device-agent is installed.");
+      return;
+    }
+    if (action === "diagnostics" && dashboardMode !== "cloud") {
+      setMessage("Remote diagnostics are available from the AWS dashboard after the device-agent is installed.");
       return;
     }
     if (
@@ -1139,6 +1222,8 @@ export function DeviceHealthFleetPanel({
     setMessage(
       action === "publish"
         ? `Publishing ${row.assignedPlaylistName} to ${targetName}...`
+        : action === "diagnostics"
+          ? `Queueing remote diagnostics for ${targetName}...`
         : action === "restart"
           ? `Restarting playback for ${targetName}...`
           : action === "reboot"
@@ -1155,6 +1240,8 @@ export function DeviceHealthFleetPanel({
               playlistId: row.linkedScreen?.playlistId ?? row.device.playlistId ?? undefined,
               screenId: row.linkedScreen?.id ?? undefined
             })
+          : action === "diagnostics"
+            ? await postJson(`/api/cloud/devices/${encodeURIComponent(row.device.id)}/diagnostics`)
           : action === "reset"
             ? await postJson(`/api/cloud/devices/${encodeURIComponent(row.device.id)}/reset`)
             : await postJson("/api/local-player/actions", {
@@ -1641,6 +1728,18 @@ export function DeviceHealthFleetPanel({
                             Current video
                           </a>
                         ) : null}
+                        <button
+                          type="button"
+                          disabled={dashboardMode !== "cloud" || isBusy || selectedRow.diagnosticsActive}
+                          onClick={() => void runAction("diagnostics", selectedRow)}
+                          className="min-h-9 rounded-md border border-sky-200 bg-white px-3 py-1.5 text-sm font-semibold text-sky-800 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {busyAction === "diagnostics"
+                            ? "Queueing..."
+                            : selectedRow.diagnosticsActive
+                              ? selectedRow.diagnosticsLabel
+                              : "Remote diagnostics"}
+                        </button>
                         {selectedSshUrl ? (
                           <a
                             href={selectedSshUrl}
@@ -1650,6 +1749,21 @@ export function DeviceHealthFleetPanel({
                           </a>
                         ) : null}
                       </div>
+                      <p className="mt-3 text-sm text-zinc-600">
+                        Remote diagnostics:{" "}
+                        <span className="font-semibold text-zinc-900">{selectedRow.diagnosticsLabel}</span>
+                        {selectedRow.diagnosticsDetail ? ` - ${selectedRow.diagnosticsDetail}` : ""}
+                      </p>
+                      {selectedRow.diagnosticsResult ? (
+                        <details className="mt-3 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+                          <summary className="cursor-pointer text-sm font-semibold text-zinc-800">
+                            Latest remote diagnostics result
+                          </summary>
+                          <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-zinc-700">
+                            {selectedRow.diagnosticsResult}
+                          </pre>
+                        </details>
+                      ) : null}
                     </div>
                     <div className="min-w-[360px] max-w-full">
                       <h5 className="text-xs font-semibold uppercase text-zinc-500">Recovery</h5>
