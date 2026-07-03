@@ -18,14 +18,6 @@ type ScreenRecord = {
   id: string;
   location: string;
   name: string;
-  playlistId: string | null;
-};
-
-type PlaylistSummary = {
-  assetCount: number;
-  name: string;
-  playlistId: string;
-  version: number;
 };
 
 type ScheduleRecord = {
@@ -59,7 +51,6 @@ type ScheduleResponse = {
   days: DayOption[];
   defaultTimezone: string;
   error?: string;
-  playlists: PlaylistSummary[];
   publish: {
     enabled: boolean;
     message: string;
@@ -97,14 +88,6 @@ function stateLabel(state: ScreenScheduleState | undefined): string {
 
 function formatCount(count: number, noun: string): string {
   return `${count} ${count === 1 ? noun : `${noun}s`}`;
-}
-
-function playlistLabel(playlist: PlaylistSummary | null | undefined, playlistId: string | null): string {
-  if (playlist) {
-    return playlist.name;
-  }
-
-  return playlistId ? "Playlist not found" : "No playlist assigned";
 }
 
 export function SchedulingPanel() {
@@ -155,10 +138,6 @@ export function SchedulingPanel() {
 
   const screensById = useMemo(() => {
     return new Map((data?.screens ?? []).map((screen) => [screen.id, screen]));
-  }, [data]);
-
-  const playlistsById = useMemo(() => {
-    return new Map((data?.playlists ?? []).map((playlist) => [playlist.playlistId, playlist]));
   }, [data]);
 
   const openCount = data?.screenStates.filter((state) => state.state === "on").length ?? 0;
@@ -374,7 +353,6 @@ export function SchedulingPanel() {
               {(data?.screens ?? []).map((screen) => {
                 const state = screenStateById.get(screen.id);
                 const schedule = state?.scheduleId ? scheduleById.get(state.scheduleId) : null;
-                const playlist = screen.playlistId ? playlistsById.get(screen.playlistId) : null;
                 const isSelected = screenIds.includes(screen.id);
 
                 return (
@@ -389,8 +367,7 @@ export function SchedulingPanel() {
                       <p className="mt-1 break-words text-zinc-600">{screen.location} / {screen.group}</p>
                     </div>
                     <div className="min-w-0">
-                      <p className="break-words font-semibold text-zinc-950">{playlistLabel(playlist, screen.playlistId)}</p>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <StatusPill label={stateLabel(state)} tone={state ? stateTone(state.state) : "muted"} />
                       </div>
                     </div>
@@ -508,26 +485,22 @@ export function SchedulingPanel() {
               <fieldset className="grid gap-2">
                 <legend className="text-sm font-semibold text-zinc-800">Screens</legend>
                 <div className="grid max-h-56 gap-2 overflow-auto rounded-md border border-zinc-200 bg-zinc-50 p-2">
-                  {(data?.screens ?? []).map((screen) => {
-                    const playlist = screen.playlistId ? playlistsById.get(screen.playlistId) : null;
-
-                    return (
-                      <label key={screen.id} className="flex items-start gap-2 rounded-md bg-white p-2 text-sm ring-1 ring-zinc-200">
-                        <input
-                          type="checkbox"
-                          checked={screenIds.includes(screen.id)}
-                          onChange={() => toggleScreen(screen.id)}
-                          className="mt-1 h-4 w-4 accent-teal-700"
-                        />
-                        <span className="min-w-0">
-                          <span className="block break-words font-semibold text-zinc-950">{screen.name}</span>
-                          <span className="block break-words text-xs text-zinc-600">
-                            {playlistLabel(playlist, screen.playlistId)}
-                          </span>
+                  {(data?.screens ?? []).map((screen) => (
+                    <label key={screen.id} className="flex items-start gap-2 rounded-md bg-white p-2 text-sm ring-1 ring-zinc-200">
+                      <input
+                        type="checkbox"
+                        checked={screenIds.includes(screen.id)}
+                        onChange={() => toggleScreen(screen.id)}
+                        className="mt-1 h-4 w-4 accent-teal-700"
+                      />
+                      <span className="min-w-0">
+                        <span className="block break-words font-semibold text-zinc-950">{screen.name}</span>
+                        <span className="block break-words text-xs text-zinc-600">
+                          {screen.location} / {screen.group}
                         </span>
-                      </label>
-                    );
-                  })}
+                      </span>
+                    </label>
+                  ))}
                   {(data?.screens.length ?? 0) === 0 ? (
                     <p className="p-2 text-sm text-zinc-600">Add screens before assigning schedules.</p>
                   ) : null}
