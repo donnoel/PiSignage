@@ -532,7 +532,7 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
                         type="button"
                         onClick={() => setSelectedScreenId(screen.id)}
                         aria-pressed={isSelected}
-                        className={`grid w-full gap-2 px-4 py-3 text-left text-sm sm:grid-cols-[minmax(0,1fr)_auto] ${
+                        className={`grid w-full gap-2 px-4 py-3 text-left text-sm sm:grid-cols-[minmax(0,1fr)_17rem] ${
                           isSelected ? "bg-teal-50" : "bg-white hover:bg-zinc-50"
                         }`}
                       >
@@ -542,9 +542,9 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
                             {screen.location} · {screen.group} · {screen.playlistName ?? "No playlist assigned"}
                           </span>
                         </span>
-                        <span className="flex flex-wrap items-center gap-2 sm:justify-end">
+                        <span className="grid gap-2 sm:grid-cols-[10rem_minmax(0,1fr)] sm:items-center">
                           <StatusPill label={screenStatusLabel} tone={screenStatusTone} />
-                          <span className="text-xs font-medium text-zinc-500">{screen.deviceHost ?? "No Pi host"}</span>
+                          <span className="truncate text-xs font-medium text-zinc-500">{screen.deviceHost ?? "No Pi host"}</span>
                         </span>
                       </button>
                     </li>
