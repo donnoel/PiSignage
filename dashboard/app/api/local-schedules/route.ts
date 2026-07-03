@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import {
   appendActivityRecord,
   ensureLocalDataFoundation,
-  readActivityStore,
   readScheduleStore,
   readSettingsRecord,
   type ScheduleRecord,
@@ -125,28 +124,14 @@ async function scheduleResponse(publish?: {
   const inventory = await inventoryForSchedules();
   const inventoryScreens = [...inventory.screens.items].sort(compareScreensByName);
   await repairSchedulesForScreens(inventoryScreens.map((screen) => screen.id));
-  const [scheduleStore, settings, playlistStore, activityStore] = await Promise.all([
+  const [scheduleStore, settings, playlistStore] = await Promise.all([
     readScheduleStore(),
     readSettingsRecord(),
-    readPlaylistStore(),
-    readActivityStore()
+    readPlaylistStore()
   ]);
   const screenStates = inventoryScreens.map((screen) =>
     scheduleStateForScreen(scheduleStore.items, screen)
   );
-  const lastSchedulePublish =
-    activityStore.items.find((item) => item.action === "schedule-publish") ?? null;
-  const lastSuccessfulSchedulePublish =
-    activityStore.items.find((item) => item.action === "schedule-publish" && item.result === "success") ?? null;
-  const storeUpdatedAt = Date.parse(scheduleStore.updatedAt);
-  const successTimestamp = lastSuccessfulSchedulePublish
-    ? Date.parse(lastSuccessfulSchedulePublish.timestamp)
-    : Number.NaN;
-  const pendingLocalChanges = lastSuccessfulSchedulePublish
-    ? Number.isFinite(storeUpdatedAt) &&
-      Number.isFinite(successTimestamp) &&
-      storeUpdatedAt > successTimestamp
-    : scheduleStore.items.length > 0;
   const devicesById = new Map(inventory.devices.items.map((device) => [device.id, device]));
   const devicesByScreenId = new Map(
     inventory.devices.items
@@ -180,21 +165,6 @@ async function scheduleResponse(publish?: {
     publish: publish ?? null,
     scheduleSupport: {
       configuredScreenCount,
-      lastPublish: lastSchedulePublish
-        ? {
-            message: lastSchedulePublish.message,
-            result: lastSchedulePublish.result,
-            timestamp: lastSchedulePublish.timestamp
-          }
-        : null,
-      lastSuccessfulPublish: lastSuccessfulSchedulePublish
-        ? {
-            message: lastSuccessfulSchedulePublish.message,
-            result: lastSuccessfulSchedulePublish.result,
-            timestamp: lastSuccessfulSchedulePublish.timestamp
-          }
-        : null,
-      pendingLocalChanges,
       piConfigured: configuredScreenCount > 0
     },
     schedules: scheduleStore.items,
@@ -256,7 +226,7 @@ export async function POST(request: Request) {
     return scheduleResponse({
       enabled: false,
       ok: true,
-      message: `Saved ${schedule.name}. Publish hours when you are ready to send them to screens.`
+      message: `Saved ${schedule.name}.`
     });
   } catch (error) {
     return apiErrorResponse(error, "Schedule create failed.", 400);
@@ -318,7 +288,7 @@ export async function PATCH(request: Request) {
     return scheduleResponse({
       enabled: false,
       ok: true,
-      message: `Saved ${input.name}. Publish hours when you are ready to send them to screens.`
+      message: `Saved ${input.name}.`
     });
   } catch (error) {
     return apiErrorResponse(error, "Schedule update failed.", 400);
@@ -362,7 +332,7 @@ export async function DELETE(request: Request) {
     return scheduleResponse({
       enabled: false,
       ok: true,
-      message: `Cleared ${schedule.name}. Publish hours when you are ready to update screens.`
+      message: `Cleared ${schedule.name}.`
     });
   } catch (error) {
     return apiErrorResponse(error, "Schedule remove failed.", 400);

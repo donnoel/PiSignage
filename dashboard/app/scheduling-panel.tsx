@@ -50,17 +50,8 @@ type ScreenScheduleState = {
   state: "off" | "on" | "unassigned";
 };
 
-type SchedulePublishSummary = {
-  message: string;
-  result: "error" | "success" | "warning";
-  timestamp: string;
-};
-
 type ScheduleSupport = {
   configuredScreenCount: number;
-  lastPublish: SchedulePublishSummary | null;
-  lastSuccessfulPublish: SchedulePublishSummary | null;
-  pendingLocalChanges: boolean;
   piConfigured: boolean;
 };
 
@@ -104,38 +95,6 @@ function stateLabel(state: ScreenScheduleState | undefined): string {
   return "No hours set";
 }
 
-function supportTone(support: ScheduleSupport | undefined): Tone {
-  if (!support) {
-    return "muted";
-  }
-
-  if (!support.piConfigured || support.pendingLocalChanges) {
-    return "warn";
-  }
-
-  return support.lastSuccessfulPublish ? "good" : "muted";
-}
-
-function supportLabel(support: ScheduleSupport | undefined): string {
-  if (!support) {
-    return "Loading";
-  }
-
-  if (!support.piConfigured) {
-    return "Local only";
-  }
-
-  if (support.pendingLocalChanges) {
-    return "Publish needed";
-  }
-
-  if (support.lastSuccessfulPublish) {
-    return "Published";
-  }
-
-  return "Ready to publish";
-}
-
 function formatCount(count: number, noun: string): string {
   return `${count} ${count === 1 ? noun : `${noun}s`}`;
 }
@@ -146,24 +105,6 @@ function playlistLabel(playlist: PlaylistSummary | null | undefined, playlistId:
   }
 
   return playlistId ? "Playlist not found" : "No playlist assigned";
-}
-
-function screenPublishStatus(screen: ScreenRecord, support: ScheduleSupport | undefined): { label: string; tone: Tone } {
-  if (!support?.piConfigured) {
-    return { label: "Local only", tone: "muted" };
-  }
-
-  if (!screen.deviceHost) {
-    return { label: "No Pi linked", tone: "muted" };
-  }
-
-  if (support.pendingLocalChanges) {
-    return { label: "Publish needed", tone: "warn" };
-  }
-
-  return support.lastSuccessfulPublish
-    ? { label: "Published", tone: "good" }
-    : { label: "Ready to publish", tone: "muted" };
 }
 
 export function SchedulingPanel() {
@@ -177,7 +118,7 @@ export function SchedulingPanel() {
   const [endTime, setEndTime] = useState("17:00");
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>(defaultDays);
   const [screenIds, setScreenIds] = useState<string[]>([]);
-  const [busyAction, setBusyAction] = useState<"clear" | "load" | "publish" | "save" | null>(null);
+  const [busyAction, setBusyAction] = useState<"clear" | "load" | "save" | null>(null);
   const [isPending, startTransition] = useTransition();
   const isBusy = Boolean(busyAction) || isPending;
 
@@ -329,7 +270,7 @@ export function SchedulingPanel() {
         throw new Error(result.error ?? "Schedule save failed.");
       }
       setData(result);
-      setMessage(result.publish?.message ?? "Schedule saved locally.");
+      setMessage(result.publish?.message ?? "Screen hours saved.");
       resetForm(result.defaultTimezone);
       startTransition(() => router.refresh());
     } catch (error) {
@@ -377,7 +318,7 @@ export function SchedulingPanel() {
         throw new Error(result.error ?? "Schedule clear failed.");
       }
       setData(result);
-      setMessage(result.publish?.message ?? `Cleared hours for ${screen.name} locally.`);
+      setMessage(result.publish?.message ?? `Cleared hours for ${screen.name}.`);
       if (editingId === schedule.id) {
         resetForm(result.defaultTimezone);
       }
@@ -389,44 +330,12 @@ export function SchedulingPanel() {
     }
   }
 
-  async function publishScheduleForScreen(screen: ScreenRecord) {
-    if (isBusy) {
-      return;
-    }
-
-    setBusyAction("publish");
-    setMessage(`Publishing hours to ${screen.name}...`);
-    try {
-      const response = await fetch("/api/local-schedules/publish", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ screenId: screen.id })
-      });
-      const result = (await response.json()) as { error?: string; publish?: ScheduleResponse["publish"] };
-      if (!response.ok || result.error) {
-        throw new Error(result.error ?? "Schedule publish failed.");
-      }
-      setMessage(result.publish?.message ?? `Published hours to ${screen.name}.`);
-      await loadSchedules();
-      startTransition(() => router.refresh());
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Schedule publish failed.");
-    } finally {
-      setBusyAction(null);
-    }
-  }
-
   return (
     <div className="mt-6 space-y-4">
       <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
         <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0">
             <h2 className="text-xl font-semibold">Screen schedules</h2>
-          </div>
-          <div className="self-start">
-            <StatusPill label={supportLabel(data?.scheduleSupport)} tone={supportTone(data?.scheduleSupport)} />
           </div>
         </div>
 
@@ -446,12 +355,6 @@ export function SchedulingPanel() {
           <div className="rounded-md bg-sky-50 p-4 ring-1 ring-sky-100">
             <dt className="text-xs font-semibold uppercase text-sky-800">Closed now</dt>
             <dd className="mt-2 text-2xl font-semibold text-zinc-950">{closedCount}</dd>
-          </div>
-          <div className="rounded-md bg-amber-50 p-4 ring-1 ring-amber-100">
-            <dt className="text-xs font-semibold uppercase text-amber-900">Publish status</dt>
-            <dd className="mt-2 break-words text-base font-semibold text-zinc-950">
-              {supportLabel(data?.scheduleSupport)}
-            </dd>
           </div>
         </dl>
       </section>
@@ -473,8 +376,6 @@ export function SchedulingPanel() {
                 const schedule = state?.scheduleId ? scheduleById.get(state.scheduleId) : null;
                 const playlist = screen.playlistId ? playlistsById.get(screen.playlistId) : null;
                 const isSelected = screenIds.includes(screen.id);
-                const publishStatus = screenPublishStatus(screen, data?.scheduleSupport);
-                const canPublishScreenSchedule = Boolean(screen.deviceHost && (schedule || data?.scheduleSupport.pendingLocalChanges));
 
                 return (
                   <li
@@ -491,7 +392,6 @@ export function SchedulingPanel() {
                       <p className="break-words font-semibold text-zinc-950">{playlistLabel(playlist, screen.playlistId)}</p>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         <StatusPill label={stateLabel(state)} tone={state ? stateTone(state.state) : "muted"} />
-                        <StatusPill label={publishStatus.label} tone={publishStatus.tone} />
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 lg:justify-end">
@@ -511,16 +411,6 @@ export function SchedulingPanel() {
                           className="min-h-9 rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           Clear
-                        </button>
-                      ) : null}
-                      {canPublishScreenSchedule ? (
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => void publishScheduleForScreen(screen)}
-                          className="min-h-9 rounded-md border border-teal-200 bg-white px-3 py-2 text-xs font-semibold text-teal-800 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          {busyAction === "publish" ? "Publishing..." : "Publish"}
                         </button>
                       ) : null}
                     </div>
