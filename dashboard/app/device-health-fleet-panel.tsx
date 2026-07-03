@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { VolumeX } from "lucide-react";
 import { StatusPill } from "./dashboard-ui";
 import { assignedPlaylistIdForDevice } from "./lib/inventory-assignment";
 
@@ -27,7 +28,7 @@ type DeviceRecord = {
   actionStartedAt?: string | null;
   actionStatus?: "failed" | "pending" | "running" | "succeeded" | null;
   actionStatusMessage?: string | null;
-  actionType?: "reboot-device" | "restart-playback" | "run-recovery" | null;
+  actionType?: "mute-audio" | "reboot-device" | "restart-playback" | "run-recovery" | null;
   actionUpdatedAt?: string | null;
   diagnosticsFinishedAt?: string | null;
   diagnosticsRequestedAt?: string | null;
@@ -199,7 +200,11 @@ function screenActionClass(tone: ScreenActionTone): string {
   return "border-zinc-200 text-zinc-800 hover:bg-zinc-50";
 }
 
-function ScreenActionIcon({ name }: { name: "link" | "playlist" | "remove" | "rename" }) {
+function ScreenActionIcon({ name }: { name: "link" | "mute" | "playlist" | "remove" | "rename" }) {
+  if (name === "mute") {
+    return <VolumeX aria-hidden="true" className="h-5 w-5" />;
+  }
+
   if (name === "playlist") {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8">
@@ -532,6 +537,9 @@ function resetStateFor(device: DeviceRecord): { active: boolean; detail: string;
 }
 
 function actionName(type: DeviceRecord["actionType"]): string {
+  if (type === "mute-audio") {
+    return "Mute audio";
+  }
   if (type === "restart-playback") {
     return "Restart playback";
   }
@@ -559,6 +567,18 @@ function summarizedActionDetail(device: DeviceRecord, fallback: string): string 
     }
     if (device.actionStatus === "succeeded") {
       return "Playback restart completed and VLC reported active.";
+    }
+  }
+
+  if (device.actionType === "mute-audio") {
+    if (device.actionStatus === "pending") {
+      return "Mute audio is queued. The Pi will run it on its next cloud check-in.";
+    }
+    if (device.actionStatus === "running") {
+      return "Muting VLC audio on the Pi.";
+    }
+    if (device.actionStatus === "succeeded") {
+      return "Audio mute completed and VLC was restarted with audio disabled.";
     }
   }
 
@@ -789,7 +809,7 @@ export function DeviceHealthFleetPanel({
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [publishFeedbackByDeviceId, setPublishFeedbackByDeviceId] = useState<Record<string, PublishFeedback>>({});
-  const [busyAction, setBusyAction] = useState<"assign" | "diagnostics" | "inventory" | "publish" | "reboot" | "recover" | "reset" | "restart" | null>(null);
+  const [busyAction, setBusyAction] = useState<"assign" | "diagnostics" | "inventory" | "mute" | "publish" | "reboot" | "recover" | "reset" | "restart" | null>(null);
   const [busyDeviceId, setBusyDeviceId] = useState<string | null>(null);
   const [rebootWatch, setRebootWatch] = useState<{
     baselineStatusUpdatedAt: string | null;
@@ -1362,8 +1382,8 @@ export function DeviceHealthFleetPanel({
     }
   }
 
-  async function runAction(action: "diagnostics" | "publish" | "reboot" | "recover" | "reset" | "restart", row: RowState) {
-    const remoteRecoveryAction = action === "restart" || action === "recover" || action === "reboot";
+  async function runAction(action: "diagnostics" | "mute" | "publish" | "reboot" | "recover" | "reset" | "restart", row: RowState) {
+    const remoteRecoveryAction = action === "mute" || action === "restart" || action === "recover" || action === "reboot";
     if (
       ((action !== "reset" && action !== "diagnostics") && !row.isLive) ||
       isBusy ||
@@ -1391,6 +1411,10 @@ export function DeviceHealthFleetPanel({
       setMessage("Remote diagnostics are available from the AWS dashboard after the device-agent is installed.");
       return;
     }
+    if (action === "mute" && dashboardMode !== "cloud") {
+      setMessage("Remote audio mute is available from the AWS dashboard after the device-agent is installed.");
+      return;
+    }
     if (
       action === "reset" &&
       !window.confirm(
@@ -1416,6 +1440,8 @@ export function DeviceHealthFleetPanel({
         ? `Publishing ${row.assignedPlaylistName} to ${targetName}...`
         : action === "diagnostics"
           ? `Queueing remote diagnostics for ${targetName}...`
+        : action === "mute"
+          ? `Queueing audio mute for ${targetName}...`
         : action === "restart"
           ? `Restarting playback for ${targetName}...`
           : action === "reboot"
@@ -1439,7 +1465,9 @@ export function DeviceHealthFleetPanel({
           : remoteRecoveryAction && dashboardMode === "cloud"
             ? await postJson(`/api/cloud/devices/${encodeURIComponent(row.device.id)}/actions`, {
                 action:
-                  action === "restart"
+                  action === "mute"
+                    ? "mute-audio"
+                    : action === "restart"
                     ? "restart-playback"
                     : action === "reboot"
                       ? "reboot-device"
@@ -1809,6 +1837,16 @@ export function DeviceHealthFleetPanel({
                             <ScreenActionIcon name="playlist" />
                           </a>
                         ) : null}
+                        <button
+                          type="button"
+                          onClick={() => void runAction("mute", row)}
+                          disabled={dashboardMode !== "cloud" || !row.isLive || isBusy || row.actionActive || row.resetActive || row.diagnosticsActive}
+                          title="Mute audio"
+                          aria-label={`Mute audio on ${screenName(row)}`}
+                          className={`inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white text-base font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${screenActionClass("neutral")}`}
+                        >
+                          <ScreenActionIcon name="mute" />
+                        </button>
                         {row.linkedScreen ? (
                           <button
                             type="button"
@@ -1984,6 +2022,14 @@ export function DeviceHealthFleetPanel({
                     <div className="min-w-0">
                       <h5 className="text-xs font-semibold uppercase text-zinc-500">Recovery</h5>
                       <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={!selectedRow.isLive || isBusy || selectedRow.actionActive || selectedRow.resetActive || selectedRow.diagnosticsActive}
+                          onClick={() => void runAction("mute", selectedRow)}
+                          className="min-h-9 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {busyAction === "mute" ? "Queueing..." : "Mute audio"}
+                        </button>
                         <button
                           type="button"
                           disabled={!selectedRow.isLive || isBusy || selectedRow.actionActive || selectedRow.resetActive || selectedRow.diagnosticsActive}

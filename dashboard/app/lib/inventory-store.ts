@@ -286,7 +286,7 @@ function actionStatusOrNull(value: AttributeValue | undefined): DeviceActionStat
 
 function actionTypeOrNull(value: AttributeValue | undefined): DeviceActionType | null {
   const type = stringOrNullAttribute(value);
-  return type === "reboot-device" || type === "restart-playback" || type === "run-recovery"
+  return type === "mute-audio" || type === "reboot-device" || type === "restart-playback" || type === "run-recovery"
     ? type
     : null;
 }
@@ -1025,6 +1025,9 @@ function hasActiveCommand(device: DeviceRecord): boolean {
 }
 
 function actionLabel(type: DeviceActionType): string {
+  if (type === "mute-audio") {
+    return "Mute audio";
+  }
   if (type === "restart-playback") {
     return "Restart playback";
   }

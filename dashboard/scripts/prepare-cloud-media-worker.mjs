@@ -213,6 +213,10 @@ async function main() {
   if (!item) {
     throw new Error(`Media item ${assetId} was not found.`);
   }
+  if (text(item, "status") === "ready" && text(item, "playbackObjectKey") && text(item, "preparedAt")) {
+    console.log(`Preparing ${assetId}: already ready`);
+    return;
+  }
 
   const sourceFileName = text(item, "sourceFileName");
   const playbackFileName = text(item, "playbackFileName");
@@ -293,7 +297,13 @@ async function main() {
     console.log(`Preparing ${assetId}: ready`);
   } catch (error) {
     console.error(`Preparing ${assetId} failed`, error);
-    await updateItem(item, {
+    const latest = await readAsset();
+    if (latest && text(latest, "status") === "ready" && text(latest, "playbackObjectKey") && text(latest, "preparedAt")) {
+      console.warn(`Preparing ${assetId}: failure ignored because the media is already ready`);
+      return;
+    }
+
+    await updateItem(latest ?? item, {
       cloudStatusDetail: { S: error instanceof Error ? error.message : "Media preparation failed." },
       status: { S: "failed" }
     });

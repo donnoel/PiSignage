@@ -244,6 +244,8 @@ Implemented command types:
 - `reset-device`: deployment reset, already guarded by explicit operator action.
 - `restart-playback`: restart the managed VLC playback service and verify it is
   active.
+- `mute-audio`: persist `PISIGNAGE_VLC_AUDIO=off` for the managed VLC service,
+  reload systemd user units, and restart VLC so playback runs with `--no-audio`.
 - `run-recovery`: run the managed local recovery sequence: collect service
   evidence, restart VLC, verify service state, re-apply display mode when
   available, and collect playback/cache/health evidence.
@@ -334,7 +336,13 @@ Rules:
 
 - The dashboard must not log `uploadUrl`.
 - MP4 video is already supported in the alpha; image and MOV sources still require playback-safe processing before playlist use.
-- Server-side validation and processing status should be designed before production uploads.
+- Once the source object is stored in S3 and the media record is marked
+  `processing`, playback preparation is a server-owned background operation.
+  The dashboard may leave or close without canceling that preparation.
+- Browser folder uploads are still browser-owned until each file reaches Beam;
+  closing the browser can cancel files that have not finished uploading.
+- Server-side validation and durable processing status should be completed
+  before production uploads.
 
 ## Screen Assignment
 

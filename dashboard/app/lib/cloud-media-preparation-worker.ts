@@ -13,6 +13,14 @@ const queuedMediaIds = new Set<string>();
 const activeMediaIds = new Set<string>();
 let queueRunning = false;
 
+function hasPreparedPlaybackCopy(item: MediaRecord): boolean {
+  return Boolean(item.playbackObjectKey && item.preparedAt);
+}
+
+function needsPreparationWorker(item: MediaRecord): boolean {
+  return item.status === "processing" && !hasPreparedPlaybackCopy(item) && Boolean(item.sourceObjectKey);
+}
+
 function mediaWorkerPath(): string {
   const candidates = [
     path.join(process.cwd(), "scripts", "prepare-cloud-media-worker.mjs"),
@@ -30,7 +38,8 @@ function mediaWorkerPath(): string {
 async function markWorkerExitFailureIfStillProcessing(
   config: CloudMediaConfig,
   mediaId: string,
-  message: string
+  message: string,
+  status: MediaRecord["status"] = "failed"
 ): Promise<void> {
   try {
     const mediaStore = await readCloudMediaStore(config);
@@ -39,7 +48,7 @@ async function markWorkerExitFailureIfStillProcessing(
       await updateCloudMediaPreparationStatus(config, mediaId, {
         cloudStatusDetail: message,
         playbackProfile: current.playbackProfile,
-        status: "failed"
+        status
       });
     }
   } catch (error) {
@@ -84,7 +93,10 @@ function runCloudMediaWorker(config: CloudMediaConfig, mediaId: string): Promise
       void markWorkerExitFailureIfStillProcessing(
         config,
         mediaId,
-        `Playback preparation worker stopped before completion (${exitDetail}).`
+        signal
+          ? `Playback preparation worker was interrupted (${exitDetail}). Beam will resume it from the stored source media.`
+          : `Playback preparation worker stopped before completion (${exitDetail}).`,
+        signal ? "processing" : "failed"
       ).finally(resolve);
     });
   });
@@ -127,6 +139,27 @@ function enqueueCloudMediaPreparation(config: CloudMediaConfig, mediaId: string)
   });
 }
 
+export function resumeCloudMediaPreparationWorkers(
+  config: CloudMediaConfig,
+  mediaItems: MediaRecord[]
+): { active: number; queued: number; resumed: number } {
+  let resumed = 0;
+  for (const item of mediaItems) {
+    if (!needsPreparationWorker(item) || activeMediaIds.has(item.id) || queuedMediaIds.has(item.id)) {
+      continue;
+    }
+
+    enqueueCloudMediaPreparation(config, item.id);
+    resumed += 1;
+  }
+
+  return {
+    active: activeMediaIds.size,
+    queued: queuedMediaIds.size,
+    resumed
+  };
+}
+
 export async function startCloudMediaPreparationWorker(
   config: CloudMediaConfig,
   mediaId: string
@@ -136,7 +169,7 @@ export async function startCloudMediaPreparationWorker(
   if (!current) {
     return { item: null, preparing: false };
   }
-  if (current.playbackObjectKey && current.preparedAt) {
+  if (hasPreparedPlaybackCopy(current)) {
     const readyItem = await updateCloudMediaPreparationStatus(config, mediaId, {
       cloudStatusDetail: "Prepared playback copy is ready for Pi/VLC.",
       playbackProfile: playbackPrepProfile.id,

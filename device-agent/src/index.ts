@@ -104,7 +104,7 @@ type DeviceCommand = {
   requestedAt: string;
   status: "pending" | "running";
   statusUrl?: string;
-  type: "collect-diagnostics" | "reboot-device" | "reset-device" | "restart-playback" | "run-recovery";
+  type: "collect-diagnostics" | "mute-audio" | "reboot-device" | "reset-device" | "restart-playback" | "run-recovery";
 };
 
 type CommandStatus = "failed" | "running" | "succeeded";
@@ -743,6 +743,29 @@ async function restartPlaybackService(): Promise<string> {
   return `VLC playback restarted. Service state: ${stdout.trim() || "unknown"}.`;
 }
 
+async function muteVlcAudio(): Promise<string> {
+  const overrideDirectory = path.join(os.homedir(), ".config", "systemd", "user", "pisignage-vlc.service.d");
+  const overridePath = path.join(overrideDirectory, "audio.conf");
+  await fs.mkdir(overrideDirectory, { recursive: true });
+  await fs.writeFile(overridePath, "[Service]\nEnvironment=PISIGNAGE_VLC_AUDIO=off\n", "utf8");
+  await execFileAsync("systemctl", ["--user", "daemon-reload"], {
+    timeout: 20_000
+  });
+  await execFileAsync("systemctl", ["--user", "restart", "pisignage-vlc.service"], {
+    timeout: 45_000
+  });
+  const { stdout } = await execFileAsync("systemctl", ["--user", "show", "pisignage-vlc.service", "--property=Environment"], {
+    maxBuffer: 64 * 1024,
+    timeout: 20_000
+  });
+  const confirmed = stdout.includes("PISIGNAGE_VLC_AUDIO=off");
+  if (!confirmed) {
+    throw new Error("Audio mute override was written, but systemd did not report PISIGNAGE_VLC_AUDIO=off.");
+  }
+
+  return "Audio muted. VLC will restart with audio disabled for this Pi.";
+}
+
 async function runRecoveryStep(title: string, command: string, timeoutMs = 30_000): Promise<string> {
   try {
     const { stdout, stderr } = await execFileAsync("/bin/sh", ["-lc", command], {
@@ -800,6 +823,9 @@ async function runRecoveryAction(cacheDirectory: string): Promise<string> {
 }
 
 function actionRunningMessage(type: DeviceCommand["type"]): string {
+  if (type === "mute-audio") {
+    return "Mute audio is running on the Pi.";
+  }
   if (type === "restart-playback") {
     return "Restart playback is running on the Pi.";
   }
@@ -834,7 +860,9 @@ async function runActionCommand(cacheDirectory: string, command: DeviceCommand):
 
   try {
     const message =
-      command.type === "restart-playback"
+      command.type === "mute-audio"
+        ? await muteVlcAudio()
+        : command.type === "restart-playback"
         ? await restartPlaybackService()
         : command.type === "reboot-device"
           ? await requestCommandReboot()
@@ -1065,6 +1093,7 @@ async function fetchCloudPlaylist(cacheDirectory: string): Promise<{
 
     if (
       body.command.type === "restart-playback" ||
+      body.command.type === "mute-audio" ||
       body.command.type === "run-recovery" ||
       body.command.type === "reboot-device"
     ) {

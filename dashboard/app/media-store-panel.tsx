@@ -625,6 +625,20 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
     updatingTagMediaId !== null;
 
   useEffect(() => {
+    if (!isUploading) {
+      return;
+    }
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isUploading]);
+
+  useEffect(() => {
     if (selectedFolderId) {
       setUploadFolderId(selectedFolderId);
       setTargetFolderId(selectedFolderId);
@@ -1614,6 +1628,9 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
                     <p className="mt-3 break-words text-sm font-semibold text-zinc-950">{uploadSelection}</p>
                     <p className="mt-1 text-xs leading-5 text-zinc-600">
                       Hidden files and unsupported formats are skipped when uploading a folder.
+                      {mode === "cloud"
+                        ? " Keep this tab open while files upload; once each file is saved, playback preparation continues in the background."
+                        : ""}
                     </p>
                   </div>
                 </div>

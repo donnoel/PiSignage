@@ -10,7 +10,10 @@ import {
   deleteCloudMediaRecords,
   readCloudMediaStore
 } from "../../lib/cloud-media-store";
-import { startCloudMediaPreparationWorker } from "../../lib/cloud-media-preparation-worker";
+import {
+  resumeCloudMediaPreparationWorkers,
+  startCloudMediaPreparationWorker
+} from "../../lib/cloud-media-preparation-worker";
 import {
   appendActivityRecord,
   ensureLocalDataFoundation,
@@ -397,6 +400,7 @@ export async function GET(request: Request) {
   const cloudConfig = cloudMediaConfig();
   if (cloudConfig) {
     const [mediaStore, folderStore] = await Promise.all([readCloudMediaStore(cloudConfig), readMediaFolderStore()]);
+    resumeCloudMediaPreparationWorkers(cloudConfig, mediaStore.items);
     const mediaItems = await cloudMediaItemsWithPlaylistAssets(mediaStore.items, folderStore);
     const { searchParams } = new URL(request.url);
     const cursor = parsePositiveInt(searchParams.get("cursor"), 0, Number.MAX_SAFE_INTEGER);
