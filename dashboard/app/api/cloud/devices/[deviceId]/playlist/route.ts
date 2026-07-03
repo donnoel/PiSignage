@@ -51,11 +51,15 @@ export async function GET(request: Request, context: RouteContext) {
     request,
     `/api/cloud/devices/${encodeURIComponent(deviceId)}/reset-result`
   );
+  const actionStatusUrl = publicUrlForRequest(
+    request,
+    `/api/cloud/devices/${encodeURIComponent(deviceId)}/actions-result`
+  );
   const diagnosticsStatusUrl = publicUrlForRequest(
     request,
     `/api/cloud/devices/${encodeURIComponent(deviceId)}/diagnostics-result`
   );
-  const command = commandForDevice(device, { diagnosticsStatusUrl, resetStatusUrl });
+  const command = commandForDevice(device, { actionStatusUrl, diagnosticsStatusUrl, resetStatusUrl });
   const desiredReleaseId = screen?.desiredReleaseId ?? device.desiredReleaseId ?? null;
   const desiredManifestChecksum =
     screen?.desiredReleaseManifestChecksum ?? device.desiredReleaseManifestChecksum ?? null;

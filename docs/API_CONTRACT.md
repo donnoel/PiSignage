@@ -242,6 +242,12 @@ to the provided result URL. The dashboard must not send arbitrary shell.
 Implemented command types:
 
 - `reset-device`: deployment reset, already guarded by explicit operator action.
+- `restart-playback`: restart the managed VLC playback service and verify it is
+  active.
+- `run-recovery`: run the managed local recovery sequence: collect service
+  evidence, restart VLC, verify service state, re-apply display mode when
+  available, and collect playback/cache/health evidence.
+- `reboot-device`: request a Pi reboot through the managed shutdown path.
 - `collect-diagnostics`: read-only evidence collection for VLC service state,
   player status, heartbeat, schedule status, display, network, health,
   playback cache footprint, and capped recent VLC logs.
@@ -251,9 +257,12 @@ Command behavior:
 - Commands are tiny JSON and must not include media URLs or media payloads.
 - Read-only diagnostics must not restart services, reboot the Pi, change
   playlists, delete cache, or modify device identity.
+- Remote recovery actions must be explicit allowlisted command types; the
+  dashboard must not provide arbitrary shell or operator-supplied command text.
 - Device failures to fetch or report command status must not stop cached
   playback.
-- Reset commands take precedence over diagnostics if both are pending.
+- Reset commands take precedence over recovery and diagnostics if more than one
+  command is pending.
 
 ### Release Manifest And Asset URL
 

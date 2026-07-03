@@ -22,6 +22,13 @@ type DeviceRecord = {
   name: string;
   playlistId: string | null;
   sshUser?: string;
+  actionFinishedAt?: string | null;
+  actionRequestedAt?: string | null;
+  actionStartedAt?: string | null;
+  actionStatus?: "failed" | "pending" | "running" | "succeeded" | null;
+  actionStatusMessage?: string | null;
+  actionType?: "reboot-device" | "restart-playback" | "run-recovery" | null;
+  actionUpdatedAt?: string | null;
   diagnosticsFinishedAt?: string | null;
   diagnosticsRequestedAt?: string | null;
   diagnosticsResult?: string | null;
@@ -82,6 +89,10 @@ type RowState = {
   assignedPlaylistName: string;
   assignedPlaylistVersion: number | null;
   attentionReason: string;
+  actionActive: boolean;
+  actionDetail: string;
+  actionLabel: string;
+  actionTone: Tone;
   device: DeviceRecord;
   diagnosticsActive: boolean;
   diagnosticsDetail: string;
@@ -520,6 +531,140 @@ function resetStateFor(device: DeviceRecord): { active: boolean; detail: string;
   };
 }
 
+function actionName(type: DeviceRecord["actionType"]): string {
+  if (type === "restart-playback") {
+    return "Restart playback";
+  }
+  if (type === "run-recovery") {
+    return "Full recovery";
+  }
+  if (type === "reboot-device") {
+    return "Reboot";
+  }
+  return "Remote action";
+}
+
+function actionStateFor(device: DeviceRecord): { active: boolean; detail: string; label: string; tone: Tone } {
+  const label = actionName(device.actionType);
+  if (device.actionStatus === "pending") {
+    return {
+      active: true,
+      detail: device.actionStatusMessage ?? `${label} is queued and will run on the next Pi check-in.`,
+      label: `${label} pending`,
+      tone: "warn"
+    };
+  }
+
+  if (device.actionStatus === "running") {
+    return {
+      active: true,
+      detail: device.actionStatusMessage ?? `${label} is running on the Pi.`,
+      label: `${label} running`,
+      tone: "warn"
+    };
+  }
+
+  if (device.actionStatus === "succeeded") {
+    return {
+      active: false,
+      detail: device.actionStatusMessage ?? `${label} completed.`,
+      label: `${label} complete`,
+      tone: "good"
+    };
+  }
+
+  if (device.actionStatus === "failed") {
+    return {
+      active: false,
+      detail: device.actionStatusMessage ?? `${label} failed on the Pi.`,
+      label: `${label} failed`,
+      tone: "warn"
+    };
+  }
+
+  return {
+    active: false,
+    detail: "No remote recovery action has been requested for this Pi.",
+    label: "No recovery action",
+    tone: "muted"
+  };
+}
+
+type DiagnosticsProbe = {
+  detail: string;
+  label: string;
+  ok: boolean;
+};
+
+type DiagnosticsReport = {
+  capturedAt?: string;
+  deviceId?: string;
+  hostname?: string | null;
+  localIpAddress?: string | null;
+  probes?: DiagnosticsProbe[];
+};
+
+function parseJsonObject(value: string): unknown {
+  return JSON.parse(value) as unknown;
+}
+
+function parseDiagnosticDetail(value: string): unknown {
+  const parsed = parseJsonObject(value);
+  if (typeof parsed === "string") {
+    return parseDiagnosticDetail(parsed);
+  }
+  return parsed;
+}
+
+function diagnosticsReportFromResult(value: string | null): DiagnosticsReport | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = parseJsonObject(value);
+    if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as DiagnosticsReport).probes)) {
+      return null;
+    }
+
+    return parsed as DiagnosticsReport;
+  } catch {
+    return null;
+  }
+}
+
+function friendlyDiagnosticDetail(probe: DiagnosticsProbe): string {
+  try {
+    const parsed = parseDiagnosticDetail(probe.detail);
+    if (parsed && typeof parsed === "object") {
+      const record = parsed as Record<string, unknown>;
+      if (probe.label === "Heartbeat") {
+        return [
+          `Playback: ${String(record.playbackState ?? "unknown")}`,
+          `Current asset: ${String(record.currentAssetId ?? "unknown")}`,
+          `Playlist version: ${String(record.playlistVersion ?? "unknown")}`,
+          `Network: ${record.networkOnline === true ? "online" : "not confirmed"}`,
+          `IP: ${String(record.localIpAddress ?? "unknown")}`
+        ].join(" · ");
+      }
+      if (probe.label === "Player status") {
+        return [
+          `State: ${String(record.state ?? "unknown")}`,
+          `Current asset: ${String(record.currentAssetId ?? "unknown")}`,
+          `Playlist: ${String(record.playlistId ?? "unknown")}`
+        ].join(" · ");
+      }
+      if (probe.label === "Schedule status") {
+        return String(record.detail ?? record.state ?? "Schedule status was reported.");
+      }
+    }
+  } catch {
+    // Keep the raw detail below when a probe is plain text rather than JSON.
+  }
+
+  return probe.detail.replace(/\\n/g, "\n").replace(/\\"/g, "\"").trim();
+}
+
 function diagnosticsStateFor(device: DeviceRecord): {
   active: boolean;
   detail: string;
@@ -591,7 +736,7 @@ export function DeviceHealthFleetPanel({
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [publishFeedbackByDeviceId, setPublishFeedbackByDeviceId] = useState<Record<string, PublishFeedback>>({});
-  const [busyAction, setBusyAction] = useState<"assign" | "diagnostics" | "inventory" | "publish" | "reboot" | "recover" | "refresh" | "reset" | "restart" | null>(null);
+  const [busyAction, setBusyAction] = useState<"assign" | "diagnostics" | "inventory" | "publish" | "reboot" | "recover" | "reset" | "restart" | null>(null);
   const [busyDeviceId, setBusyDeviceId] = useState<string | null>(null);
   const [rebootWatch, setRebootWatch] = useState<{
     baselineStatusUpdatedAt: string | null;
@@ -781,10 +926,15 @@ export function DeviceHealthFleetPanel({
           syncTone
         });
         const resetState = resetStateFor(device);
+        const actionState = actionStateFor(device);
         const diagnosticsState = diagnosticsStateFor(device);
 
         return {
           device,
+          actionActive: actionState.active,
+          actionDetail: actionState.detail,
+          actionLabel: actionState.label,
+          actionTone: actionState.tone,
           addressChanged,
           addressDetail,
           addressLabel,
@@ -916,6 +1066,7 @@ export function DeviceHealthFleetPanel({
   const selectedSyncState = selectedRow ? displayedSyncState(selectedRow, selectedPublishFeedback) : null;
   const selectedLiveReportUrl = selectedRow ? liveReportUrlFor(selectedRow) : null;
   const selectedSshUrl = selectedRow ? sshUrlFor(selectedRow) : null;
+  const selectedDiagnosticsReport = selectedRow ? diagnosticsReportFromResult(selectedRow.diagnosticsResult) : null;
   const selectedTargetName = selectedRow ? screenName(selectedRow) : "selected screen";
   const onlineCount = rows.filter((row) => row.healthLabel === "Online").length;
   const offlineCount = rows.filter((row) => row.healthLabel === "Offline").length;
@@ -948,20 +1099,6 @@ export function DeviceHealthFleetPanel({
 
     return () => window.clearTimeout(timeout);
   }, [hasNewerStatusAfterReboot, rebootWatch, rebootWatchApplies, router, selectedReachable, startTransition]);
-
-  function refreshStatus() {
-    if (isBusy) {
-      return;
-    }
-
-    setBusyAction("refresh");
-    setMessage("Refreshing screen status...");
-    startTransition(() => {
-      router.refresh();
-      setBusyAction(null);
-      setMessage("Screen status refreshed.");
-    });
-  }
 
   async function postJson(path: string, body?: unknown): Promise<ActionResponse> {
     const response = await fetch(path, {
@@ -1173,11 +1310,13 @@ export function DeviceHealthFleetPanel({
   }
 
   async function runAction(action: "diagnostics" | "publish" | "reboot" | "recover" | "reset" | "restart", row: RowState) {
+    const remoteRecoveryAction = action === "restart" || action === "recover" || action === "reboot";
     if (
       ((action !== "reset" && action !== "diagnostics") && !row.isLive) ||
       isBusy ||
       (action === "reset" && row.resetActive) ||
-      (action === "diagnostics" && row.diagnosticsActive)
+      (action === "diagnostics" && row.diagnosticsActive) ||
+      (remoteRecoveryAction && (row.actionActive || row.resetActive || row.diagnosticsActive))
     ) {
       return;
     }
@@ -1244,6 +1383,15 @@ export function DeviceHealthFleetPanel({
             ? await postJson(`/api/cloud/devices/${encodeURIComponent(row.device.id)}/diagnostics`)
           : action === "reset"
             ? await postJson(`/api/cloud/devices/${encodeURIComponent(row.device.id)}/reset`)
+          : remoteRecoveryAction && dashboardMode === "cloud"
+            ? await postJson(`/api/cloud/devices/${encodeURIComponent(row.device.id)}/actions`, {
+                action:
+                  action === "restart"
+                    ? "restart-playback"
+                    : action === "reboot"
+                      ? "reboot-device"
+                      : "run-recovery"
+              })
             : await postJson("/api/local-player/actions", {
                 action:
                   action === "restart"
@@ -1260,7 +1408,7 @@ export function DeviceHealthFleetPanel({
         (action === "publish"
           ? `Publish sent for ${targetName}.${publishMessage}`
           : `${row.device.name} action completed.`);
-      if (action === "reboot") {
+      if (action === "reboot" && dashboardMode !== "cloud") {
         setRebootWatch({
           baselineStatusUpdatedAt: row.lastStatusUpdatedAt,
           deviceId: row.device.id,
@@ -1706,18 +1854,10 @@ export function DeviceHealthFleetPanel({
                   </p>
                 </div>
                 <div className="mt-3 border-t border-zinc-200 pt-3">
-                  <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
-                    <div className="min-w-[260px]">
+                  <div className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(300px,auto)_minmax(190px,auto)]">
+                    <div className="min-w-0">
                       <h5 className="text-xs font-semibold uppercase text-zinc-500">Diagnostics</h5>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={refreshStatus}
-                          className="min-h-9 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {busyAction === "refresh" ? "Refreshing..." : "Refresh"}
-                        </button>
                         {selectedLiveReportUrl ? (
                           <a
                             href={selectedLiveReportUrl}
@@ -1730,7 +1870,7 @@ export function DeviceHealthFleetPanel({
                         ) : null}
                         <button
                           type="button"
-                          disabled={dashboardMode !== "cloud" || isBusy || selectedRow.diagnosticsActive}
+                          disabled={dashboardMode !== "cloud" || isBusy || selectedRow.diagnosticsActive || selectedRow.actionActive || selectedRow.resetActive}
                           onClick={() => void runAction("diagnostics", selectedRow)}
                           className="min-h-9 rounded-md border border-sky-200 bg-white px-3 py-1.5 text-sm font-semibold text-sky-800 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
@@ -1749,57 +1889,85 @@ export function DeviceHealthFleetPanel({
                           </a>
                         ) : null}
                       </div>
-                      <p className="mt-3 text-sm text-zinc-600">
+                      <p className="mt-3 break-words text-sm text-zinc-600">
                         Remote diagnostics:{" "}
                         <span className="font-semibold text-zinc-900">{selectedRow.diagnosticsLabel}</span>
                         {selectedRow.diagnosticsDetail ? ` - ${selectedRow.diagnosticsDetail}` : ""}
                       </p>
                       {selectedRow.diagnosticsResult ? (
-                        <details className="mt-3 rounded-md border border-zinc-200 bg-zinc-50 p-3">
-                          <summary className="cursor-pointer text-sm font-semibold text-zinc-800">
-                            Latest remote diagnostics result
-                          </summary>
-                          <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-zinc-700">
-                            {selectedRow.diagnosticsResult}
-                          </pre>
+                        <details className="mt-3 max-w-full rounded-md border border-zinc-200 bg-zinc-50 p-3">
+                          <summary className="cursor-pointer text-sm font-semibold text-zinc-800">Latest remote diagnostics</summary>
+                          {selectedDiagnosticsReport?.probes ? (
+                            <div className="mt-3 grid gap-2">
+                              <p className="text-xs text-zinc-500">
+                                Captured {selectedDiagnosticsReport.capturedAt ?? "recently"}
+                                {selectedDiagnosticsReport.hostname ? ` from ${selectedDiagnosticsReport.hostname}` : ""}
+                                {selectedDiagnosticsReport.localIpAddress ? ` at ${selectedDiagnosticsReport.localIpAddress}` : ""}.
+                              </p>
+                              {selectedDiagnosticsReport.probes.map((probe) => (
+                                <div key={probe.label} className="rounded-md border border-zinc-200 bg-white p-2">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                      probe.ok ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                                    }`}>
+                                      {probe.ok ? "OK" : "Check"}
+                                    </span>
+                                    <span className="text-sm font-semibold text-zinc-900">{probe.label}</span>
+                                  </div>
+                                  <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-5 text-zinc-600">
+                                    {friendlyDiagnosticDetail(probe)}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-zinc-700">
+                              {selectedRow.diagnosticsResult}
+                            </pre>
+                          )}
                         </details>
                       ) : null}
                     </div>
-                    <div className="min-w-[360px] max-w-full">
+                    <div className="min-w-0">
                       <h5 className="text-xs font-semibold uppercase text-zinc-500">Recovery</h5>
                       <div className="mt-2 flex flex-wrap gap-2">
                         <button
                           type="button"
-                          disabled={!selectedRow.isLive || isBusy}
+                          disabled={!selectedRow.isLive || isBusy || selectedRow.actionActive || selectedRow.resetActive || selectedRow.diagnosticsActive}
                           onClick={() => void runAction("restart", selectedRow)}
                           className="min-h-9 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          {busyAction === "restart" ? "Restarting..." : "Restart playback"}
+                          {busyAction === "restart" ? "Queueing..." : "Restart playback"}
                         </button>
                         <button
                           type="button"
-                          disabled={!selectedRow.isLive || isBusy}
+                          disabled={!selectedRow.isLive || isBusy || selectedRow.actionActive || selectedRow.resetActive || selectedRow.diagnosticsActive}
                           onClick={() => void runAction("recover", selectedRow)}
                           className="min-h-9 rounded-md border border-emerald-200 bg-white px-3 py-1.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          {busyAction === "recover" ? "Recovering..." : "Run full recovery"}
+                          {busyAction === "recover" ? "Queueing..." : "Run full recovery"}
                         </button>
                         <button
                           type="button"
-                          disabled={!selectedRow.isLive || isBusy}
+                          disabled={!selectedRow.isLive || isBusy || selectedRow.actionActive || selectedRow.resetActive || selectedRow.diagnosticsActive}
                           onClick={() => void runAction("reboot", selectedRow)}
                           className="min-h-9 rounded-md border border-amber-200 bg-white px-3 py-1.5 text-sm font-semibold text-amber-800 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          {busyAction === "reboot" ? "Rebooting..." : "Reboot Pi"}
+                          {busyAction === "reboot" ? "Queueing..." : "Reboot Pi"}
                         </button>
                       </div>
+                      <p className="mt-3 break-words text-sm text-zinc-600">
+                        Remote recovery:{" "}
+                        <span className="font-semibold text-zinc-900">{selectedRow.actionLabel}</span>
+                        {selectedRow.actionDetail ? ` - ${selectedRow.actionDetail}` : ""}
+                      </p>
                     </div>
-                    <div className="min-w-[190px]">
+                    <div className="min-w-0">
                       <h5 className="text-xs font-semibold uppercase text-zinc-500">Deployment</h5>
                       <div className="mt-2 flex flex-wrap gap-2">
                         <button
                           type="button"
-                          disabled={isBusy || selectedRow.resetActive}
+                          disabled={isBusy || selectedRow.resetActive || selectedRow.actionActive || selectedRow.diagnosticsActive}
                           onClick={() => void runAction("reset", selectedRow)}
                           className="min-h-9 rounded-md border border-red-200 bg-white px-3 py-1.5 text-sm font-semibold text-red-800 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >

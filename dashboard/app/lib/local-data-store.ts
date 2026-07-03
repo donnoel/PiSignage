@@ -85,6 +85,8 @@ export type ScreenStore = {
 };
 
 export type DeviceCommandStatus = "failed" | "pending" | "running" | "succeeded";
+export type DeviceActionType = "reboot-device" | "restart-playback" | "run-recovery";
+export type DeviceActionStatus = DeviceCommandStatus;
 export type DeviceDiagnosticsStatus = DeviceCommandStatus;
 export type DeviceResetStatus = DeviceCommandStatus;
 
@@ -100,6 +102,14 @@ export type DeviceRecord = {
   rootPath: string;
   screenId: string | null;
   sshUser: string;
+  actionCommandId?: string | null;
+  actionFinishedAt?: string | null;
+  actionRequestedAt?: string | null;
+  actionStartedAt?: string | null;
+  actionStatus?: DeviceActionStatus | null;
+  actionStatusMessage?: string | null;
+  actionType?: DeviceActionType | null;
+  actionUpdatedAt?: string | null;
   desiredReleaseId?: string | null;
   desiredReleaseManifestChecksum?: string | null;
   publishedAt?: string | null;

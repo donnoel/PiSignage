@@ -104,7 +104,7 @@ type DeviceCommand = {
   requestedAt: string;
   status: "pending" | "running";
   statusUrl?: string;
-  type: "collect-diagnostics" | "reset-device";
+  type: "collect-diagnostics" | "reboot-device" | "reset-device" | "restart-playback" | "run-recovery";
 };
 
 type CommandStatus = "failed" | "running" | "succeeded";
@@ -719,6 +719,166 @@ async function requestResetReboot(): Promise<string> {
   return "reboot_requested=true reboot_delay=now";
 }
 
+async function requestCommandReboot(): Promise<string> {
+  const shutdownPath = shutdownBinaryPath();
+  await execFileAsync("/usr/bin/sudo", [
+    "-n",
+    shutdownPath,
+    "-r",
+    "now",
+    "Beam reboot requested"
+  ], {
+    timeout: 10_000
+  });
+  return "Reboot requested. The Pi should check in again after it restarts.";
+}
+
+async function restartPlaybackService(): Promise<string> {
+  await execFileAsync("systemctl", ["--user", "restart", "pisignage-vlc.service"], {
+    timeout: 45_000
+  });
+  const { stdout } = await execFileAsync("systemctl", ["--user", "is-active", "pisignage-vlc.service"], {
+    timeout: 20_000
+  });
+  return `VLC playback restarted. Service state: ${stdout.trim() || "unknown"}.`;
+}
+
+async function runRecoveryStep(title: string, command: string, timeoutMs = 30_000): Promise<string> {
+  try {
+    const { stdout, stderr } = await execFileAsync("/bin/sh", ["-lc", command], {
+      maxBuffer: 128 * 1024,
+      timeout: timeoutMs
+    });
+    return `${title}: ok ${truncateDiagnosticDetail(`${stdout}\n${stderr}`, 600)}`;
+  } catch (error) {
+    const execError = error as Error & { stderr?: string; stdout?: string };
+    return `${title}: failed ${truncateDiagnosticDetail(`${execError.message}\n${execError.stdout ?? ""}\n${execError.stderr ?? ""}`, 600)}`;
+  }
+}
+
+async function runRecoveryAction(cacheDirectory: string): Promise<string> {
+  const displayOutput = process.env.PISIGNAGE_DISPLAY_OUTPUT?.trim() || "HDMI-A-1";
+  const displayMode = process.env.PISIGNAGE_DISPLAY_RESOLUTION?.trim() || "1920x1080@60.000000";
+  const playlistPath = currentPlaylistCachePath(cacheDirectory);
+  const assetsPath = path.join(cacheDirectory, "assets");
+  const quotedDisplayOutput = JSON.stringify(displayOutput);
+  const quotedDisplayMode = JSON.stringify(displayMode);
+  const quotedPlaylistPath = JSON.stringify(playlistPath);
+  const quotedAssetsPath = JSON.stringify(assetsPath);
+  const steps = [
+    await runRecoveryStep(
+      "Collect service state before restart",
+      "systemctl --user show pisignage-vlc.service --property=ActiveState --property=SubState --property=NRestarts 2>/dev/null || true"
+    ),
+    await runRecoveryStep("Restart VLC service", "systemctl --user restart pisignage-vlc.service", 45_000),
+    await runRecoveryStep("Verify VLC service active", "systemctl --user is-active pisignage-vlc.service", 20_000),
+    await runRecoveryStep(
+      "Re-apply display mode",
+      `/usr/bin/wlr-randr --output ${quotedDisplayOutput} --mode ${quotedDisplayMode} 2>/dev/null || echo display-mode-not-confirmed`
+    ),
+    await runRecoveryStep(
+      "Collect player status snapshot",
+      "cat ~/.local/state/pisignage/player-status.json 2>/dev/null || echo status-file-missing"
+    ),
+    await runRecoveryStep(
+      "Collect playback cache footprint",
+      `printf 'playlist-sha='; sha256sum ${quotedPlaylistPath} 2>/dev/null || echo playlist-missing; printf '\\nasset-files='; find ${quotedAssetsPath} -maxdepth 1 -type f 2>/dev/null | wc -l`
+    ),
+    await runRecoveryStep(
+      "Collect boot and health evidence",
+      "printf 'boot='; cat /proc/sys/kernel/random/boot_id 2>/dev/null || true; printf '\\nuptime='; uptime -p 2>/dev/null || uptime; printf '\\nthermals='; vcgencmd measure_temp 2>/dev/null || true; printf ' '; vcgencmd get_throttled 2>/dev/null || true"
+    )
+  ];
+  const criticalFailed = steps.some((step) =>
+    step.startsWith("Restart VLC service: failed") || step.startsWith("Verify VLC service active: failed")
+  );
+  if (criticalFailed) {
+    throw new Error(`Full recovery completed with failures. ${steps.join(" ")}`);
+  }
+
+  return `Full recovery completed. ${steps.join(" ")}`;
+}
+
+function actionRunningMessage(type: DeviceCommand["type"]): string {
+  if (type === "restart-playback") {
+    return "Restart playback is running on the Pi.";
+  }
+  if (type === "run-recovery") {
+    return "Full recovery is running on the Pi.";
+  }
+  if (type === "reboot-device") {
+    return "Reboot is running on the Pi.";
+  }
+  return "Remote command is running on the Pi.";
+}
+
+async function runActionCommand(cacheDirectory: string, command: DeviceCommand): Promise<void> {
+  const startedAt = new Date().toISOString();
+  const commandPath = commandStatusPath(cacheDirectory, command.id);
+  await writeJsonAtomic(commandPath, {
+    commandId: command.id,
+    requestedAt: command.requestedAt,
+    startedAt,
+    status: "running",
+    type: command.type
+  });
+  await postCommandStatus(command, "running", {
+    message: actionRunningMessage(command.type),
+    startedAt
+  });
+
+  log("info", "cloud.command.action.start", {
+    commandId: command.id,
+    type: command.type
+  });
+
+  try {
+    const message =
+      command.type === "restart-playback"
+        ? await restartPlaybackService()
+        : command.type === "reboot-device"
+          ? await requestCommandReboot()
+          : await runRecoveryAction(cacheDirectory);
+    const finishedAt = new Date().toISOString();
+    await writeJsonAtomic(commandPath, {
+      commandId: command.id,
+      finishedAt,
+      message,
+      requestedAt: command.requestedAt,
+      startedAt,
+      status: "succeeded",
+      type: command.type
+    });
+    await postCommandStatus(command, "succeeded", {
+      finishedAt,
+      message,
+      startedAt
+    });
+    log("info", "cloud.command.action.complete", {
+      commandId: command.id,
+      type: command.type
+    });
+  } catch (error) {
+    const finishedAt = new Date().toISOString();
+    const message = error instanceof Error ? error.message : String(error);
+    await writeJsonAtomic(commandPath, {
+      commandId: command.id,
+      finishedAt,
+      message,
+      requestedAt: command.requestedAt,
+      startedAt,
+      status: "failed",
+      type: command.type
+    });
+    await postCommandStatus(command, "failed", {
+      finishedAt,
+      message,
+      startedAt
+    });
+    throw error;
+  }
+}
+
 async function runResetCommand(root: string, cacheDirectory: string, command: DeviceCommand): Promise<void> {
   const startedAt = new Date().toISOString();
   const commandPath = commandStatusPath(cacheDirectory, command.id);
@@ -901,6 +1061,14 @@ async function fetchCloudPlaylist(cacheDirectory: string): Promise<{
 
     if (body.command.type === "collect-diagnostics") {
       await runDiagnosticsCommand(cacheDirectory, body.command);
+    }
+
+    if (
+      body.command.type === "restart-playback" ||
+      body.command.type === "run-recovery" ||
+      body.command.type === "reboot-device"
+    ) {
+      await runActionCommand(cacheDirectory, body.command);
     }
   }
 

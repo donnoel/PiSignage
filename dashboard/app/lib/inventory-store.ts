@@ -8,6 +8,8 @@ import {
 } from "@aws-sdk/client-dynamodb";
 import type { AttributeValue } from "@aws-sdk/client-dynamodb";
 import type {
+  DeviceActionStatus,
+  DeviceActionType,
   DeviceDiagnosticsStatus,
   DeviceRecord,
   DeviceResetStatus,
@@ -81,6 +83,14 @@ export type DeviceResetCommand = {
   type: "reset-device";
 };
 
+export type DeviceActionCommand = {
+  id: string;
+  requestedAt: string;
+  status: "pending" | "running";
+  statusUrl?: string;
+  type: DeviceActionType;
+};
+
 export type DeviceDiagnosticsCommand = {
   id: string;
   requestedAt: string;
@@ -89,7 +99,7 @@ export type DeviceDiagnosticsCommand = {
   type: "collect-diagnostics";
 };
 
-export type DeviceCommand = DeviceDiagnosticsCommand | DeviceResetCommand;
+export type DeviceCommand = DeviceActionCommand | DeviceDiagnosticsCommand | DeviceResetCommand;
 
 const dynamoDb = new DynamoDBClient({});
 const maxDiagnosticsResultLength = 16_000;
@@ -263,10 +273,21 @@ function numberOrNullAttribute(value: AttributeValue | undefined): number | null
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function commandStatusOrNull(value: AttributeValue | undefined): DeviceResetStatus | null {
+function commandStatusOrNull(value: AttributeValue | undefined): DeviceActionStatus | null {
   const status = stringOrNullAttribute(value);
   return status === "failed" || status === "pending" || status === "running" || status === "succeeded"
     ? status
+    : null;
+}
+
+function actionStatusOrNull(value: AttributeValue | undefined): DeviceActionStatus | null {
+  return commandStatusOrNull(value);
+}
+
+function actionTypeOrNull(value: AttributeValue | undefined): DeviceActionType | null {
+  const type = stringOrNullAttribute(value);
+  return type === "reboot-device" || type === "restart-playback" || type === "run-recovery"
+    ? type
     : null;
 }
 
@@ -306,6 +327,14 @@ function screenToItem(screen: ScreenRecord): Record<string, AttributeValue> {
 function deviceToItem(device: DeviceRecord): Record<string, AttributeValue> {
   const normalizedDevice = withDefaultWorkspace(device);
   return {
+    actionCommandId: nullableString(normalizedDevice.actionCommandId),
+    actionFinishedAt: nullableString(normalizedDevice.actionFinishedAt),
+    actionRequestedAt: nullableString(normalizedDevice.actionRequestedAt),
+    actionStartedAt: nullableString(normalizedDevice.actionStartedAt),
+    actionStatus: nullableString(normalizedDevice.actionStatus),
+    actionStatusMessage: nullableString(normalizedDevice.actionStatusMessage),
+    actionType: nullableString(normalizedDevice.actionType),
+    actionUpdatedAt: nullableString(normalizedDevice.actionUpdatedAt),
     deviceId: stringAttribute(normalizedDevice.id),
     desiredReleaseId: nullableString(normalizedDevice.desiredReleaseId),
     desiredReleaseManifestChecksum: nullableString(normalizedDevice.desiredReleaseManifestChecksum),
@@ -366,6 +395,14 @@ function screenFromItem(item: Record<string, AttributeValue>): ScreenRecord {
 function deviceFromItem(item: Record<string, AttributeValue>): DeviceRecord {
   const id = stringAttributeOrDefault(item.id ?? item.deviceId, "device-unknown");
   return {
+    actionCommandId: stringOrNullAttribute(item.actionCommandId),
+    actionFinishedAt: stringOrNullAttribute(item.actionFinishedAt),
+    actionRequestedAt: stringOrNullAttribute(item.actionRequestedAt),
+    actionStartedAt: stringOrNullAttribute(item.actionStartedAt),
+    actionStatus: actionStatusOrNull(item.actionStatus),
+    actionStatusMessage: stringOrNullAttribute(item.actionStatusMessage),
+    actionType: actionTypeOrNull(item.actionType),
+    actionUpdatedAt: stringOrNullAttribute(item.actionUpdatedAt),
     group: stringAttributeOrDefault(item.group, "General"),
     host: stringAttributeOrDefault(item.host, "Not configured"),
     id,
@@ -931,6 +968,25 @@ export function resetCommandForDevice(device: DeviceRecord, statusUrl?: string):
   };
 }
 
+export function actionCommandForDevice(device: DeviceRecord, statusUrl?: string): DeviceActionCommand | null {
+  if (
+    !device.actionCommandId ||
+    !device.actionRequestedAt ||
+    !device.actionType ||
+    (device.actionStatus !== "pending" && device.actionStatus !== "running")
+  ) {
+    return null;
+  }
+
+  return {
+    id: device.actionCommandId,
+    requestedAt: device.actionRequestedAt,
+    status: device.actionStatus,
+    statusUrl,
+    type: device.actionType
+  };
+}
+
 export function diagnosticsCommandForDevice(device: DeviceRecord, statusUrl?: string): DeviceDiagnosticsCommand | null {
   if (
     !device.diagnosticsCommandId ||
@@ -950,10 +1006,32 @@ export function diagnosticsCommandForDevice(device: DeviceRecord, statusUrl?: st
 }
 
 export function commandForDevice(device: DeviceRecord, input: {
+  actionStatusUrl?: string;
   diagnosticsStatusUrl?: string;
   resetStatusUrl?: string;
 }): DeviceCommand | null {
-  return resetCommandForDevice(device, input.resetStatusUrl) ?? diagnosticsCommandForDevice(device, input.diagnosticsStatusUrl);
+  return resetCommandForDevice(device, input.resetStatusUrl) ??
+    actionCommandForDevice(device, input.actionStatusUrl) ??
+    diagnosticsCommandForDevice(device, input.diagnosticsStatusUrl);
+}
+
+function hasActiveCommand(device: DeviceRecord): boolean {
+  return device.resetStatus === "pending" ||
+    device.resetStatus === "running" ||
+    device.actionStatus === "pending" ||
+    device.actionStatus === "running" ||
+    device.diagnosticsStatus === "pending" ||
+    device.diagnosticsStatus === "running";
+}
+
+function actionLabel(type: DeviceActionType): string {
+  if (type === "restart-playback") {
+    return "Restart playback";
+  }
+  if (type === "run-recovery") {
+    return "Full recovery";
+  }
+  return "Reboot";
 }
 
 export async function requestDeviceReset(deviceId: string): Promise<DeviceRecord> {
@@ -967,6 +1045,9 @@ export async function requestDeviceReset(deviceId: string): Promise<DeviceRecord
   const device = inventory.devices.items.find((item) => item.id === deviceId);
   if (!device) {
     throw new Error("Device was not found.");
+  }
+  if (hasActiveCommand(device)) {
+    throw new Error("Another remote command is already queued or running for this device.");
   }
 
   const timestamp = isoNow();
@@ -990,6 +1071,45 @@ export async function requestDeviceReset(deviceId: string): Promise<DeviceRecord
   return nextDevice;
 }
 
+export async function requestDeviceAction(deviceId: string, actionType: DeviceActionType): Promise<DeviceRecord> {
+  requireActiveWorkspacePermission("recover");
+  const config = cloudInventoryConfig();
+  if (!config) {
+    throw new Error("Cloud inventory is required for remote Pi actions.");
+  }
+
+  const inventory = await readCloudInventory(config);
+  const device = inventory.devices.items.find((item) => item.id === deviceId);
+  if (!device) {
+    throw new Error("Device was not found.");
+  }
+  if (hasActiveCommand(device)) {
+    throw new Error("Another remote command is already queued or running for this device.");
+  }
+
+  const timestamp = isoNow();
+  const label = actionLabel(actionType);
+  const nextDevice: DeviceRecord = {
+    ...device,
+    actionCommandId: randomUUID(),
+    actionFinishedAt: null,
+    actionRequestedAt: timestamp,
+    actionStartedAt: null,
+    actionStatus: "pending",
+    actionStatusMessage: `${label} is queued. The Pi will run it on its next cloud check-in.`,
+    actionType,
+    actionUpdatedAt: timestamp,
+    updatedAt: timestamp
+  };
+
+  await dynamoDb.send(new PutItemCommand({
+    Item: deviceToItem(nextDevice),
+    TableName: config.devicesTableName
+  }));
+
+  return nextDevice;
+}
+
 export async function requestDeviceDiagnostics(deviceId: string): Promise<DeviceRecord> {
   requireActiveWorkspacePermission("recover");
   const config = cloudInventoryConfig();
@@ -1002,8 +1122,8 @@ export async function requestDeviceDiagnostics(deviceId: string): Promise<Device
   if (!device) {
     throw new Error("Device was not found.");
   }
-  if (device.diagnosticsStatus === "pending" || device.diagnosticsStatus === "running") {
-    throw new Error("Remote diagnostics are already queued or running for this device.");
+  if (hasActiveCommand(device)) {
+    throw new Error("Another remote command is already queued or running for this device.");
   }
 
   const timestamp = isoNow();
@@ -1081,6 +1201,58 @@ export async function updateDeviceDiagnosticsStatus(input: {
             : "Remote diagnostics are queued."
     ),
     diagnosticsUpdatedAt: timestamp,
+    updatedAt: timestamp
+  };
+
+  await dynamoDb.send(new PutItemCommand({
+    Item: deviceToItem(nextDevice),
+    TableName: config.devicesTableName
+  }));
+
+  return nextDevice;
+}
+
+export async function updateDeviceActionStatus(input: {
+  commandId: string;
+  deviceId: string;
+  finishedAt?: string | null;
+  message?: string | null;
+  startedAt?: string | null;
+  status: DeviceActionStatus;
+}): Promise<DeviceRecord> {
+  requireActiveWorkspacePermission("recover");
+  const config = cloudInventoryConfig();
+  if (!config) {
+    throw new Error("Cloud inventory is required for remote Pi actions.");
+  }
+
+  const inventory = await readCloudInventory(config);
+  const device = inventory.devices.items.find((item) => item.id === input.deviceId);
+  if (!device) {
+    throw new Error("Device was not found.");
+  }
+  if (device.actionCommandId !== input.commandId) {
+    throw new Error("Remote action command does not match the current pending command.");
+  }
+
+  const timestamp = isoNow();
+  const finished = input.status === "succeeded" || input.status === "failed";
+  const label = device.actionType ? actionLabel(device.actionType) : "Remote action";
+  const nextDevice: DeviceRecord = {
+    ...device,
+    actionFinishedAt: input.finishedAt ?? (finished ? timestamp : null),
+    actionStartedAt: input.startedAt ?? device.actionStartedAt ?? (input.status === "running" ? timestamp : null),
+    actionStatus: input.status,
+    actionStatusMessage: input.message?.trim() || (
+      input.status === "running"
+        ? `${label} is running on the Pi.`
+        : input.status === "succeeded"
+          ? `${label} completed.`
+          : input.status === "failed"
+            ? `${label} failed on the Pi.`
+            : `${label} is queued.`
+    ),
+    actionUpdatedAt: timestamp,
     updatedAt: timestamp
   };
 
