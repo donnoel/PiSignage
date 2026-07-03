@@ -145,7 +145,7 @@ function displayedSyncState(row: RowState, publishFeedback: PublishFeedback | nu
 
     return {
       detail: publishFeedback.detail,
-      label: "Published",
+      label: "Publishing",
       tone: "warn"
     };
   }

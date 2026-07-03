@@ -1,7 +1,9 @@
 "use client";
 
-import { useTransition } from "react";
+import { useEffect, useMemo, useTransition } from "react";
 import { useRouter } from "next/navigation";
+
+const SCREEN_FOCUS_STORAGE_KEY = "beam.whatsPlaying.selectedScreenId";
 
 type ScreenFocusOption = {
   location: string;
@@ -17,6 +19,41 @@ type ScreenFocusSelectProps = {
 export function ScreenFocusSelect({ options, selectedScreenId }: ScreenFocusSelectProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const validScreenIds = useMemo(() => new Set(options.map((option) => option.screenId)), [options]);
+
+  useEffect(() => {
+    if (options.length === 0) {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const hasExplicitScreen = params.has("screen");
+
+    if (hasExplicitScreen) {
+      if (selectedScreenId && validScreenIds.has(selectedScreenId)) {
+        window.localStorage.setItem(SCREEN_FOCUS_STORAGE_KEY, selectedScreenId);
+      }
+      return;
+    }
+
+    const storedScreenId = window.localStorage.getItem(SCREEN_FOCUS_STORAGE_KEY);
+    if (storedScreenId && validScreenIds.has(storedScreenId)) {
+      if (storedScreenId !== selectedScreenId) {
+        params.set("view", "dashboard");
+        params.set("screen", storedScreenId);
+        router.replace(`/?${params.toString()}`);
+      }
+      return;
+    }
+
+    if (storedScreenId) {
+      window.localStorage.removeItem(SCREEN_FOCUS_STORAGE_KEY);
+    }
+
+    if (selectedScreenId && validScreenIds.has(selectedScreenId)) {
+      window.localStorage.setItem(SCREEN_FOCUS_STORAGE_KEY, selectedScreenId);
+    }
+  }, [options.length, router, selectedScreenId, validScreenIds]);
 
   return (
     <div>
@@ -27,8 +64,15 @@ export function ScreenFocusSelect({ options, selectedScreenId }: ScreenFocusSele
         disabled={isPending || options.length === 0}
         onChange={(event) => {
           const screenId = event.currentTarget.value;
+          if (!screenId) {
+            return;
+          }
+          window.localStorage.setItem(SCREEN_FOCUS_STORAGE_KEY, screenId);
           startTransition(() => {
-            router.push(`/?view=dashboard&screen=${encodeURIComponent(screenId)}`);
+            const params = new URLSearchParams(window.location.search);
+            params.set("view", "dashboard");
+            params.set("screen", screenId);
+            router.push(`/?${params.toString()}`);
             router.refresh();
           });
         }}
