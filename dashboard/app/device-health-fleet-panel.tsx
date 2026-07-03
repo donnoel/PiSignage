@@ -176,7 +176,7 @@ function screenActionClass(tone: ScreenActionTone): string {
   return "border-zinc-200 text-zinc-800 hover:bg-zinc-50";
 }
 
-function ScreenActionIcon({ name }: { name: "details" | "link" | "playlist" | "remove" | "rename" }) {
+function ScreenActionIcon({ name }: { name: "link" | "playlist" | "remove" | "rename" }) {
   if (name === "playlist") {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8">
@@ -840,7 +840,6 @@ export function DeviceHealthFleetPanel({
     null;
   const selectedPublishFeedback = selectedRow ? publishFeedbackByDeviceId[selectedRow.device.id] ?? null : null;
   const selectedSyncState = selectedRow ? displayedSyncState(selectedRow, selectedPublishFeedback) : null;
-  const selectedPublishPending = selectedPublishFeedback?.status === "pending";
   const selectedLiveReportUrl = selectedRow ? liveReportUrlFor(selectedRow) : null;
   const selectedSshUrl = selectedRow ? sshUrlFor(selectedRow) : null;
   const selectedTargetName = selectedRow ? screenName(selectedRow) : "selected screen";
@@ -1512,15 +1511,6 @@ export function DeviceHealthFleetPanel({
                           <ScreenActionIcon name="playlist" />
                           <span>{publishPending ? "Publishing" : "Publish"}</span>
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedDeviceId(row.device.id)}
-                          title="Details"
-                          aria-label={`Show details for ${screenName(row)}`}
-                          className={`inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white text-base font-semibold ${screenActionClass("neutral")}`}
-                        >
-                          <ScreenActionIcon name="details" />
-                        </button>
                         {row.assignedPlaylistId ? (
                           <a
                             href={`/?view=playlist&playlist=${encodeURIComponent(row.assignedPlaylistId)}`}
@@ -1623,36 +1613,24 @@ export function DeviceHealthFleetPanel({
               </dl>
 
               <div className="mt-5 rounded-md border border-zinc-200 bg-white p-3">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
                   <p className="text-sm text-zinc-600">
                     Last check-in: <span className="font-semibold text-zinc-900">{selectedRow.lastSeenAge}</span>
                   </p>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      disabled={isBusy}
-                      onClick={refreshStatus}
-                      className="min-h-10 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {busyAction === "refresh" ? "Refreshing..." : "Refresh"}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!selectedRow.linkedScreen || !selectedRow.isLive || !selectedRow.assignedPlaylistId || isBusy}
-                      onClick={() => void runAction("publish", selectedRow)}
-                      aria-busy={selectedPublishPending}
-                      className="min-h-10 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
-                    >
-                      {selectedPublishPending ? "Publishing..." : "Publish"}
-                    </button>
-                  </div>
                 </div>
-                <details className="mt-3 border-t border-zinc-200 pt-3">
-                  <summary className="cursor-pointer text-sm font-semibold text-zinc-900">Advanced</summary>
-                  <div className="mt-3 flex flex-wrap items-start gap-x-8 gap-y-4">
-                    <div className="min-w-[180px]">
+                <div className="mt-3 border-t border-zinc-200 pt-3">
+                  <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
+                    <div className="min-w-[260px]">
                       <h5 className="text-xs font-semibold uppercase text-zinc-500">Diagnostics</h5>
                       <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={refreshStatus}
+                          className="min-h-9 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {busyAction === "refresh" ? "Refreshing..." : "Refresh"}
+                        </button>
                         {selectedLiveReportUrl ? (
                           <a
                             href={selectedLiveReportUrl}
@@ -1720,7 +1698,7 @@ export function DeviceHealthFleetPanel({
                       </div>
                     </div>
                   </div>
-                </details>
+                </div>
                 {rebootWatchApplies ? (
                   <p className="mt-3 text-sm font-medium text-amber-800" role="status" aria-live="polite">
                     Waiting for a fresh check-in after reboot. Last check-in: {selectedRow.lastSeenAge}.
