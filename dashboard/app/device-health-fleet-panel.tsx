@@ -536,7 +536,7 @@ function actionName(type: DeviceRecord["actionType"]): string {
     return "Restart playback";
   }
   if (type === "run-recovery") {
-    return "Full recovery";
+    return "Recovery check";
   }
   if (type === "reboot-device") {
     return "Reboot";
@@ -544,39 +544,92 @@ function actionName(type: DeviceRecord["actionType"]): string {
   return "Remote action";
 }
 
+function summarizedActionDetail(device: DeviceRecord, fallback: string): string {
+  const message = device.actionStatusMessage?.trim();
+  if (!message) {
+    return fallback;
+  }
+
+  if (device.actionType === "restart-playback") {
+    if (device.actionStatus === "pending") {
+      return "Restart playback is queued. The Pi will run it on its next cloud check-in.";
+    }
+    if (device.actionStatus === "running") {
+      return "Restarting the VLC playback service on the Pi.";
+    }
+    if (device.actionStatus === "succeeded") {
+      return "Playback restart completed and VLC reported active.";
+    }
+  }
+
+  if (device.actionType === "reboot-device") {
+    if (device.actionStatus === "pending") {
+      return "Reboot is queued. The Pi will run it on its next cloud check-in.";
+    }
+    if (device.actionStatus === "running") {
+      return "Requesting a Pi reboot.";
+    }
+    if (device.actionStatus === "succeeded") {
+      return "Reboot was requested. A fresh check-in confirms when the Pi is back.";
+    }
+  }
+
+  if (device.actionType === "run-recovery") {
+    if (device.actionStatus === "pending") {
+      return "Recovery check is queued. The Pi will run it on its next cloud check-in.";
+    }
+    if (device.actionStatus === "running") {
+      return "Running playback recovery checks on the Pi.";
+    }
+    if (device.actionStatus === "succeeded") {
+      return "Recovery check completed. VLC was restarted, service state was verified, and playback/cache/health evidence was collected.";
+    }
+  }
+
+  if (message.length > 180) {
+    return `${message.slice(0, 180).trim()}...`;
+  }
+
+  return message;
+}
+
 function actionStateFor(device: DeviceRecord): { active: boolean; detail: string; label: string; tone: Tone } {
   const label = actionName(device.actionType);
   if (device.actionStatus === "pending") {
+    const fallback = `${label} is queued and will run on the next Pi check-in.`;
     return {
       active: true,
-      detail: device.actionStatusMessage ?? `${label} is queued and will run on the next Pi check-in.`,
+      detail: summarizedActionDetail(device, fallback),
       label: `${label} pending`,
       tone: "warn"
     };
   }
 
   if (device.actionStatus === "running") {
+    const fallback = `${label} is running on the Pi.`;
     return {
       active: true,
-      detail: device.actionStatusMessage ?? `${label} is running on the Pi.`,
+      detail: summarizedActionDetail(device, fallback),
       label: `${label} running`,
       tone: "warn"
     };
   }
 
   if (device.actionStatus === "succeeded") {
+    const fallback = `${label} completed.`;
     return {
       active: false,
-      detail: device.actionStatusMessage ?? `${label} completed.`,
+      detail: summarizedActionDetail(device, fallback),
       label: `${label} complete`,
       tone: "good"
     };
   }
 
   if (device.actionStatus === "failed") {
+    const fallback = `${label} failed on the Pi.`;
     return {
       active: false,
-      detail: device.actionStatusMessage ?? `${label} failed on the Pi.`,
+      detail: summarizedActionDetail(device, fallback),
       label: `${label} failed`,
       tone: "warn"
     };
@@ -1854,7 +1907,7 @@ export function DeviceHealthFleetPanel({
                   </p>
                 </div>
                 <div className="mt-3 border-t border-zinc-200 pt-3">
-                  <div className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(300px,auto)_minmax(190px,auto)]">
+                  <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(190px,0.65fr)]">
                     <div className="min-w-0">
                       <h5 className="text-xs font-semibold uppercase text-zinc-500">Diagnostics</h5>
                       <div className="mt-2 flex flex-wrap gap-2">
@@ -1942,21 +1995,13 @@ export function DeviceHealthFleetPanel({
                         <button
                           type="button"
                           disabled={!selectedRow.isLive || isBusy || selectedRow.actionActive || selectedRow.resetActive || selectedRow.diagnosticsActive}
-                          onClick={() => void runAction("recover", selectedRow)}
-                          className="min-h-9 rounded-md border border-emerald-200 bg-white px-3 py-1.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {busyAction === "recover" ? "Queueing..." : "Run full recovery"}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={!selectedRow.isLive || isBusy || selectedRow.actionActive || selectedRow.resetActive || selectedRow.diagnosticsActive}
                           onClick={() => void runAction("reboot", selectedRow)}
                           className="min-h-9 rounded-md border border-amber-200 bg-white px-3 py-1.5 text-sm font-semibold text-amber-800 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {busyAction === "reboot" ? "Queueing..." : "Reboot Pi"}
                         </button>
                       </div>
-                      <p className="mt-3 break-words text-sm text-zinc-600">
+                      <p className="mt-3 max-w-prose whitespace-normal break-words text-sm leading-6 text-zinc-600">
                         Remote recovery:{" "}
                         <span className="font-semibold text-zinc-900">{selectedRow.actionLabel}</span>
                         {selectedRow.actionDetail ? ` - ${selectedRow.actionDetail}` : ""}

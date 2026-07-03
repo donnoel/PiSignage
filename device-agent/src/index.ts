@@ -793,10 +793,10 @@ async function runRecoveryAction(cacheDirectory: string): Promise<string> {
     step.startsWith("Restart VLC service: failed") || step.startsWith("Verify VLC service active: failed")
   );
   if (criticalFailed) {
-    throw new Error(`Full recovery completed with failures. ${steps.join(" ")}`);
+    throw new Error("Recovery check completed with failures. Restart VLC or service verification failed.");
   }
 
-  return `Full recovery completed. ${steps.join(" ")}`;
+  return "Recovery check completed. VLC was restarted, service state was verified, and playback/cache/health evidence was collected.";
 }
 
 function actionRunningMessage(type: DeviceCommand["type"]): string {
