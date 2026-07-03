@@ -1125,21 +1125,21 @@ function playlistLiveStatus(
 
   if (playlistSyncState.tone === "good") {
     return {
-      detail: "Live on the assigned screen.",
-      label: "Live",
+      detail: "Confirmed on the assigned screen.",
+      label: "Published",
       tone: "good"
     };
   }
 
-  if (playlistSyncState.label === "Not live") {
-    if (publishStatus?.ok) {
-      return {
-        detail: "Sent, but the screen has not confirmed it yet.",
-        label: "Sent",
-        tone: "muted"
-      };
-    }
+  if (publishStatus?.ok) {
+    return {
+      detail: "Sent, waiting for the assigned screen to confirm it.",
+      label: "Publishing",
+      tone: "warn"
+    };
+  }
 
+  if (playlistSyncState.label === "Not live") {
     return {
       detail: "Not sent to a screen yet.",
       label: "Not published",

@@ -421,6 +421,16 @@ export function LocalPlaylistScreenAssignment({ defaultOpen = false, playlistId 
   const [isSaving, setIsSaving] = useState(false);
   const [isPending, startTransition] = useTransition();
   const isBusy = isLoadingAssignments || isSaving || isPending;
+  const visibleAssignmentScreens = useMemo(
+    () =>
+      (assignments?.screens ?? []).slice().sort((left, right) => {
+        const nameComparison = left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" });
+        return nameComparison !== 0
+          ? nameComparison
+          : left.location.localeCompare(right.location, undefined, { numeric: true, sensitivity: "base" });
+      }),
+    [assignments?.screens]
+  );
 
   async function loadAssignments() {
     setIsLoadingAssignments(true);
@@ -507,7 +517,7 @@ export function LocalPlaylistScreenAssignment({ defaultOpen = false, playlistId 
       </summary>
 
       <div className="grid gap-3 border-t border-zinc-200 p-4">
-        {(assignments?.screens ?? []).map((screen) => {
+        {visibleAssignmentScreens.map((screen) => {
           const assigned = screen.playlistId === playlistId;
           return (
             <label
@@ -532,7 +542,7 @@ export function LocalPlaylistScreenAssignment({ defaultOpen = false, playlistId 
             </label>
           );
         })}
-        {(assignments?.screens ?? []).length === 0 ? (
+        {visibleAssignmentScreens.length === 0 ? (
           <p className="rounded-md border border-zinc-200 bg-white p-3 text-sm text-zinc-600">
             {isLoadingAssignments ? "Loading screen assignments..." : "No screen recorded."}
           </p>
