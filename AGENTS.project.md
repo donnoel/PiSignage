@@ -30,13 +30,13 @@ The repository is in a local product re-baseline phase. Product requirements now
 
 Current implementation snapshot:
 
-- The dashboard currently exposes What's Playing, Library, Playlists, Screen Health, Screens, Layouts, and Scheduling views.
-- Device inventory and activity evidence exist in local JSON and are surfaced through the current status, screens, scheduling, and recovery workflows.
-- Screen Health currently carries device-style health, diagnostics, recovery, reset, and troubleshooting controls. Dedicated Activity and Settings sections remain product goals where the current UI has not split them out yet.
+- The dashboard currently exposes What's Playing, Library, Playlists, Screens, Diagnostics, Layouts, and Scheduling views.
+- Device inventory and activity evidence exist in local JSON and are surfaced through the current What's Playing, Screens, Diagnostics, Scheduling, and recovery workflows.
+- Screens carries inventory, status, publishing, diagnostics, recovery, reset, and deployment controls. Diagnostics carries deeper Pi evidence, logs, recovery history, and troubleshooting activity.
 
 Current goals:
 
-- Keep the dashboard focused on operations: What's Playing, Library, Playlists, Screens, device health, Activity, Troubleshooting, and Settings.
+- Keep the dashboard focused on operations: What's Playing, Library, Playlists, Screens, Diagnostics, Activity, Scheduling, and Settings.
 - Keep dashboard, player, and device-agent boundaries clear.
 - Preserve the proven local playback and Pi recovery path while adding inventory, media, activity, scheduling, and recovery workflows.
 - Do not create or mutate AWS resources unless the user explicitly asks for that deploy/change in the current task.
@@ -78,10 +78,12 @@ The current AWS dev alpha scaffold includes API Gateway, Lambda, DynamoDB, S3, C
 Do not regress these contracts:
 
 - C1-C5 must remain identical Beam appliances except for intentional identity/network fields such as hostname, IP address, screen name, screen assignment, and location. Any drift in Beam-managed scripts, services, package/runtime baselines, playlist files, published media sets, or service state is a production defect.
+- The current managed Pi appliance baseline lives in `docs/C5_GOLDEN_MODEL_SNAPSHOT_2026-07-03.md`; use it for C1-C5 parity checks until a new golden baseline intentionally replaces it.
 - Device playback must work from local playlist/cache data.
 - Device startup should recover to playback without dashboard interaction.
 - A missing network connection must not stop already-cached playback.
 - Heartbeat state must be inspectable as local JSON.
+- Current-video evidence must remain inspectable in local player status and heartbeat JSON whenever VLC playback can identify the active asset.
 - Cloud integrations must remain clearly documented, opt-in, and honest about what is wired. They must not weaken local cached playback or manual publish.
 - Future multi-client cloud workflows must enforce workspace isolation server-side. UI hiding is not enough for screens, devices, media, playlists, schedules, settings, activity, publish markers, recovery, or signed media access.
 - Device playback and reboot recovery are first-class behavior contracts.
@@ -111,7 +113,7 @@ Near-term priority order:
 ## Dashboard Rules
 
 - Keep the dashboard operational and focused, not marketing-heavy.
-- Use these main sections: What's Playing, Library, Playlists, Screens, Devices/Screen Health, Activity, Troubleshooting, and Settings.
+- Use these main sections: What's Playing, Library, Playlists, Screens, Diagnostics, Activity, Scheduling, Layouts, and Settings when those views are implemented.
 - Use accessible status text for online/offline state.
 - Prefer dense tables and detail panels for screen inventory; map UI is deferred.
 - Keep cloud data behind explicit cloud-mode contracts and honest unavailable states when a workflow is not wired.
@@ -136,7 +138,7 @@ Near-term priority order:
 - Read real local playlist JSON.
 - Write local heartbeat JSON atomically.
 - Log basic structured status.
-- Do not make network calls unless a future task explicitly introduces real local device communication or approved cloud communication.
+- Do not make network calls except through explicit local device operations or approved cloud contracts such as cloud playlist reads, manual-publish-gated media sync, and tiny heartbeat/status posts.
 - Future MQTT topics must follow documented contract names.
 
 Heartbeat model starts with:
@@ -146,6 +148,7 @@ Heartbeat model starts with:
 - `appVersion`
 - `currentPlaylistId`
 - `currentAssetId`
+- `playbackState`
 - `diskFreeBytes`
 - `networkOnline`
 

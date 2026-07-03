@@ -8,7 +8,7 @@ This repo is a local-first Raspberry Pi digital signage proof of concept. You ar
 - For AWS/cloud work, read `docs/AWS_COST_GUARDRAILS.md` and treat cost control as a hard requirement: no unnecessary data movement, no surprise paid polling, and no AWS mutation without explicit approval.
 - Keep playback and recovery first-class. Do not regress fullscreen playback, reboot recovery, power-loss recovery, network-loss tolerance, or local playlist behavior.
 - Keep the five Pi appliances identical at all times except intentional identity/network fields such as hostname, IP address, screen name, screen assignment, and location. Beam-managed scripts, services, package/runtime baselines, playlist files, and published media sets must not drift between C1-C5.
-- Keep dashboard, player, and Pi/device scripts clearly separated.
+- Keep dashboard, player, device-agent, and Pi/device scripts clearly separated.
 - No real secrets in git. Keep `.env.local`, local state, credentials, generated output, and uploaded media out of source control.
 - Use atomic writes for local JSON state where practical.
 - Treat accessibility as part of dashboard quality: semantic controls, useful labels, readable contrast, keyboard access, and text status that does not rely on color alone.
@@ -27,7 +27,7 @@ This repo is a local-first Raspberry Pi digital signage proof of concept. You ar
 
 - `dashboard/`: Next.js + TypeScript local operations dashboard.
 - `player/`: browser playback app retained for local/player experiments.
-- `device-agent/`: local heartbeat and future Pi agent work.
+- `device-agent/`: Pi heartbeat, current-video evidence, playlist cache, and future Pi agent work.
 - `device/pi/`: Pi scripts and systemd units for static serving, kiosk, and VLC playback.
 - `sample-content/`: tracked seed playlist and fixture metadata. Uploaded MP4s are intentionally ignored.
 - `dashboard/local-state/`: ignored runtime dashboard state, including the live editable playlist and publish status.
@@ -45,7 +45,8 @@ This repo is a local-first Raspberry Pi digital signage proof of concept. You ar
 
 ## Pi And Playback Rules
 
-- C1-C5 must remain identical Beam appliances except for identity/network metadata. Treat drift between Pis as a production defect: before and after Pi changes, verify managed script/service hashes, Node/VLC package baselines, playlist hash, published asset count/hash set, and active service state across all five when the hardware is reachable.
+- C1-C5 must remain identical Beam appliances except for identity/network metadata. Treat drift between Pis as a production defect: before and after Pi changes, verify managed script/service hashes, Node/VLC package baselines, playlist hash, published asset count/hash set, current-video reporting, and active service state across all five when the hardware is reachable.
+- Use `docs/C5_GOLDEN_MODEL_SNAPSHOT_2026-07-03.md` as the current managed Pi appliance baseline until it is intentionally replaced.
 - VLC is the preferred field playback path for appliance mode unless the user explicitly asks to test another player.
 - Keep Chromium/browser playback available as a fallback/experimental path when already present.
 - Pi changes should be reproducible through repo scripts, docs, or systemd units rather than only manual shell history.

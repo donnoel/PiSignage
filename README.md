@@ -6,9 +6,9 @@ The current repository provides a local-first product foundation plus an opt-in 
 
 ## What Exists Now
 
-- `dashboard/`: Next.js + TypeScript + Tailwind operations dashboard with What's Playing, Library, Playlists, Screens, Layouts, and Scheduling views. Screens now combines inventory, health/status, diagnostics, and recovery controls.
+- `dashboard/`: Next.js + TypeScript + Tailwind operations dashboard with What's Playing, Library, Playlists, Screens, Diagnostics, Layouts, and Scheduling views. Screens now combines inventory, health/status, publishing, diagnostics, and recovery controls.
 - `player/`: TypeScript browser playback fallback/experimental app for same-origin local playlist playback.
-- `device-agent/`: Node.js + TypeScript device agent that reads a local playlist or optional cloud playlist endpoint, writes heartbeat JSON, caches the last known good playlist, and can post an optional dev cloud heartbeat.
+- `device-agent/`: Node.js + TypeScript device agent that reads a local playlist or optional cloud playlist endpoint, writes heartbeat JSON with current-video evidence, caches the last known good playlist, and can post an optional dev cloud heartbeat.
 - `docs/`: architecture, phase plan, API contract, AWS alpha notes, security notes, and device setup.
 - `docs/WORKSPACES_AND_ROLES.md`: planned client workspace and role model for multi-workspace users and server-enforced tenant isolation.
 - `sample-content/`: tracked seed playlist and local media fixtures.
@@ -123,7 +123,9 @@ PiSignage/
 
 ## Current Phase
 
-The current focus is production-minded sprint hardening: real media uploads, reusable playlists, honest screen/device status, schedule publishing, local recovery evidence, and an AWS `dev` alpha that preserves manual publish and cached Pi playback. The next UI cleanup target is collapsing redundant Screen Health and Screens functionality into one clearer operations view.
+The current focus is production-minded sprint hardening: real media uploads, reusable playlists, honest screen/device status, simple screen hours, local recovery evidence, and an AWS `dev` alpha that preserves manual publish and cached Pi playback. The five-Pi pilot is using VLC appliance playback with current-video reporting so the dashboard can show which asset each screen reports as live.
+
+The current Pi appliance baseline is documented in `docs/C5_GOLDEN_MODEL_SNAPSHOT_2026-07-03.md`. C1-C5 should remain identical to that managed baseline except for intentional identity, network, screen assignment, and location fields.
 
 See `docs/PHASES.md` for the full phase plan.
 
