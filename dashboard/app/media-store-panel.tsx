@@ -156,6 +156,7 @@ const directoryInputAttributes: InputHTMLAttributes<HTMLInputElement> & {
   directory: "",
   webkitdirectory: ""
 };
+const uploadRequestTimeoutMs = 10 * 60 * 1000;
 
 function formatTimestamp(timestamp: string): string {
   const date = new Date(timestamp);
@@ -226,6 +227,10 @@ function processingFeedback(item: MediaItem, nowMs: number): string | null {
   const detail = item.cloudStatusDetail ?? "Preparing Pi-safe playback copy in AWS.";
   const stageSeconds = processingStageSeconds(item, nowMs);
   const stageText = stageSeconds === null ? "" : ` Stage elapsed ${formatSeconds(stageSeconds)}.`;
+  if (isPendingPreparation(item)) {
+    return `${detail}${stageText} Use Prepare when you are ready to make the Pi-safe playback copy.`;
+  }
+
   const estimateSeconds = estimatedPreparationSeconds(item);
   const estimateText =
     stageSeconds !== null && stageSeconds > estimateSeconds
@@ -249,18 +254,28 @@ function uploadRelativePath(file: File): string {
 
 function uploadMediaForm(
   formData: FormData,
-  onProgress: (progress: { loaded: number; total: number }) => void
+  onProgress: (progress: { loaded: number; total: number }) => void,
+  signal?: AbortSignal
 ): Promise<UploadResponse> {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
+    const abortUpload = () => request.abort();
+    const cleanup = () => signal?.removeEventListener("abort", abortUpload);
+    if (signal?.aborted) {
+      reject(new Error("Upload cancelled."));
+      return;
+    }
     request.open("POST", "/api/media");
     request.responseType = "text";
+    request.timeout = uploadRequestTimeoutMs;
+    signal?.addEventListener("abort", abortUpload, { once: true });
     request.upload.onprogress = (event) => {
       if (event.lengthComputable) {
         onProgress({ loaded: event.loaded, total: event.total });
       }
     };
     request.onload = () => {
+      cleanup();
       const result = uploadResponseFromText(request.responseText, request.status);
       if (request.status < 200 || request.status >= 300 || result.error) {
         reject(new Error(result.error ?? "Upload failed."));
@@ -268,8 +283,18 @@ function uploadMediaForm(
       }
       resolve(result);
     };
-    request.onerror = () => reject(new Error("Upload failed before the server responded."));
-    request.ontimeout = () => reject(new Error("Upload timed out before the server responded."));
+    request.onabort = () => {
+      cleanup();
+      reject(new Error("Upload cancelled."));
+    };
+    request.onerror = () => {
+      cleanup();
+      reject(new Error("Upload failed before the server responded."));
+    };
+    request.ontimeout = () => {
+      cleanup();
+      reject(new Error("Upload timed out before the server responded."));
+    };
     request.send(formData);
   });
 }
@@ -390,7 +415,7 @@ function isPendingPreparation(item: MediaItem): boolean {
 }
 
 function canRetryPreparation(item: MediaItem, mode: MediaStoreMode): boolean {
-  return mode === "cloud" && item.origin !== "playlist" && (item.status === "failed" || isPendingPreparation(item));
+  return mode === "cloud" && item.origin !== "playlist" && item.status !== "ready" && Boolean(item.sourceObjectKey);
 }
 
 function messageClass(tone: "idle" | "success" | "warning" | "error"): string {
@@ -507,6 +532,7 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const directoryInputRef = useRef<HTMLInputElement>(null);
+  const uploadAbortRef = useRef<AbortController | null>(null);
   const [items, setItems] = useState<MediaItem[]>([]);
   const [folders, setFolders] = useState<MediaFolder[]>([]);
   const [totalItems, setTotalItems] = useState(0);
@@ -865,6 +891,12 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
     }
   }
 
+  function handleCancelUpload() {
+    uploadAbortRef.current?.abort();
+    setMessage("Stopping upload. Files already saved to Beam will remain in the Library.");
+    setMessageTone("warning");
+  }
+
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isBusy) {
@@ -884,6 +916,9 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
       return;
     }
 
+    const abortController = new AbortController();
+    const deferPreparation = mode === "cloud" && uploadSource === "directory";
+    uploadAbortRef.current = abortController;
     setIsUploading(true);
     setMessage(files.length === 1 ? `Uploading ${files[0].name}...` : `Uploading 1 of ${files.length}: ${files[0].name}...`);
     setMessageTone("idle");
@@ -893,6 +928,10 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
       const failedUploads: UploadFailure[] = [];
 
       for (const [index, file] of files.entries()) {
+        if (abortController.signal.aborted) {
+          break;
+        }
+
         const fileName = uploadRelativePath(file);
         const formData = new FormData();
         formData.append("media", file);
@@ -900,6 +939,7 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
         formData.append("tags", uploadTags);
         formData.append("durationSeconds", durationSeconds);
         formData.append("folderId", uploadFolderId);
+        formData.append("deferPreparation", deferPreparation ? "true" : "false");
 
         if (files.length > 1) {
           setMessage(`Uploading ${index + 1} of ${files.length}: ${fileName}...`);
@@ -916,13 +956,17 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
             setMessage(
               `${prefix}${fileName} ${percent}% (${formatBytes(loaded)} of ${formatBytes(total)}, about ${formatSeconds(remainingSeconds)} left).`
             );
-          });
+          }, abortController.signal);
           if (result.error || !result.item) {
             throw new Error(result.error ?? `Upload failed for ${file.name}.`);
           }
 
           uploadedItems.push(result.item);
         } catch (error) {
+          if (abortController.signal.aborted) {
+            break;
+          }
+
           const failureMessage = error instanceof Error ? error.message : "Upload failed.";
           failedUploads.push({ fileName, message: failureMessage });
           if (index < files.length - 1) {
@@ -932,13 +976,14 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
         }
       }
 
-      const skippedSuffix = skippedCount > 0 ? ` ${skippedCount} unsupported or hidden file${skippedCount === 1 ? "" : "s"} skipped.` : "";
+      const wasCancelled = abortController.signal.aborted;
+      const skippedSuffix = skippedCount > 0 ? ` ${skippedCount} unsupported file${skippedCount === 1 ? "" : "s"} skipped.` : "";
       const failureSuffix = failedUploads.length > 0
         ? ` ${failedUploads.length} failed. First failure: ${failedUploads[0].fileName}: ${failedUploads[0].message}`
         : "";
       if (uploadedItems.length === 0) {
-        setMessage(`No files were saved.${failureSuffix}${skippedSuffix}`);
-        setMessageTone("error");
+        setMessage(wasCancelled ? `Upload stopped. No files were saved.${skippedSuffix}` : `No files were saved.${failureSuffix}${skippedSuffix}`);
+        setMessageTone(wasCancelled ? "warning" : "error");
         return;
       }
 
@@ -955,23 +1000,27 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
       setQueryInput("");
       await loadMedia(true, "");
       const needsReviewCount = uploadedItems.filter((item) => !playbackSafety(item).canUseInPlaylist).length;
+      const preparationSuffix =
+        mode === "cloud" && needsReviewCount > 0
+          ? deferPreparation
+            ? " Playback preparation is pending until you start it."
+            : " Playback preparation started automatically."
+          : "";
+      const cancelSuffix = wasCancelled ? " Upload stopped before the full selection finished." : "";
       if (uploadedItems.length === 1) {
         const uploadedItem = uploadedItems[0];
-        const reviewSuffix = playbackSafety(uploadedItem).canUseInPlaylist
-          ? ""
-          : " Playback preparation started automatically.";
-        setMessage(`${mediaPrimaryFileName(uploadedItem)} saved.${reviewSuffix}${failureSuffix}${skippedSuffix}`);
+        setMessage(`${mediaPrimaryFileName(uploadedItem)} saved.${preparationSuffix}${cancelSuffix}${failureSuffix}${skippedSuffix}`);
       } else {
-        const reviewSuffix = needsReviewCount > 0 ? " Playback preparation started automatically." : "";
-        setMessage(`${uploadedItems.length} files saved.${reviewSuffix}${failureSuffix}${skippedSuffix}`);
+        setMessage(`${uploadedItems.length} files saved.${preparationSuffix}${cancelSuffix}${failureSuffix}${skippedSuffix}`);
       }
-      setMessageTone(needsReviewCount > 0 || failedUploads.length > 0 ? "warning" : "success");
-      setShowUpload(failedUploads.length > 0);
+      setMessageTone(needsReviewCount > 0 || failedUploads.length > 0 || wasCancelled ? "warning" : "success");
+      setShowUpload(failedUploads.length > 0 || wasCancelled);
       startTransition(() => router.refresh());
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Upload failed.");
       setMessageTone("error");
     } finally {
+      uploadAbortRef.current = null;
       setIsUploading(false);
     }
   }
@@ -1627,9 +1676,9 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
                     )}
                     <p className="mt-3 break-words text-sm font-semibold text-zinc-950">{uploadSelection}</p>
                     <p className="mt-1 text-xs leading-5 text-zinc-600">
-                      Hidden files and unsupported formats are skipped when uploading a folder.
+                      Only MP4, MOV, JPG, and PNG files are uploaded from a folder.
                       {mode === "cloud"
-                        ? " Keep this tab open while files upload; once each file is saved, playback preparation continues in the background."
+                        ? " Keep this tab open while files upload; saved files remain in Beam even if a later file fails."
                         : ""}
                     </p>
                   </div>
@@ -1711,16 +1760,27 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
                       {isUploading
                         ? message
                         : mode === "cloud"
-                          ? "Upload saves to AWS and starts playback preparation automatically."
+                          ? "Upload saves to AWS. Folder uploads save sources first; prepare playback copies after upload."
                           : "Upload saves locally. Publish sends media to screens later."}
                     </p>
-                    <button
-                      type="submit"
-                      disabled={isBusy}
-                      className="min-h-11 rounded-md bg-teal-700 px-5 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
-                    >
-                      {isUploading ? "Uploading..." : "Save upload"}
-                    </button>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      {isUploading ? (
+                        <button
+                          type="button"
+                          onClick={handleCancelUpload}
+                          className="min-h-11 rounded-md border border-rose-200 bg-white px-5 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50"
+                        >
+                          Stop upload
+                        </button>
+                      ) : null}
+                      <button
+                        type="submit"
+                        disabled={isBusy}
+                        className="min-h-11 rounded-md bg-teal-700 px-5 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
+                      >
+                        {isUploading ? "Uploading..." : "Save upload"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1907,7 +1967,7 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
                               disabled={isBusy}
                               className="min-h-9 shrink-0 rounded-md border border-teal-200 bg-white px-3 py-1.5 text-sm font-semibold text-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
                             >
-                              {preparing ? "Retrying" : "Retry"}
+                              {preparing ? "Starting" : isPendingPreparation(item) ? "Prepare" : "Retry"}
                             </button>
                           ) : null}
                           {canAdd ? (

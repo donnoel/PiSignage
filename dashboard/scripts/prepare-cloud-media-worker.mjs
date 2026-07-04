@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
+import { createReadStream, createWriteStream } from "node:fs";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 import { DynamoDBClient, GetItemCommand, PutItemCommand } from "@aws-sdk/client-dynamodb";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
@@ -52,14 +54,29 @@ async function readAsset() {
   return result.Item ?? null;
 }
 
-async function bodyToBuffer(body) {
-  const bytes = await body.transformToByteArray();
-  return Buffer.from(bytes);
+async function writeBodyToFile(body, filePath) {
+  if (body && typeof body.pipe === "function") {
+    await pipeline(body, createWriteStream(filePath));
+    return;
+  }
+
+  if (body && typeof body.transformToByteArray === "function") {
+    const bytes = await body.transformToByteArray();
+    await fs.writeFile(filePath, Buffer.from(bytes));
+    return;
+  }
+
+  throw new Error("AWS returned an unreadable source media object.");
 }
 
 async function sha256(filePath) {
   const hash = createHash("sha256");
-  hash.update(await fs.readFile(filePath));
+  await new Promise((resolve, reject) => {
+    const stream = createReadStream(filePath);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.once("error", reject);
+    stream.once("end", resolve);
+  });
   return hash.digest("hex");
 }
 
@@ -236,7 +253,7 @@ async function main() {
       status: { S: "processing" }
     });
     const sourceObject = await s3.send(new GetObjectCommand({ Bucket: sourceBucketName, Key: sourceObjectKey }));
-    await fs.writeFile(sourcePath, await bodyToBuffer(sourceObject.Body));
+    await writeBodyToFile(sourceObject.Body, sourcePath);
 
     const sourceType = mediaSourceType(sourceFileName);
     const stage = sourceType === "image"
@@ -265,7 +282,7 @@ async function main() {
     const playbackObjectKey = `playback/${now.slice(0, 10)}/${assetId}/${playbackFileName}`;
 
     await s3.send(new PutObjectCommand({
-      Body: await fs.readFile(playbackPath),
+      Body: createReadStream(playbackPath),
       Bucket: playbackBucketName,
       ContentLength: stat.size,
       ContentType: "video/mp4",

@@ -11,7 +11,6 @@ import {
   readCloudMediaStore
 } from "../../lib/cloud-media-store";
 import {
-  resumeCloudMediaPreparationWorkers,
   startCloudMediaPreparationWorker
 } from "../../lib/cloud-media-preparation-worker";
 import {
@@ -400,7 +399,6 @@ export async function GET(request: Request) {
   const cloudConfig = cloudMediaConfig();
   if (cloudConfig) {
     const [mediaStore, folderStore] = await Promise.all([readCloudMediaStore(cloudConfig), readMediaFolderStore()]);
-    resumeCloudMediaPreparationWorkers(cloudConfig, mediaStore.items);
     const mediaItems = await cloudMediaItemsWithPlaylistAssets(mediaStore.items, folderStore);
     const { searchParams } = new URL(request.url);
     const cursor = parsePositiveInt(searchParams.get("cursor"), 0, Number.MAX_SAFE_INTEGER);
@@ -527,10 +525,11 @@ export async function POST(request: Request) {
     const safeFileName = sanitizeMediaFileName(file.name);
     const cloudConfig = cloudMediaConfig();
     if (cloudConfig) {
+      const deferPreparation = formData.get("deferPreparation") === "true";
       const folderStore = await readMediaFolderStore();
       const folderId = normalizeFolderId(formData.get("folderId"), folderStore);
       const input = await cloudUploadInputFromForm(file, formData, parseTags(formData.get("tags")));
-      const item = await createCloudMediaUpload(cloudConfig, input);
+      const item = await createCloudMediaUpload(cloudConfig, input, { prepareOnUpload: !deferPreparation });
       const now = new Date().toISOString();
       const nextFolderStore = folderId
         ? {
@@ -547,6 +546,10 @@ export async function POST(request: Request) {
         await writeMediaFolderStore(nextFolderStore);
       }
       if (item.status === "ready") {
+        return NextResponse.json({ item: mediaApiItemFromCloudRecord(item, [], nextFolderStore) }, { status: 201 });
+      }
+
+      if (deferPreparation) {
         return NextResponse.json({ item: mediaApiItemFromCloudRecord(item, [], nextFolderStore) }, { status: 201 });
       }
 

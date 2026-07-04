@@ -58,6 +58,10 @@ type CloudMediaUploadInput = {
   uploadedBytes: Buffer;
 };
 
+type CloudMediaUploadOptions = {
+  prepareOnUpload?: boolean;
+};
+
 type CloudMediaDeleteResult = {
   blockedIds: string[];
   deletedIds: string[];
@@ -424,7 +428,11 @@ export async function writeCloudMediaFolderStore(config: CloudMediaConfig, store
   ]);
 }
 
-export async function createCloudMediaUpload(config: CloudMediaConfig, input: CloudMediaUploadInput): Promise<MediaRecord> {
+export async function createCloudMediaUpload(
+  config: CloudMediaConfig,
+  input: CloudMediaUploadInput,
+  options: CloudMediaUploadOptions = {}
+): Promise<MediaRecord> {
   requireActiveWorkspacePermission("write");
   const safeFileName = sanitizeMediaFileName(input.fileName);
   const sourceType = mediaSourceTypeFromFileName(safeFileName);
@@ -432,11 +440,12 @@ export async function createCloudMediaUpload(config: CloudMediaConfig, input: Cl
   const id = `asset-${randomUUID()}`;
   const sourceObjectKey = `uploads/${now.slice(0, 10)}/${id}/${safeFileName}`;
   const isVideo = sourceType === "video";
+  const prepareOnUpload = options.prepareOnUpload ?? true;
   const playbackStorageBucket = config.playbackMediaBucketName ?? config.sourceMediaBucketName;
   const playbackFileName = sourceType === "image"
     ? stillClipFileName(safeFileName, input.durationSeconds)
     : playbackVideoFileName(safeFileName);
-  const preparedVideo = isVideo
+  const preparedVideo = prepareOnUpload && isVideo
     ? await tryCreatePreparedPlaybackCopy(safeFileName, playbackFileName, input.uploadedBytes)
     : null;
   const playbackObjectKey = preparedVideo ? `playback/${now.slice(0, 10)}/${id}/${playbackFileName}` : undefined;
@@ -465,7 +474,9 @@ export async function createCloudMediaUpload(config: CloudMediaConfig, input: Cl
     bitRate: preparedVideo?.probe.bitRate,
     cloudStatusDetail: preparedVideo
       ? "Uploaded video already matched the Pi-safe playback profile; prepared MP4 without re-encoding."
-      : "Uploaded source is stored in AWS. Playback-safe MP4 processing is pending.",
+      : prepareOnUpload
+        ? "Uploaded source is stored in AWS. Playback-safe MP4 processing is pending."
+        : "Uploaded source is stored in AWS. Playback-safe MP4 preparation is pending until you start it.",
     checksumSha256: preparedVideo?.checksumSha256,
     createdAt: now,
     description: input.description?.trim().slice(0, 5000) ?? "",
