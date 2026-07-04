@@ -4,15 +4,22 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  pisignage-reset-device.sh [--repo-root PATH] [--source git-head|current] [--agent-safe] [--defer-field-player-restart] [--dry-run|--apply]
+  pisignage-reset-device.sh [--repo-root PATH] [--source golden-master|git-head|current] [--golden-remote NAME] [--golden-ref REF] [--agent-safe] [--defer-field-player-restart] [--dry-run|--apply]
 
 Restores a Beam Pi appliance to the repo-backed first-run state while preserving
 device identity, network settings, SSH access, hostname, and OS users.
 
 Options:
   --repo-root PATH   PiSignage repo path on this Pi. Default: detected repo root.
-  --source MODE      Reset source for playlist/assets. Default: git-head.
-                     Use current after a controller has staged files into repo.
+  --source MODE      Reset source for managed files, playlist, and assets.
+                     Default: golden-master.
+                     golden-master fetches the configured remote/ref first.
+                     git-head uses the local repo HEAD without fetching.
+                     current uses files already staged into the local checkout.
+  --golden-remote NAME
+                     Git remote for --source golden-master. Default: github
+                     when present, otherwise origin.
+  --golden-ref REF   Git ref for --source golden-master. Default: main.
   --agent-safe       Do not stop/restart the device-agent service while the
                      agent is running this reset and still needs to report back.
   --defer-field-player-restart
@@ -33,7 +40,11 @@ die() {
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/../../.." && pwd)"
 mode="dry-run"
-source_mode="git-head"
+source_mode="golden-master"
+golden_remote="${PISIGNAGE_GOLDEN_REMOTE:-}"
+golden_ref="${PISIGNAGE_GOLDEN_REF:-main}"
+golden_tree=""
+golden_commit=""
 agent_safe="false"
 defer_field_player_restart="false"
 
@@ -49,6 +60,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --source)
       source_mode="${2:-}"
+      shift 2
+      ;;
+    --golden-remote)
+      golden_remote="${2:-}"
+      shift 2
+      ;;
+    --golden-ref)
+      golden_ref="${2:-}"
       shift 2
       ;;
     --apply)
@@ -76,7 +95,7 @@ done
 repo_root="$(cd -- "$repo_root" && pwd)"
 [[ -f "${repo_root}/sample-content/playlist.local.json" ]] || die "--repo-root does not look like PiSignage: ${repo_root}"
 [[ -d "${repo_root}/device/pi/bin" ]] || die "--repo-root is missing device/pi/bin: ${repo_root}"
-[[ "$source_mode" == "git-head" || "$source_mode" == "current" ]] || die "--source must be git-head or current"
+[[ "$source_mode" == "golden-master" || "$source_mode" == "git-head" || "$source_mode" == "current" ]] || die "--source must be golden-master, git-head, or current"
 
 playlist_path="${repo_root}/sample-content/playlist.local.json"
 assets_dir="${repo_root}/sample-content/assets"
@@ -132,6 +151,43 @@ service_exists() {
   systemctl --user list-unit-files "$1" --no-legend 2>/dev/null | grep -q "^$1"
 }
 
+resolve_golden_remote() {
+  if [[ -n "$golden_remote" ]]; then
+    return
+  fi
+  if git -C "$repo_root" remote get-url github >/dev/null 2>&1; then
+    golden_remote="github"
+    return
+  fi
+  if git -C "$repo_root" remote get-url origin >/dev/null 2>&1; then
+    golden_remote="origin"
+    return
+  fi
+  die "--source golden-master requires a github or origin git remote"
+}
+
+prepare_reset_source() {
+  case "$source_mode" in
+    current)
+      return
+      ;;
+    git-head)
+      golden_tree="HEAD"
+      golden_commit="$(git -C "$repo_root" rev-parse HEAD)"
+      return
+      ;;
+    golden-master)
+      resolve_golden_remote
+      print_step "fetching PI golden master from ${golden_remote}/${golden_ref}"
+      git -C "$repo_root" fetch --quiet "$golden_remote" "$golden_ref"
+      golden_tree="FETCH_HEAD"
+      golden_commit="$(git -C "$repo_root" rev-parse FETCH_HEAD)"
+      [[ -n "$golden_commit" ]] || die "could not resolve PI golden master commit from ${golden_remote}/${golden_ref}"
+      return
+      ;;
+  esac
+}
+
 restore_tracked_file() {
   local relative_path="$1"
   local target_path="${repo_root}/${relative_path}"
@@ -144,9 +200,9 @@ restore_tracked_file() {
     return
   fi
 
-  if ! git -C "$repo_root" cat-file -e "HEAD:${relative_path}" 2>/dev/null; then
+  if ! git -C "$repo_root" cat-file -e "${golden_tree}:${relative_path}" 2>/dev/null; then
     [[ -f "$target_path" ]] || die "required reset file is missing: ${relative_path}"
-    print_step "using current file because ${relative_path} is not tracked in git"
+    print_step "using current file because ${relative_path} is not tracked in reset source"
     return
   fi
 
@@ -154,10 +210,10 @@ restore_tracked_file() {
     mkdir -p "$target_dir"
     local tmp_path
     tmp_path="$(mktemp "${target_path}.XXXXXX")"
-    git -C "$repo_root" show "HEAD:${relative_path}" > "$tmp_path"
+    git -C "$repo_root" show "${golden_tree}:${relative_path}" > "$tmp_path"
     mv "$tmp_path" "$target_path"
   else
-    echo "dry-run: git -C ${repo_root} show HEAD:${relative_path} > ${target_path}"
+    echo "dry-run: git -C ${repo_root} show ${golden_tree}:${relative_path} > ${target_path}"
   fi
 }
 
@@ -187,14 +243,26 @@ echo "Beam Pi reset"
 echo "  repo root: ${repo_root}"
 echo "  mode: ${mode}"
 echo "  source: ${source_mode}"
+if [[ "$source_mode" == "golden-master" ]]; then
+  echo "  golden ref: ${golden_ref}"
+fi
 echo "  agent safe: ${agent_safe}"
 echo "  defer field player restart: ${defer_field_player_restart}"
 echo "  preserves: ${config_dir}, hostname, network, SSH, OS users"
 echo "  clears: playlist publish state, stale media, schedules, player status, heartbeat, device-agent cache"
 
+prepare_reset_source
+if [[ "$source_mode" != "current" ]]; then
+  echo "  reset commit: ${golden_commit}"
+fi
+
 print_step "checking required tracked files"
 for source in "${managed_bin_sources[@]}" "${managed_unit_sources[@]}" "${required_asset_sources[@]}" "sample-content/playlist.local.json"; do
-  [[ -f "${repo_root}/${source}" ]] || die "missing required reset source: ${source}"
+  if [[ "$source_mode" == "current" ]]; then
+    [[ -f "${repo_root}/${source}" ]] || die "missing required reset source: ${source}"
+  else
+    git -C "$repo_root" cat-file -e "${golden_tree}:${source}" 2>/dev/null || die "missing required reset source: ${source}"
+  fi
 done
 
 if [[ -f "${config_dir}/device.json" ]]; then
@@ -322,6 +390,14 @@ if [[ "$mode" == "apply" ]]; then
   agent_state="$(systemctl --user is-active pisignage-device-agent.service 2>/dev/null || true)"
   timer_state="$(systemctl --user is-active pisignage-schedule.timer 2>/dev/null || true)"
   echo "reset-complete"
+  echo "reset_source=${source_mode}"
+  if [[ "$source_mode" == "golden-master" ]]; then
+    echo "golden_remote=${golden_remote}"
+    echo "golden_ref=${golden_ref}"
+  fi
+  if [[ "$source_mode" != "current" ]]; then
+    echo "reset_commit=${golden_commit}"
+  fi
   echo "playlist_sha=${playlist_sha}"
   echo "asset_count=${asset_count}"
   echo "vlc_service=${vlc_state}"

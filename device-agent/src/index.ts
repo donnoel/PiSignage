@@ -1016,7 +1016,7 @@ async function runResetCommand(root: string, cacheDirectory: string, command: De
         "--repo-root",
         root,
         "--source",
-        "git-head",
+        "golden-master",
         "--agent-safe",
         ...(rebootAfterSuccess ? ["--defer-field-player-restart"] : []),
         "--apply"

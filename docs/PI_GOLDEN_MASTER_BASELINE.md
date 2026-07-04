@@ -1,6 +1,6 @@
 # PI Golden Master Baseline
 
-Last updated: 2026-07-04 08:50 PDT
+Last updated: 2026-07-04 09:11 PDT
 
 ## Baseline Rule
 
@@ -18,6 +18,38 @@ C1-C4 and any future Beam Pi must be built, repaired, or updated from this PI go
 - local API keys and secrets
 
 The previous historical snapshot is `docs/C5_GOLDEN_MODEL_SNAPSHOT_2026-07-03.md`. Use this file, not the historical snapshot, as the current PI golden master baseline.
+
+## Reset For Deployment Contract
+
+Reset for deployment must rebuild the managed Beam appliance surface from this PI golden master source, not from stale local Pi drift.
+
+The reset script defaults to:
+
+```text
+--source golden-master --golden-ref main
+```
+
+In that mode, `device/pi/bin/pisignage-reset-device.sh` fetches the configured Git remote before restoring tracked managed scripts, systemd units, the first-run playlist, and first-run media assets. The cloud device-agent reset command uses this same `golden-master` source mode.
+
+Reset intentionally preserves per-device identity and field access:
+
+- hostname
+- IP address and network settings
+- SSH access and OS users
+- Beam/cloud device ID
+- local API keys and secrets
+- screen assignment and location metadata
+
+Reset intentionally clears runtime/publish state:
+
+- playlist publish state
+- stale first-run media files
+- schedules
+- player status
+- heartbeat
+- device-agent cache
+
+Important packaging note: `device-agent/dist/index.js` is an ignored build artifact, so a git fetch alone does not replace that compiled runtime. When device-agent source changes, build and deploy the compiled device-agent runtime to C5 before updating this baseline, and roll that runtime to C1-C4 when they are reachable.
 
 ## Workstation State
 
@@ -227,7 +259,7 @@ Managed Pi scripts:
 c577963b8233b225a663319fb95c0411015cf85c5a1635dc2e5e76801cd92a08  pisignage-hide-desktop.sh
 d5b0d4e750e068a8e7666ddb3d26014c9bb0b3e70cfe46fd3789a299a5cc3578  pisignage-install-runtime.sh
 76e47c87c4afb21b8d682c4a58542aae072328fc0789b9b7492b788bd5c4f56d  pisignage-provision-device.sh
-d29401576124591b2b834aaae6b6a296412931737bef6aa999e9c8043d070593  pisignage-reset-device.sh
+e9173990a980d64690f542d4c9d5bfab8e7b376f32cc6ee667569cd4d4254784  pisignage-reset-device.sh
 bc01cf6dc91e857da42d753361113c7cf979c6f9486e391ba86e38c64b6e71f0  pisignage-serve-player.mjs
 5ad55c8d2fb4a027693113f8c9bd2ebd92e83b1619e54468f8e997030d7a52b0  pisignage-start-display.sh
 fedafe95d4405cb2edfce5d28585b593f9b4f3a763f9a3936dd0d0e21ab87d2b  pisignage-vlc-playlist.mjs
@@ -247,7 +279,7 @@ ae7252d0fc886f5fc134c8e4f7a677b01ee391371cec79583b0077f4465755ec  pisignage-play
 Compiled device agent:
 
 ```text
-5d4512bf6062de8df0369017b5eea50a0582129fca0f55d1b8b7b85f14bf66b4  device-agent/dist/index.js
+0b2fc5a3ab0aa39d7a73cd5033d811c887dd59bdb330a8a5cbfedb6650173726  device-agent/dist/index.js
 ```
 
 This hash supersedes the 2026-07-03 baseline hash and includes the current command-plane behavior deployed to C5.
@@ -293,4 +325,3 @@ Known intentional per-device fields must not be copied blindly:
 - screen assignment
 - location label
 - local API key or secrets
-

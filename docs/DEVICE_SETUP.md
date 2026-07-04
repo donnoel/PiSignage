@@ -95,6 +95,10 @@ Reset validation for this workflow should use:
 device/pi/bin/pisignage-reset-device.sh --dry-run
 ```
 
+By default, reset uses the PI golden master source on `github/main` when that
+remote exists. The dry-run fetches that source for evidence, then reports the
+planned restore without clearing runtime state or restarting services.
+
 Do not run reset with `--apply` unless the operator explicitly approves clearing
 playlist/media/status/cache state.
 
