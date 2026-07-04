@@ -18,7 +18,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function actionType(value: unknown): DeviceActionType | null {
-  return value === "mute-audio" || value === "reboot-device" || value === "restart-playback" || value === "run-recovery"
+  return value === "mute-audio" ||
+    value === "reboot-device" ||
+    value === "restart-playback" ||
+    value === "run-recovery" ||
+    value === "unmute-audio"
     ? value
     : null;
 }

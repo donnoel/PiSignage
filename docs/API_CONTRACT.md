@@ -246,6 +246,8 @@ Implemented command types:
   active.
 - `mute-audio`: persist `PISIGNAGE_VLC_AUDIO=off` for the managed VLC service,
   reload systemd user units, and restart VLC so playback runs with `--no-audio`.
+- `unmute-audio`: remove the managed VLC audio override, reload systemd user
+  units, and restart VLC so playback runs with audio enabled.
 - `run-recovery`: run the managed local recovery sequence: collect service
   evidence, restart VLC, verify service state, re-apply display mode when
   available, and collect playback/cache/health evidence.
