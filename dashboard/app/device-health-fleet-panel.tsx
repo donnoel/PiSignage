@@ -79,6 +79,7 @@ type DeviceLiveStatus = {
 type FilterKey = "all" | "attention" | "offline" | "online" | "stale" | "sync" | "waiting";
 type SortDirection = "asc" | "desc";
 type SortKey = "action" | "device" | "lastSeen" | "playback" | "playlist" | "screen" | "status" | "sync";
+type AudioToggleAction = "mute" | "unmute";
 
 type RowState = {
   addressChanged: boolean;
@@ -338,6 +339,50 @@ function sshUrlFor(row: RowState): string | null {
 
 function screenName(row: RowState): string {
   return row.linkedScreen?.name ?? row.device.name;
+}
+
+function audioToggleActionFor(row: RowState): AudioToggleAction {
+  if (
+    row.device.actionType === "unmute-audio" &&
+    (row.device.actionStatus === "pending" || row.device.actionStatus === "running")
+  ) {
+    return "unmute";
+  }
+
+  if (
+    row.device.actionType === "mute-audio" &&
+    row.device.actionStatus === "succeeded"
+  ) {
+    return "unmute";
+  }
+
+  return "mute";
+}
+
+function audioToggleLabel(row: RowState): string {
+  if (row.device.actionType === "mute-audio") {
+    if (row.device.actionStatus === "pending") {
+      return "Mute pending";
+    }
+    if (row.device.actionStatus === "running") {
+      return "Muting audio";
+    }
+  }
+
+  if (row.device.actionType === "unmute-audio") {
+    if (row.device.actionStatus === "pending") {
+      return "Unmute pending";
+    }
+    if (row.device.actionStatus === "running") {
+      return "Unmuting audio";
+    }
+  }
+
+  return audioToggleActionFor(row) === "unmute" ? "Unmute audio" : "Mute audio";
+}
+
+function audioToggleTitle(row: RowState): string {
+  return `${audioToggleLabel(row)} on ${screenName(row)}`;
 }
 
 function statusSortRank(row: RowState): number {
@@ -1863,26 +1908,21 @@ export function DeviceHealthFleetPanel({
                             <ScreenActionIcon name="playlist" />
                           </a>
                         ) : null}
-                        <button
-                          type="button"
-                          onClick={() => void runAction("mute", row)}
-                          disabled={dashboardMode !== "cloud" || !row.isLive || isBusy || row.actionActive || row.resetActive || row.diagnosticsActive}
-                          title="Mute audio"
-                          aria-label={`Mute audio on ${screenName(row)}`}
-                          className={`inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white text-base font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${screenActionClass("neutral")}`}
-                        >
-                          <ScreenActionIcon name="mute" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void runAction("unmute", row)}
-                          disabled={dashboardMode !== "cloud" || !row.isLive || isBusy || row.actionActive || row.resetActive || row.diagnosticsActive}
-                          title="Unmute audio"
-                          aria-label={`Unmute audio on ${screenName(row)}`}
-                          className={`inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white text-base font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${screenActionClass("neutral")}`}
-                        >
-                          <ScreenActionIcon name="unmute" />
-                        </button>
+                        {(() => {
+                          const audioAction = audioToggleActionFor(row);
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => void runAction(audioAction, row)}
+                              disabled={dashboardMode !== "cloud" || !row.isLive || isBusy || row.actionActive || row.resetActive || row.diagnosticsActive}
+                              title={audioToggleTitle(row)}
+                              aria-label={audioToggleTitle(row)}
+                              className={`inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white text-base font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${screenActionClass("neutral")}`}
+                            >
+                              <ScreenActionIcon name={audioAction} />
+                            </button>
+                          );
+                        })()}
                         {row.linkedScreen ? (
                           <button
                             type="button"
@@ -2058,22 +2098,19 @@ export function DeviceHealthFleetPanel({
                     <div className="min-w-0">
                       <h5 className="text-xs font-semibold uppercase text-zinc-500">Recovery</h5>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          disabled={!selectedRow.isLive || isBusy || selectedRow.actionActive || selectedRow.resetActive || selectedRow.diagnosticsActive}
-                          onClick={() => void runAction("mute", selectedRow)}
-                          className="min-h-9 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {busyAction === "mute" ? "Queueing..." : "Mute audio"}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={!selectedRow.isLive || isBusy || selectedRow.actionActive || selectedRow.resetActive || selectedRow.diagnosticsActive}
-                          onClick={() => void runAction("unmute", selectedRow)}
-                          className="min-h-9 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {busyAction === "unmute" ? "Queueing..." : "Unmute audio"}
-                        </button>
+                        {(() => {
+                          const audioAction = audioToggleActionFor(selectedRow);
+                          return (
+                            <button
+                              type="button"
+                              disabled={!selectedRow.isLive || isBusy || selectedRow.actionActive || selectedRow.resetActive || selectedRow.diagnosticsActive}
+                              onClick={() => void runAction(audioAction, selectedRow)}
+                              className="min-h-9 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {busyAction === audioAction ? "Queueing..." : audioToggleLabel(selectedRow)}
+                            </button>
+                          );
+                        })()}
                         <button
                           type="button"
                           disabled={!selectedRow.isLive || isBusy || selectedRow.actionActive || selectedRow.resetActive || selectedRow.diagnosticsActive}
