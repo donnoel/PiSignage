@@ -46,7 +46,7 @@ This repo is a local-first Raspberry Pi digital signage proof of concept. You ar
 ## Pi And Playback Rules
 
 - C1-C5 must remain identical Beam appliances except for identity/network metadata. Treat drift between Pis as a production defect: before and after Pi changes, verify managed script/service hashes, Node/VLC package baselines, playlist hash, published asset count/hash set, current-video reporting, and active service state across all five when the hardware is reachable.
-- Use `docs/C5_GOLDEN_MODEL_SNAPSHOT_2026-07-03.md` as the current managed Pi appliance baseline until it is intentionally replaced.
+- Use `docs/PI_GOLDEN_MASTER_BASELINE.md` as the current managed Pi appliance baseline. C5 is the prototype appliance; every Pi-touching change deployed to C5 must update that PI golden master baseline before the work is considered complete.
 - VLC is the preferred field playback path for appliance mode unless the user explicitly asks to test another player.
 - Keep Chromium/browser playback available as a fallback/experimental path when already present.
 - Pi changes should be reproducible through repo scripts, docs, or systemd units rather than only manual shell history.

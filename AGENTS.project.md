@@ -78,7 +78,7 @@ The current AWS dev alpha scaffold includes API Gateway, Lambda, DynamoDB, S3, C
 Do not regress these contracts:
 
 - C1-C5 must remain identical Beam appliances except for intentional identity/network fields such as hostname, IP address, screen name, screen assignment, and location. Any drift in Beam-managed scripts, services, package/runtime baselines, playlist files, published media sets, or service state is a production defect.
-- The current managed Pi appliance baseline lives in `docs/C5_GOLDEN_MODEL_SNAPSHOT_2026-07-03.md`; use it for C1-C5 parity checks until a new golden baseline intentionally replaces it.
+- The current managed Pi appliance baseline lives in `docs/PI_GOLDEN_MASTER_BASELINE.md`; use it for C1-C5 parity checks. C5 is the prototype appliance, and every Pi-touching change deployed to C5 must update that PI golden master baseline before the work is considered complete.
 - Device playback must work from local playlist/cache data.
 - Device startup should recover to playback without dashboard interaction.
 - A missing network connection must not stop already-cached playback.
