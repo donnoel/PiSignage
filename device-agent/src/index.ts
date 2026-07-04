@@ -57,7 +57,14 @@ type CloudPlaylistResponse = {
   localFirst?: boolean;
   playlist?: Playlist | null;
   release?: CloudReleaseCheck | null;
+  schedule?: CloudScheduleStore | null;
   unchanged?: boolean;
+};
+
+type CloudScheduleStore = {
+  items: unknown[];
+  updatedAt?: string;
+  version?: number;
 };
 
 type CloudReleaseCheck = {
@@ -210,6 +217,14 @@ function commandStatusPath(cacheDirectory: string, commandId: string): string {
   return path.join(cacheDirectory, "commands", `${safeCommandId}.json`);
 }
 
+function scheduleStorePath(root: string): string {
+  return path.join(
+    root,
+    "sample-content",
+    process.env.PISIGNAGE_SCHEDULE_FILE ?? "schedules.local.json"
+  );
+}
+
 function localIpAddress(): string | null {
   for (const addresses of Object.values(os.networkInterfaces())) {
     for (const address of addresses ?? []) {
@@ -220,6 +235,39 @@ function localIpAddress(): string | null {
   }
 
   return null;
+}
+
+function normalizedCloudScheduleStore(input: CloudScheduleStore): CloudScheduleStore {
+  return {
+    items: Array.isArray(input.items) ? input.items : [],
+    updatedAt: typeof input.updatedAt === "string" ? input.updatedAt : new Date().toISOString(),
+    version: typeof input.version === "number" && Number.isFinite(input.version) ? input.version : 0
+  };
+}
+
+async function syncCloudScheduleStore(root: string, schedule: CloudScheduleStore): Promise<void> {
+  const normalized = normalizedCloudScheduleStore(schedule);
+  const filePath = scheduleStorePath(root);
+  const current = await fs.readFile(filePath, "utf8")
+    .then((value) => normalizedCloudScheduleStore(JSON.parse(value) as CloudScheduleStore))
+    .catch(() => null);
+  if (current && JSON.stringify(current) === JSON.stringify(normalized)) {
+    return;
+  }
+
+  await writeJsonAtomic(filePath, normalized);
+  log("info", "cloud.schedule.synced", {
+    itemCount: normalized.items.length,
+    version: normalized.version
+  });
+
+  await execFileAsync("systemctl", ["--user", "start", "--no-block", "pisignage-schedule.service"], {
+    timeout: 10_000
+  }).catch((error) => {
+    log("error", "cloud.schedule.enforce_start_failed", {
+      message: error instanceof Error ? error.message : String(error)
+    });
+  });
 }
 
 async function cachePlaylist(cacheDirectory: string, playlist: Playlist): Promise<void> {
@@ -1114,7 +1162,13 @@ async function fetchCloudPlaylist(cacheDirectory: string): Promise<{
         source: "standby"
       };
     }
+  }
 
+  if (body.schedule) {
+    await syncCloudScheduleStore(repoRoot(), body.schedule);
+  }
+
+  if (body.command?.status === "pending") {
     if (body.command.type === "collect-diagnostics") {
       await runDiagnosticsCommand(cacheDirectory, body.command);
     }

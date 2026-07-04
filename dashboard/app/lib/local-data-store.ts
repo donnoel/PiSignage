@@ -1,9 +1,22 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import {
+  DynamoDBClient,
+  GetItemCommand,
+  PutItemCommand
+} from "@aws-sdk/client-dynamodb";
+import type { AttributeValue } from "@aws-sdk/client-dynamodb";
 import { validateLayoutTemplate } from "./layout-contract";
 import { localStateDirectory, writeFileAtomic } from "./local-playlist";
 import type { LayoutStore, LayoutTemplate } from "./layout-contract";
-import { defaultWorkspaceId, filterWorkspaceItems, requireActiveWorkspacePermission, withDefaultWorkspace, workspaceIdOrDefault } from "./workspace";
+import {
+  activeWorkspaceId,
+  defaultWorkspaceId,
+  filterWorkspaceItems,
+  requireActiveWorkspacePermission,
+  withDefaultWorkspace,
+  workspaceIdOrDefault
+} from "./workspace";
 
 export type MediaRecord = {
   id: string;
@@ -227,8 +240,115 @@ type JsonStorePaths = {
   settings: string;
 };
 
+const dynamoDb = new DynamoDBClient({});
+const scheduleStoreRecordType = "schedule-store";
+
 function isoNow(): string {
   return new Date().toISOString();
+}
+
+function trimmedEnv(name: string): string | null {
+  const value = process.env[name]?.trim();
+  return value ? value : null;
+}
+
+function cloudScheduleConfig(): { assetsTableName: string } | null {
+  if (trimmedEnv("BEAM_DASHBOARD_MODE") !== "cloud") {
+    return null;
+  }
+
+  const assetsTableName = trimmedEnv("BEAM_ASSETS_TABLE_NAME");
+  return assetsTableName ? { assetsTableName } : null;
+}
+
+function stringAttribute(value: string): AttributeValue {
+  return { S: value };
+}
+
+function numberAttribute(value: number): AttributeValue {
+  return { N: String(value) };
+}
+
+function stringOrNull(value: AttributeValue | undefined): string | null {
+  if (!value || value.NULL) {
+    return null;
+  }
+
+  return value.S ?? null;
+}
+
+function numberOrDefault(value: AttributeValue | undefined, fallback: number): number {
+  const parsed = value?.N ? Number(value.N) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function scheduleStoreRecordId(): string {
+  return `schedule-store#${activeWorkspaceId()}`;
+}
+
+function normalizeScheduleStore(store: ScheduleStore): ScheduleStore {
+  return {
+    ...store,
+    items: Array.isArray(store.items) ? filterWorkspaceItems(store.items) : [],
+    updatedAt: typeof store.updatedAt === "string" ? store.updatedAt : isoNow(),
+    version: typeof store.version === "number" ? store.version : 1
+  };
+}
+
+function parseScheduleStoreJson(value: AttributeValue | undefined): ScheduleStore {
+  const fallback = defaultScheduleStore();
+  const json = stringOrNull(value);
+  if (!json) {
+    return fallback;
+  }
+
+  try {
+    return normalizeScheduleStore(JSON.parse(json) as ScheduleStore);
+  } catch {
+    return fallback;
+  }
+}
+
+async function readCloudScheduleStore(config: { assetsTableName: string }): Promise<ScheduleStore> {
+  const result = await dynamoDb.send(new GetItemCommand({
+    Key: { assetId: stringAttribute(scheduleStoreRecordId()) },
+    TableName: config.assetsTableName
+  }));
+
+  if (!result.Item || stringOrNull(result.Item.recordType) !== scheduleStoreRecordType) {
+    return defaultScheduleStore();
+  }
+
+  const store = parseScheduleStoreJson(result.Item.scheduleStoreJson);
+  return {
+    ...store,
+    updatedAt: stringOrNull(result.Item.updatedAt) ?? store.updatedAt,
+    version: numberOrDefault(result.Item.version, store.version)
+  };
+}
+
+async function writeCloudScheduleStore(config: { assetsTableName: string }, value: ScheduleStore): Promise<void> {
+  const workspaceId = activeWorkspaceId();
+  const normalizedStore: ScheduleStore = {
+    ...value,
+    items: value.items.map(withDefaultWorkspace),
+    updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : isoNow(),
+    version: typeof value.version === "number" ? value.version : 1
+  };
+
+  await dynamoDb.send(new PutItemCommand({
+    Item: {
+      accountId: stringAttribute("beam-dev"),
+      assetId: stringAttribute(scheduleStoreRecordId()),
+      id: stringAttribute(scheduleStoreRecordId()),
+      recordType: stringAttribute(scheduleStoreRecordType),
+      scheduleStoreJson: stringAttribute(JSON.stringify(normalizedStore)),
+      updatedAt: stringAttribute(normalizedStore.updatedAt),
+      version: numberAttribute(normalizedStore.version),
+      workspaceId: stringAttribute(workspaceId)
+    },
+    TableName: config.assetsTableName
+  }));
 }
 
 function jsonStorePaths(): JsonStorePaths {
@@ -490,12 +610,14 @@ export async function writeDeviceStore(value: DeviceStore): Promise<void> {
 }
 
 export async function readScheduleStore(): Promise<ScheduleStore> {
+  const config = cloudScheduleConfig();
+  if (config) {
+    return readCloudScheduleStore(config);
+  }
+
   const paths = jsonStorePaths();
   const store = await readJsonOrDefaults(paths.schedules, defaultScheduleStore());
-  return {
-    ...store,
-    items: Array.isArray(store.items) ? filterWorkspaceItems(store.items) : []
-  };
+  return normalizeScheduleStore(store);
 }
 
 export function scheduleStorePath(): string {
@@ -504,6 +626,12 @@ export function scheduleStorePath(): string {
 
 export async function writeScheduleStore(value: ScheduleStore): Promise<void> {
   requireActiveWorkspacePermission("write");
+  const config = cloudScheduleConfig();
+  if (config) {
+    await writeCloudScheduleStore(config, value);
+    return;
+  }
+
   const paths = jsonStorePaths();
   await writeJsonStore(paths.schedules, {
     ...value,
