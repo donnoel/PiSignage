@@ -13,9 +13,11 @@ import type { AttributeValue } from "@aws-sdk/client-dynamodb";
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   PutObjectCommand,
   S3Client
 } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type { MediaFolderRecord, MediaFolderStore, MediaRecord, MediaStore } from "./local-data-store";
 import {
   assertPlaybackSafeVideoFile,
@@ -62,6 +64,33 @@ type CloudMediaUploadOptions = {
   prepareOnUpload?: boolean;
 };
 
+type CloudMediaDirectUploadTargetInput = {
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+};
+
+type CloudMediaUploadedSourceInput = {
+  description?: string;
+  durationSeconds: number;
+  fileName: string;
+  mediaId: string;
+  mimeType: string;
+  sizeBytes: number;
+  sourceObjectKey: string;
+  tags: string[];
+  title?: string;
+};
+
+export type CloudMediaDirectUploadTarget = {
+  expiresInSeconds: number;
+  headers: Record<string, string>;
+  mediaId: string;
+  method: "PUT";
+  sourceObjectKey: string;
+  uploadUrl: string;
+};
+
 type CloudMediaDeleteResult = {
   blockedIds: string[];
   deletedIds: string[];
@@ -77,6 +106,7 @@ type PreparedPlaybackCopy = {
 
 const dynamoDb = new DynamoDBClient({});
 const s3 = new S3Client({});
+const directUploadExpiresInSeconds = 15 * 60;
 const mediaRecordType = "media";
 const mediaFolderRecordType = "media-folder";
 const mediaFolderAssignmentRecordType = "media-folder-assignment";
@@ -112,6 +142,14 @@ function baseTitleFromFileName(fileName: string): string {
 
 function playbackVideoFileName(fileName: string): string {
   return /\.signage-1080p(?:-\d+)?\.mp4$/i.test(fileName) ? fileName : transcodedVideoFileName(fileName);
+}
+
+function sourceObjectKeyForUpload(now: string, mediaId: string, fileName: string): string {
+  return `uploads/${now.slice(0, 10)}/${mediaId}/${fileName}`;
+}
+
+function sourceObjectKeyMatchesUpload(mediaId: string, fileName: string, sourceObjectKey: string): boolean {
+  return sourceObjectKey.startsWith("uploads/") && sourceObjectKey.endsWith(`/${mediaId}/${fileName}`);
 }
 
 function stringAttribute(value: string): AttributeValue {
@@ -354,6 +392,16 @@ export async function readCloudMediaStore(config: CloudMediaConfig): Promise<Med
   };
 }
 
+export async function findCloudMediaBySourceFileName(
+  config: CloudMediaConfig,
+  fileName: string
+): Promise<MediaRecord | null> {
+  const safeFileName = sanitizeMediaFileName(fileName);
+  const normalizedFileName = safeFileName.toLowerCase();
+  const mediaStore = await readCloudMediaStore(config);
+  return mediaStore.items.find((item) => item.sourceFileName.toLowerCase() === normalizedFileName) ?? null;
+}
+
 export async function readCloudMediaFolderStore(config: CloudMediaConfig): Promise<MediaFolderStore> {
   const scannedItems = await queryWorkspaceItems(config.assetsTableName);
   const folders = scannedItems
@@ -438,7 +486,7 @@ export async function createCloudMediaUpload(
   const sourceType = mediaSourceTypeFromFileName(safeFileName);
   const now = isoNow();
   const id = `asset-${randomUUID()}`;
-  const sourceObjectKey = `uploads/${now.slice(0, 10)}/${id}/${safeFileName}`;
+  const sourceObjectKey = sourceObjectKeyForUpload(now, id, safeFileName);
   const isVideo = sourceType === "video";
   const prepareOnUpload = options.prepareOnUpload ?? true;
   const playbackStorageBucket = config.playbackMediaBucketName ?? config.sourceMediaBucketName;
@@ -513,6 +561,107 @@ export async function createCloudMediaUpload(
   }));
 
   return media;
+}
+
+export async function createCloudMediaDirectUploadTarget(
+  config: CloudMediaConfig,
+  input: CloudMediaDirectUploadTargetInput
+): Promise<CloudMediaDirectUploadTarget> {
+  requireActiveWorkspacePermission("write");
+  const safeFileName = sanitizeMediaFileName(input.fileName);
+  const now = isoNow();
+  const mediaId = `asset-${randomUUID()}`;
+  const sourceObjectKey = sourceObjectKeyForUpload(now, mediaId, safeFileName);
+  const mimeType = input.mimeType || mimeTypeFromFileName(safeFileName);
+  const headers = {
+    "Content-Type": mimeType,
+    "x-amz-server-side-encryption": "AES256"
+  };
+  const uploadUrl = await getSignedUrl(
+    s3,
+    new PutObjectCommand({
+      Bucket: config.sourceMediaBucketName,
+      ContentType: mimeType,
+      Key: sourceObjectKey,
+      ServerSideEncryption: "AES256"
+    }),
+    { expiresIn: directUploadExpiresInSeconds }
+  );
+
+  return {
+    expiresInSeconds: directUploadExpiresInSeconds,
+    headers,
+    mediaId,
+    method: "PUT",
+    sourceObjectKey,
+    uploadUrl
+  };
+}
+
+export async function createCloudMediaRecordFromUploadedSource(
+  config: CloudMediaConfig,
+  input: CloudMediaUploadedSourceInput
+): Promise<MediaRecord> {
+  requireActiveWorkspacePermission("write");
+  const safeFileName = sanitizeMediaFileName(input.fileName);
+  if (!sourceObjectKeyMatchesUpload(input.mediaId, safeFileName, input.sourceObjectKey)) {
+    throw new MediaUploadError("Upload target did not match the finalized file.", 400);
+  }
+
+  const sourceObject = await s3.send(new HeadObjectCommand({
+    Bucket: config.sourceMediaBucketName,
+    Key: input.sourceObjectKey
+  }));
+  if (sourceObject.ContentLength !== input.sizeBytes) {
+    throw new MediaUploadError("The uploaded file size did not match the selected file.", 409);
+  }
+
+  const sourceType = mediaSourceTypeFromFileName(safeFileName);
+  const now = isoNow();
+  const playbackFileName = sourceType === "image"
+    ? stillClipFileName(safeFileName, input.durationSeconds)
+    : playbackVideoFileName(safeFileName);
+  const media: MediaRecord = {
+    cloudStatusDetail: "Source uploaded to AWS. Pi-safe playback preparation is queued.",
+    createdAt: now,
+    description: input.description?.trim().slice(0, 5000) ?? "",
+    durationSeconds: sourceType === "image" ? input.durationSeconds : defaultDurationSeconds,
+    id: input.mediaId,
+    mimeType: input.mimeType || mimeTypeFromFileName(safeFileName),
+    playbackFileName,
+    playbackProfile: "pending-playback-mp4-v1",
+    sizeBytes: input.sizeBytes,
+    sourceFileName: safeFileName,
+    sourceObjectKey: input.sourceObjectKey,
+    sourceSizeBytes: input.sizeBytes,
+    sourceStorageBucket: config.sourceMediaBucketName,
+    status: "processing",
+    storageBucket: config.sourceMediaBucketName,
+    storageProvider: "s3",
+    tags: input.tags,
+    title: input.title?.trim().slice(0, 120) || baseTitleFromFileName(safeFileName),
+    updatedAt: now
+  };
+
+  await dynamoDb.send(new PutItemCommand({
+    ConditionExpression: "attribute_not_exists(assetId)",
+    Item: mediaToItem(media),
+    TableName: config.assetsTableName
+  }));
+
+  return media;
+}
+
+export async function deleteCloudUploadedSourceObject(config: CloudMediaConfig, sourceObjectKey: string): Promise<void> {
+  requireActiveWorkspacePermission("write");
+  if (!sourceObjectKey.startsWith("uploads/")) {
+    throw new MediaUploadError("Only uploaded source objects can be cleaned up.", 400);
+  }
+
+  await s3.send(new DeleteObjectCommand({
+    Bucket: config.sourceMediaBucketName,
+    Key: sourceObjectKey
+  }));
 }
 
 async function readCloudMediaRecord(config: CloudMediaConfig, mediaId: string): Promise<MediaRecord | null> {

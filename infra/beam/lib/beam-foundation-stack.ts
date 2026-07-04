@@ -351,6 +351,13 @@ export class BeamFoundationStack extends Stack {
         instanceRoleArn: dashboardInstanceRole.roleArn
       }
     });
+    sourceMediaBucket.addCorsRule({
+      allowedHeaders: ["*"],
+      allowedMethods: [s3.HttpMethods.PUT],
+      allowedOrigins: ["*"],
+      exposedHeaders: ["ETag"],
+      maxAge: 3000
+    });
 
     [
       sourceMediaBucket,

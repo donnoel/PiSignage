@@ -65,6 +65,7 @@ type MediaListResponse = {
 type UploadResponse = {
   error?: string;
   item?: MediaItem;
+  skipped?: boolean;
 };
 
 type UploadFailure = {
@@ -104,6 +105,30 @@ type MediaPrepareResponse = {
   error?: string;
   item?: MediaItem;
   preparing?: boolean;
+};
+
+type CloudUploadTarget = {
+  expiresInSeconds: number;
+  headers: Record<string, string>;
+  mediaId: string;
+  method: "PUT";
+  sourceObjectKey: string;
+  uploadUrl: string;
+};
+
+type CloudUploadResponse = UploadResponse & {
+  preparing?: boolean;
+  upload?: CloudUploadTarget;
+};
+
+type CloudUploadMetadata = {
+  durationSeconds: string;
+  fileName: string;
+  folderId: string;
+  mimeType: string;
+  sizeBytes: number;
+  tags: string;
+  title: string;
 };
 
 type FolderCreateResponse = {
@@ -314,6 +339,125 @@ function uploadResponseFromText(responseText: string, status: number): UploadRes
   }
 }
 
+async function cloudUploadResponseFromFetch(response: Response): Promise<CloudUploadResponse> {
+  const text = await response.text();
+  if (!text.trim()) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(text) as CloudUploadResponse;
+  } catch {
+    return {
+      error: `Upload failed with HTTP ${response.status}. Beam returned an unreadable response instead of JSON.`
+    };
+  }
+}
+
+async function postCloudUploadAction(body: Record<string, unknown>, signal?: AbortSignal): Promise<CloudUploadResponse> {
+  const response = await fetch("/api/media/cloud-upload", {
+    body: JSON.stringify(body),
+    headers: {
+      "content-type": "application/json"
+    },
+    method: "POST",
+    signal
+  });
+  const result = await cloudUploadResponseFromFetch(response);
+  if (!response.ok || result.error) {
+    throw new Error(result.error ?? "Cloud upload failed.");
+  }
+
+  return result;
+}
+
+function uploadFileToSignedUrl(
+  file: File,
+  upload: CloudUploadTarget,
+  onProgress: (progress: { loaded: number; total: number }) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    const abortUpload = () => request.abort();
+    const cleanup = () => signal?.removeEventListener("abort", abortUpload);
+    if (signal?.aborted) {
+      reject(new Error("Upload cancelled."));
+      return;
+    }
+
+    request.open(upload.method, upload.uploadUrl);
+    request.timeout = uploadRequestTimeoutMs;
+    for (const [header, value] of Object.entries(upload.headers)) {
+      request.setRequestHeader(header, value);
+    }
+    signal?.addEventListener("abort", abortUpload, { once: true });
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        onProgress({ loaded: event.loaded, total: event.total });
+      }
+    };
+    request.onload = () => {
+      cleanup();
+      if (request.status >= 200 && request.status < 300) {
+        resolve();
+        return;
+      }
+
+      reject(new Error(`S3 upload failed with HTTP ${request.status || "unknown"}.`));
+    };
+    request.onabort = () => {
+      cleanup();
+      reject(new Error("Upload cancelled."));
+    };
+    request.onerror = () => {
+      cleanup();
+      reject(new Error("Upload failed before S3 responded."));
+    };
+    request.ontimeout = () => {
+      cleanup();
+      reject(new Error("Upload timed out before S3 responded."));
+    };
+    request.send(file);
+  });
+}
+
+async function uploadCloudMediaFile(
+  file: File,
+  metadata: CloudUploadMetadata,
+  onProgress: (progress: { loaded: number; total: number }) => void,
+  signal?: AbortSignal
+): Promise<UploadResponse> {
+  const createResult = await postCloudUploadAction({
+    action: "create",
+    fileName: metadata.fileName,
+    folderId: metadata.folderId,
+    mimeType: metadata.mimeType,
+    sizeBytes: metadata.sizeBytes
+  }, signal);
+  if (createResult.skipped || createResult.item) {
+    return createResult;
+  }
+  if (!createResult.upload) {
+    throw new Error("Beam did not return a cloud upload target.");
+  }
+
+  await uploadFileToSignedUrl(file, createResult.upload, onProgress, signal);
+
+  return postCloudUploadAction({
+    action: "complete",
+    durationSeconds: metadata.durationSeconds,
+    fileName: metadata.fileName,
+    folderId: metadata.folderId,
+    mediaId: createResult.upload.mediaId,
+    mimeType: metadata.mimeType,
+    sizeBytes: metadata.sizeBytes,
+    sourceObjectKey: createResult.upload.sourceObjectKey,
+    tags: metadata.tags,
+    title: metadata.title
+  }, signal);
+}
+
 function isSkippedDirectoryEntry(file: File): boolean {
   const pathParts = uploadRelativePath(file).split(/[\\/]/).filter(Boolean);
   return pathParts.some((part) => part.startsWith(".") || part === "__MACOSX") || !isSupportedUploadFile(file.name);
@@ -411,7 +555,7 @@ function mediaSecondaryFileName(item: MediaItem): string | null {
 }
 
 function isPendingPreparation(item: MediaItem): boolean {
-  return item.status === "processing" && (item.cloudStatusDetail ?? "").toLowerCase().includes("pending");
+  return item.status === "processing" && (item.cloudStatusDetail ?? "").toLowerCase().includes("until you start");
 }
 
 function canRetryPreparation(item: MediaItem, mode: MediaStoreMode): boolean {
@@ -917,7 +1061,6 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
     }
 
     const abortController = new AbortController();
-    const deferPreparation = mode === "cloud" && uploadSource === "directory";
     uploadAbortRef.current = abortController;
     setIsUploading(true);
     setMessage(files.length === 1 ? `Uploading ${files[0].name}...` : `Uploading 1 of ${files.length}: ${files[0].name}...`);
@@ -926,6 +1069,7 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
     try {
       const uploadedItems: MediaItem[] = [];
       const failedUploads: UploadFailure[] = [];
+      const skippedExistingUploads: string[] = [];
 
       for (const [index, file] of files.entries()) {
         if (abortController.signal.aborted) {
@@ -933,13 +1077,6 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
         }
 
         const fileName = uploadRelativePath(file);
-        const formData = new FormData();
-        formData.append("media", file);
-        formData.append("title", files.length === 1 ? uploadTitle : "");
-        formData.append("tags", uploadTags);
-        formData.append("durationSeconds", durationSeconds);
-        formData.append("folderId", uploadFolderId);
-        formData.append("deferPreparation", deferPreparation ? "true" : "false");
 
         if (files.length > 1) {
           setMessage(`Uploading ${index + 1} of ${files.length}: ${fileName}...`);
@@ -947,7 +1084,7 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
 
         try {
           const uploadStartedAt = Date.now();
-          const result = await uploadMediaForm(formData, ({ loaded, total }) => {
+          const onProgress = ({ loaded, total }: { loaded: number; total: number }) => {
             const elapsedSeconds = Math.max((Date.now() - uploadStartedAt) / 1000, 0.1);
             const bytesPerSecond = loaded / elapsedSeconds;
             const remainingSeconds = bytesPerSecond > 0 ? (total - loaded) / bytesPerSecond : Number.NaN;
@@ -956,12 +1093,35 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
             setMessage(
               `${prefix}${fileName} ${percent}% (${formatBytes(loaded)} of ${formatBytes(total)}, about ${formatSeconds(remainingSeconds)} left).`
             );
-          }, abortController.signal);
+          };
+          const result = mode === "cloud"
+            ? await uploadCloudMediaFile(file, {
+                durationSeconds,
+                fileName: file.name,
+                folderId: uploadFolderId,
+                mimeType: file.type || "application/octet-stream",
+                sizeBytes: file.size,
+                tags: uploadTags,
+                title: files.length === 1 ? uploadTitle : ""
+              }, onProgress, abortController.signal)
+            : await (() => {
+                const formData = new FormData();
+                formData.append("media", file);
+                formData.append("title", files.length === 1 ? uploadTitle : "");
+                formData.append("tags", uploadTags);
+                formData.append("durationSeconds", durationSeconds);
+                formData.append("folderId", uploadFolderId);
+                return uploadMediaForm(formData, onProgress, abortController.signal);
+              })();
           if (result.error || !result.item) {
             throw new Error(result.error ?? `Upload failed for ${file.name}.`);
           }
 
-          uploadedItems.push(result.item);
+          if (result.skipped) {
+            skippedExistingUploads.push(fileName);
+          } else {
+            uploadedItems.push(result.item);
+          }
         } catch (error) {
           if (abortController.signal.aborted) {
             break;
@@ -978,10 +1138,13 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
 
       const wasCancelled = abortController.signal.aborted;
       const skippedSuffix = skippedCount > 0 ? ` ${skippedCount} unsupported file${skippedCount === 1 ? "" : "s"} skipped.` : "";
+      const duplicateSuffix = skippedExistingUploads.length > 0
+        ? ` ${skippedExistingUploads.length} existing file${skippedExistingUploads.length === 1 ? "" : "s"} skipped.`
+        : "";
       const failureSuffix = failedUploads.length > 0
         ? ` ${failedUploads.length} failed. First failure: ${failedUploads[0].fileName}: ${failedUploads[0].message}`
         : "";
-      if (uploadedItems.length === 0) {
+      if (uploadedItems.length === 0 && skippedExistingUploads.length === 0) {
         setMessage(wasCancelled ? `Upload stopped. No files were saved.${skippedSuffix}` : `No files were saved.${failureSuffix}${skippedSuffix}`);
         setMessageTone(wasCancelled ? "warning" : "error");
         return;
@@ -1002,18 +1165,18 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
       const needsReviewCount = uploadedItems.filter((item) => !playbackSafety(item).canUseInPlaylist).length;
       const preparationSuffix =
         mode === "cloud" && needsReviewCount > 0
-          ? deferPreparation
-            ? " Playback preparation is pending until you start it."
-            : " Playback preparation started automatically."
+          ? " Playback preparation started automatically."
           : "";
       const cancelSuffix = wasCancelled ? " Upload stopped before the full selection finished." : "";
       if (uploadedItems.length === 1) {
         const uploadedItem = uploadedItems[0];
-        setMessage(`${mediaPrimaryFileName(uploadedItem)} saved.${preparationSuffix}${cancelSuffix}${failureSuffix}${skippedSuffix}`);
+        setMessage(`${mediaPrimaryFileName(uploadedItem)} saved.${preparationSuffix}${cancelSuffix}${failureSuffix}${skippedSuffix}${duplicateSuffix}`);
+      } else if (uploadedItems.length > 1) {
+        setMessage(`${uploadedItems.length} files saved.${preparationSuffix}${cancelSuffix}${failureSuffix}${skippedSuffix}${duplicateSuffix}`);
       } else {
-        setMessage(`${uploadedItems.length} files saved.${preparationSuffix}${cancelSuffix}${failureSuffix}${skippedSuffix}`);
+        setMessage(`No new files saved.${cancelSuffix}${failureSuffix}${skippedSuffix}${duplicateSuffix}`);
       }
-      setMessageTone(needsReviewCount > 0 || failedUploads.length > 0 || wasCancelled ? "warning" : "success");
+      setMessageTone(needsReviewCount > 0 || failedUploads.length > 0 || wasCancelled || skippedExistingUploads.length > 0 ? "warning" : "success");
       setShowUpload(failedUploads.length > 0 || wasCancelled);
       startTransition(() => router.refresh());
     } catch (error) {
@@ -1676,9 +1839,9 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
                     )}
                     <p className="mt-3 break-words text-sm font-semibold text-zinc-950">{uploadSelection}</p>
                     <p className="mt-1 text-xs leading-5 text-zinc-600">
-                      Only MP4, MOV, JPG, and PNG files are uploaded from a folder.
+                      Unsupported formats are skipped when uploading a folder.
                       {mode === "cloud"
-                        ? " Keep this tab open while files upload; saved files remain in Beam even if a later file fails."
+                        ? " Keep this tab open while files upload; once each file is saved, playback preparation continues in the background."
                         : ""}
                     </p>
                   </div>
@@ -1760,7 +1923,7 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
                       {isUploading
                         ? message
                         : mode === "cloud"
-                          ? "Upload saves to AWS. Folder uploads save sources first; prepare playback copies after upload."
+                          ? "Upload sends files directly to private AWS storage. Beam prepares playback copies after each file is saved."
                           : "Upload saves locally. Publish sends media to screens later."}
                     </p>
                     <div className="flex shrink-0 flex-wrap gap-2">
