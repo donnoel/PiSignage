@@ -252,8 +252,11 @@ function processingFeedback(item: MediaItem, nowMs: number): string | null {
   const detail = item.cloudStatusDetail ?? "Preparing Pi-safe playback copy in AWS.";
   const stageSeconds = processingStageSeconds(item, nowMs);
   const stageText = stageSeconds === null ? "" : ` Stage elapsed ${formatSeconds(stageSeconds)}.`;
-  if (isPendingPreparation(item)) {
+  if (isManualPreparation(item)) {
     return `${detail}${stageText} Use Prepare when you are ready to make the Pi-safe playback copy.`;
+  }
+  if (isQueuedPreparation(item)) {
+    return `${detail}${stageText} Waiting for the preparation worker.`;
   }
 
   const estimateSeconds = estimatedPreparationSeconds(item);
@@ -508,10 +511,11 @@ function playbackSafety(item: MediaItem): PlaybackSafety {
   }
 
   if (item.status === "processing") {
+    const label = isActivePreparation(item) ? "Preparing" : "Queued";
     return {
       canUseInPlaylist: false,
       detail: item.cloudStatusDetail ?? "AWS has the source file, but a Pi-safe playback copy has not been prepared yet.",
-      label: isPendingPreparation(item) ? "Queued" : "Processing underway",
+      label,
       tone: "muted"
     };
   }
@@ -554,12 +558,36 @@ function mediaSecondaryFileName(item: MediaItem): string | null {
   return null;
 }
 
-function isPendingPreparation(item: MediaItem): boolean {
-  return item.status === "processing" && (item.cloudStatusDetail ?? "").toLowerCase().includes("until you start");
+function normalizedCloudStatusDetail(item: MediaItem): string {
+  return (item.cloudStatusDetail ?? "").trim().toLowerCase();
+}
+
+function isManualPreparation(item: MediaItem): boolean {
+  return item.status === "processing" && normalizedCloudStatusDetail(item).includes("until you start");
+}
+
+function isQueuedPreparation(item: MediaItem): boolean {
+  if (item.status !== "processing" || isManualPreparation(item)) {
+    return false;
+  }
+
+  const detail = normalizedCloudStatusDetail(item);
+  return (
+    detail.includes("queued") ||
+    detail.includes("pending pi-safe") ||
+    detail.includes("pending playback") ||
+    detail.includes("will resume")
+  );
+}
+
+function isActivePreparation(item: MediaItem): boolean {
+  return item.status === "processing" && !isManualPreparation(item) && !isQueuedPreparation(item);
 }
 
 function canRetryPreparation(item: MediaItem, mode: MediaStoreMode): boolean {
-  return mode === "cloud" && item.origin !== "playlist" && item.status !== "ready" && Boolean(item.sourceObjectKey);
+  return mode === "cloud" && item.origin !== "playlist" && Boolean(item.sourceObjectKey) && (
+    item.status === "failed" || isManualPreparation(item)
+  );
 }
 
 function messageClass(tone: "idle" | "success" | "warning" | "error"): string {
@@ -2130,7 +2158,7 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
                               disabled={isBusy}
                               className="min-h-9 shrink-0 rounded-md border border-teal-200 bg-white px-3 py-1.5 text-sm font-semibold text-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
                             >
-                              {preparing ? "Starting" : isPendingPreparation(item) ? "Prepare" : "Retry"}
+                              {preparing ? "Starting" : item.status === "failed" ? "Retry" : "Prepare"}
                             </button>
                           ) : null}
                           {canAdd ? (
