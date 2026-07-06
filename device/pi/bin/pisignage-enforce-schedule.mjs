@@ -175,16 +175,48 @@ function runDisplayCommand(command, args) {
   return false;
 }
 
+function wlrOutputEnabled() {
+  if (!commandExists("/usr/bin/wlr-randr")) {
+    return null;
+  }
+
+  const result = spawnSync("/usr/bin/wlr-randr", [], {
+    encoding: "utf8"
+  });
+  if (result.status !== 0) {
+    const message = result.stderr.trim() || result.stdout.trim() || "wlr-randr failed";
+    log(`display verification failed: ${message}`);
+    return null;
+  }
+
+  let inTargetOutput = false;
+  for (const line of result.stdout.split(/\r?\n/)) {
+    if (line.trim() === "") {
+      continue;
+    }
+    if (!line.startsWith(" ")) {
+      inTargetOutput = line.startsWith(`${displayOutput} `);
+      continue;
+    }
+    if (inTargetOutput && line.trim().startsWith("Enabled:")) {
+      return line.includes("yes");
+    }
+  }
+
+  log(`display verification failed: ${displayOutput} was not reported by wlr-randr`);
+  return false;
+}
+
 function setDisplayPower(power) {
   const enabled = power === "on";
   const attempts = [];
 
-  if (commandExists("/usr/bin/wlr-randr")) {
+  if (commandExists("/usr/bin/vcgencmd")) {
     attempts.push({
-      command: "/usr/bin/wlr-randr",
-      label: "wlr-randr",
-      offArgs: ["--output", displayOutput, "--off"],
-      onArgs: ["--output", displayOutput, "--on", "--mode", displayMode]
+      command: "/usr/bin/vcgencmd",
+      label: "vcgencmd",
+      offArgs: ["display_power", "0"],
+      onArgs: ["display_power", "1"]
     });
   }
 
@@ -197,22 +229,35 @@ function setDisplayPower(power) {
     });
   }
 
-  if (commandExists("/usr/bin/vcgencmd")) {
+  if (enabled && commandExists("/usr/bin/wlr-randr")) {
     attempts.push({
-      command: "/usr/bin/vcgencmd",
-      label: "vcgencmd",
-      offArgs: ["display_power", "0"],
-      onArgs: ["display_power", "1"]
+      command: "/usr/bin/wlr-randr",
+      label: "wlr-randr",
+      offArgs: [],
+      onArgs: ["--output", displayOutput, "--on", "--mode", displayMode]
     });
   }
 
   for (const attempt of attempts) {
     const args = enabled ? attempt.onArgs : attempt.offArgs;
+    if (args.length === 0) {
+      continue;
+    }
     if (runDisplayCommand(attempt.command, args)) {
+      if (enabled) {
+        const outputEnabled = wlrOutputEnabled();
+        if (outputEnabled === false) {
+          log(`${attempt.label} returned success, but ${displayOutput} is still disabled`);
+          continue;
+        }
+      }
+
       return {
         ok: true,
         action: enabled ? "display-on" : "display-off",
-        detail: `${attempt.label} set ${displayOutput} ${power}.`
+        detail: `${attempt.label} set ${displayOutput} ${power}.${
+          enabled ? "" : " HDMI output stayed attached to the display session."
+        }`
       };
     }
   }

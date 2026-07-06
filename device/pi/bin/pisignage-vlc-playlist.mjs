@@ -900,7 +900,7 @@ async function configureDisplay() {
   }
 
   try {
-    await runCommand("/usr/bin/wlr-randr", ["--output", displayOutput, "--mode", displayMode]);
+    await runCommand("/usr/bin/wlr-randr", ["--output", displayOutput, "--on", "--mode", displayMode]);
     log(`display set to ${displayOutput} ${displayMode}`);
     return true;
   } catch (error) {

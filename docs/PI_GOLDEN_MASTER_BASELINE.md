@@ -1,6 +1,6 @@
 # PI Golden Master Baseline
 
-Last updated: 2026-07-04 09:11 PDT
+Last updated: 2026-07-06 08:33 PDT
 
 ## Baseline Rule
 
@@ -55,7 +55,7 @@ Important packaging note: `device-agent/dist/index.js` is an ignored build artif
 
 - Repo: `/Users/donnoel/Development/PiSignage`
 - Branch: `main`
-- HEAD at capture: `2059255 Use one audio toggle on screens`
+- HEAD before this baseline update: `5f17bf5 Use PI golden master for reset deployment`
 - Dashboard URL: `https://8yyptjawdv.us-west-2.awsapprunner.com`
 
 Recent changes incorporated into this baseline:
@@ -65,6 +65,10 @@ Recent changes incorporated into this baseline:
 - Remote audio mute/unmute command support
 - Single audio toggle UI behavior on Screens
 - Cloud schedule delivery to Pi agents
+- Schedule display recovery hardening:
+  - after-hours schedule enforcement powers the display down without disabling `HDMI-A-1` in the Wayland session
+  - open-hours schedule enforcement verifies `HDMI-A-1` is still enabled before reporting display-on success
+  - VLC startup explicitly re-enables `HDMI-A-1` before applying the display mode
 - Cloud media upload/prep hardening and S3 upload path
 - C5 emergency recovery cleanup after failed HDMI rescue:
   - removed stray `donnoel` line from `/boot/firmware/cmdline.txt`
@@ -76,9 +80,9 @@ Recent changes incorporated into this baseline:
 
 - Hostname: `C5`
 - Reachable host: `C5.local`
-- Wired IP at capture: `192.168.100.34` on `eth0`
-- Wi-Fi IP at capture: `192.168.100.26` on `wlan0`
-- Default route: `192.168.100.1` via `eth0`, with `wlan0` as secondary route
+- Wired IP at capture: not connected
+- Wi-Fi IP at capture: `192.168.100.27` on `wlan0`
+- Default route: `192.168.100.1` via `wlan0`
 - SSH user: `donnoel`
 - Cloud device ID: `device-c5-aws-pilot`
 - Cloud API URL: `https://8yyptjawdv.us-west-2.awsapprunner.com`
@@ -216,10 +220,20 @@ Current schedule facts at capture:
 - state: `on`
 - action: `start`
 - active schedule name: `Customer 5 hours`
-- detail: `Schedule window is active. wlr-randr set HDMI-A-1 on.`
+- detail: `Schedule window is active. vcgencmd set HDMI-A-1 on.`
 - display action: `display-on`
 - display control ok: `true`
 - display output: `HDMI-A-1`
+
+Controlled schedule cycle validation on 2026-07-06:
+
+- forced after-hours evaluation stopped `pisignage-vlc.service`
+- after-hours display action used `vcgencmd display_power 0`
+- `HDMI-A-1` stayed attached and enabled in `wlr-randr`
+- forced open-hours evaluation used `vcgencmd display_power 1`
+- `HDMI-A-1` returned at `1920x1080@60.000000`
+- `pisignage-vlc.service`, `pisignage-schedule.timer`, and `pisignage-device-agent.service` were active after the cycle
+- player status returned to `playing`
 
 ## Cache And Playlist Baseline
 
@@ -255,14 +269,14 @@ Managed Pi scripts:
 ```text
 75104faff5c772e90230edc1a9a560549f131ab63e2bb048309958aa70c30ba1  pisignage-call-home-now.sh
 714c3dbf585980c3cb8829f7f88b280f0bb1e6026b3890b41b4153434eb4d577  pisignage-configure-wifi.sh
-62b80a17a594556c1bfd3fa8095d7596179ad9a35ea77cb9e102d46e660bb0c4  pisignage-enforce-schedule.mjs
+b22ded2b2647a661d9a0a6f553e194a677dfe717a4219659647359b87083418d  pisignage-enforce-schedule.mjs
 c577963b8233b225a663319fb95c0411015cf85c5a1635dc2e5e76801cd92a08  pisignage-hide-desktop.sh
 d5b0d4e750e068a8e7666ddb3d26014c9bb0b3e70cfe46fd3789a299a5cc3578  pisignage-install-runtime.sh
 76e47c87c4afb21b8d682c4a58542aae072328fc0789b9b7492b788bd5c4f56d  pisignage-provision-device.sh
 e9173990a980d64690f542d4c9d5bfab8e7b376f32cc6ee667569cd4d4254784  pisignage-reset-device.sh
 bc01cf6dc91e857da42d753361113c7cf979c6f9486e391ba86e38c64b6e71f0  pisignage-serve-player.mjs
 5ad55c8d2fb4a027693113f8c9bd2ebd92e83b1619e54468f8e997030d7a52b0  pisignage-start-display.sh
-fedafe95d4405cb2edfce5d28585b593f9b4f3a763f9a3936dd0d0e21ab87d2b  pisignage-vlc-playlist.mjs
+f3920f726bea4f0ee1a5e1553b01b96697f0d76b41da855960389c119a82ba1d  pisignage-vlc-playlist.mjs
 ```
 
 Managed user services:
@@ -313,7 +327,7 @@ sha256sum /home/donnoel/PiSignage/device-agent/dist/index.js
 
 ## C1-C4 And Future Pi Rollout Note
 
-C1-C4 were not reachable from the study at this capture time. They still need to be compared against and, where appropriate, updated to this PI golden master baseline when back at the studio.
+C1-C4 were not reachable from the study at this capture time. They still need to be compared against and, where appropriate, updated to this PI golden master baseline when back at the studio. In particular, C1-C4 need the 2026-07-06 schedule display recovery hardening before schedule-off/schedule-on behavior can be considered fleet-consistent.
 
 For C1-C4 or any new Beam Pi, always reference this file first. Do not use a previous chat transcript, stale IP address, or old C5 snapshot as the appliance source of truth.
 
