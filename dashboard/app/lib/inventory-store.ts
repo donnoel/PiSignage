@@ -103,6 +103,7 @@ export type DeviceCommand = DeviceActionCommand | DeviceDiagnosticsCommand | Dev
 
 const dynamoDb = new DynamoDBClient({});
 const maxDiagnosticsResultLength = 16_000;
+const maxActionResultLength = 240_000;
 
 function trimmedEnv(name: string): string | null {
   const value = process.env[name]?.trim();
@@ -291,6 +292,7 @@ function actionTypeOrNull(value: AttributeValue | undefined): DeviceActionType |
     type === "reboot-device" ||
     type === "restart-playback" ||
     type === "run-recovery" ||
+    type === "screen-snapshot" ||
     type === "unmute-audio"
     ? type
     : null;
@@ -335,6 +337,7 @@ function deviceToItem(device: DeviceRecord): Record<string, AttributeValue> {
     actionCommandId: nullableString(normalizedDevice.actionCommandId),
     actionFinishedAt: nullableString(normalizedDevice.actionFinishedAt),
     actionRequestedAt: nullableString(normalizedDevice.actionRequestedAt),
+    actionResult: nullableString(normalizedDevice.actionResult),
     actionStartedAt: nullableString(normalizedDevice.actionStartedAt),
     actionStatus: nullableString(normalizedDevice.actionStatus),
     actionStatusMessage: nullableString(normalizedDevice.actionStatusMessage),
@@ -403,6 +406,7 @@ function deviceFromItem(item: Record<string, AttributeValue>): DeviceRecord {
     actionCommandId: stringOrNullAttribute(item.actionCommandId),
     actionFinishedAt: stringOrNullAttribute(item.actionFinishedAt),
     actionRequestedAt: stringOrNullAttribute(item.actionRequestedAt),
+    actionResult: stringOrNullAttribute(item.actionResult),
     actionStartedAt: stringOrNullAttribute(item.actionStartedAt),
     actionStatus: actionStatusOrNull(item.actionStatus),
     actionStatusMessage: stringOrNullAttribute(item.actionStatusMessage),
@@ -1045,6 +1049,9 @@ function actionLabel(type: DeviceActionType): string {
   if (type === "run-recovery") {
     return "Full recovery";
   }
+  if (type === "screen-snapshot") {
+    return "Snapshot";
+  }
   return "Reboot";
 }
 
@@ -1173,6 +1180,21 @@ function cappedDiagnosticsResult(value: string | null | undefined): string | nul
     : trimmed;
 }
 
+function cappedActionResult(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed.length > maxActionResultLength
+    ? JSON.stringify({
+        kind: "action-result-too-large",
+        message: "The Pi returned a result that was too large for Beam to store.",
+        originalLength: trimmed.length
+      })
+    : trimmed;
+}
+
 export async function updateDeviceDiagnosticsStatus(input: {
   commandId: string;
   deviceId: string;
@@ -1231,6 +1253,7 @@ export async function updateDeviceActionStatus(input: {
   deviceId: string;
   finishedAt?: string | null;
   message?: string | null;
+  result?: string | null;
   startedAt?: string | null;
   status: DeviceActionStatus;
 }): Promise<DeviceRecord> {
@@ -1255,6 +1278,7 @@ export async function updateDeviceActionStatus(input: {
   const nextDevice: DeviceRecord = {
     ...device,
     actionFinishedAt: input.finishedAt ?? (finished ? timestamp : null),
+    actionResult: cappedActionResult(input.result) ?? device.actionResult ?? null,
     actionStartedAt: input.startedAt ?? device.actionStartedAt ?? (input.status === "running" ? timestamp : null),
     actionStatus: input.status,
     actionStatusMessage: input.message?.trim() || (

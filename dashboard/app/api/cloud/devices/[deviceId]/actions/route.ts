@@ -23,6 +23,7 @@ function actionType(value: unknown): DeviceActionType | null {
     value === "reboot-device" ||
     value === "restart-playback" ||
     value === "run-recovery" ||
+    value === "screen-snapshot" ||
     value === "unmute-audio"
     ? value
     : null;

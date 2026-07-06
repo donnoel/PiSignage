@@ -13,6 +13,7 @@ type ActionResultRequest = {
   commandId?: unknown;
   finishedAt?: unknown;
   message?: unknown;
+  result?: unknown;
   startedAt?: unknown;
   status?: unknown;
 };
@@ -28,6 +29,18 @@ function actionStatus(value: unknown): DeviceActionStatus | null {
 
 function optionalString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function optionalResultString(value: unknown): string | null {
+  if (typeof value === "string") {
+    return optionalString(value);
+  }
+
+  if (value && typeof value === "object") {
+    return JSON.stringify(value);
+  }
+
+  return null;
 }
 
 export async function POST(request: Request, context: RouteContext) {
@@ -46,6 +59,7 @@ export async function POST(request: Request, context: RouteContext) {
       deviceId,
       finishedAt: optionalString(body.finishedAt),
       message: optionalString(body.message),
+      result: optionalResultString(body.result),
       startedAt: optionalString(body.startedAt),
       status
     });

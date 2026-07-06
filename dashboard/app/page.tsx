@@ -36,6 +36,7 @@ import { LocalPlaylistSequence } from "./local-playlist-sequence";
 import { LocalPlaylistTimeline } from "./local-playlist-timeline";
 import { SchedulingPanel } from "./scheduling-panel";
 import { ScreenFocusSelect } from "./screen-focus-select";
+import { ScreenSnapshotButton } from "./screen-snapshot-button";
 import { ThemeCycleButton } from "./theme-cycle-button";
 import { beamThemeCookieName, normalizeBeamThemeId } from "./theme";
 import { TroubleshootingPanel } from "./troubleshooting-panel";
@@ -434,6 +435,11 @@ function formatStatusAge(timestamp: string | null | undefined): string {
   }
 
   return `${Math.round(ageMinutes / 60)}h ago`;
+}
+
+function formatRelativeTime(timestamp: string | null | undefined): string {
+  const age = formatStatusAge(timestamp);
+  return age === "Not reported" || age === "Unknown" ? formatTimestamp(timestamp) : age;
 }
 
 function formatElapsedSince(timestamp: string | null | undefined): string | null {
@@ -1180,10 +1186,31 @@ type AttentionItem = {
   tone: "good" | "warn" | "muted";
 };
 
+type ScreenSnapshotResult = {
+  capturedAt: string;
+  currentAssetId: string | null;
+  dataUrl: string;
+  deviceId: string;
+  displayMode: string | null;
+  displayOutput: string | null;
+  height: number;
+  hostname: string | null;
+  kind: "screen-snapshot";
+  localIpAddress: string | null;
+  mimeType: "image/jpeg";
+  playbackState: string | null;
+  sizeBytes: number;
+  width: number;
+};
+
 type FleetCommandRow = {
   assignedPlaylistAssetCount: number | null;
   assignedPlaylistDuration: string | null;
   assignedPlaylistName: string;
+  actionResult: string | null;
+  actionStatus: DeviceRecord["actionStatus"];
+  actionStatusMessage: string | null;
+  actionType: DeviceRecord["actionType"];
   currentItem: CurrentPlaybackItem | null;
   detail: string;
   group: string;
@@ -1329,6 +1356,10 @@ function fleetCommandRows({
         assignedPlaylistAssetCount: assignedPlaylist?.assets.length ?? null,
         assignedPlaylistDuration: assignedPlaylist ? formatDuration(assignedPlaylist.assets) : null,
         assignedPlaylistName: assignedPlaylist?.name ?? "No playlist assigned",
+        actionResult: device.actionResult ?? null,
+        actionStatus: device.actionStatus ?? null,
+        actionStatusMessage: device.actionStatusMessage ?? null,
+        actionType: device.actionType ?? null,
         currentItem,
         detail,
         group: linkedScreen?.group ?? device.group,
@@ -1362,6 +1393,40 @@ function scalarSearchParam(value: string | string[] | undefined): string | null 
 
 function screenLiveReportUrl(deviceId: string | null | undefined): string | null {
   return deviceId ? `/screen-player/${encodeURIComponent(deviceId)}` : null;
+}
+
+function parseScreenSnapshotResult(value: string | null | undefined): ScreenSnapshotResult | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Partial<ScreenSnapshotResult>;
+    return parsed.kind === "screen-snapshot" &&
+      typeof parsed.capturedAt === "string" &&
+      typeof parsed.dataUrl === "string" &&
+      parsed.dataUrl.startsWith("data:image/jpeg;base64,") &&
+      typeof parsed.deviceId === "string"
+      ? {
+          capturedAt: parsed.capturedAt,
+          currentAssetId: typeof parsed.currentAssetId === "string" ? parsed.currentAssetId : null,
+          dataUrl: parsed.dataUrl,
+          deviceId: parsed.deviceId,
+          displayMode: typeof parsed.displayMode === "string" ? parsed.displayMode : null,
+          displayOutput: typeof parsed.displayOutput === "string" ? parsed.displayOutput : null,
+          height: typeof parsed.height === "number" ? parsed.height : 540,
+          hostname: typeof parsed.hostname === "string" ? parsed.hostname : null,
+          kind: "screen-snapshot",
+          localIpAddress: typeof parsed.localIpAddress === "string" ? parsed.localIpAddress : null,
+          mimeType: "image/jpeg",
+          playbackState: typeof parsed.playbackState === "string" ? parsed.playbackState : null,
+          sizeBytes: typeof parsed.sizeBytes === "number" ? parsed.sizeBytes : 0,
+          width: typeof parsed.width === "number" ? parsed.width : 960
+        }
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
@@ -1812,6 +1877,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     : [focusedLiveSummary, focusedScreenIsLive ? "Playback unknown" : "No live report"].join(" · ");
   const previewEyebrow = focusedScheduledClosed ? "Closed now" : focusedScreenIsLive && focusedScreenReachable ? "Showing now" : "Screen status";
   const focusedLiveReportUrl = focusedScreen ? screenLiveReportUrl(focusedScreen.id) : null;
+  const focusedSnapshot = parseScreenSnapshotResult(focusedScreen?.actionResult);
+  const focusedSnapshotPending = focusedScreen?.actionType === "screen-snapshot" &&
+    (focusedScreen.actionStatus === "pending" || focusedScreen.actionStatus === "running");
+  const focusedSnapshotStatus = focusedScreen?.actionType === "screen-snapshot"
+    ? focusedScreen.actionStatusMessage
+    : null;
+  const focusedActionBusy = focusedScreen?.actionStatus === "pending" || focusedScreen?.actionStatus === "running";
   const screenFocusOptions = fleetRows.map((row) => ({
     location: row.location,
     screenId: row.screenId,
@@ -2050,17 +2122,23 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                               <p className="beam-preview-overline text-sm font-semibold uppercase">{previewEyebrow}</p>
                               <p className="mt-2 break-words text-3xl font-black leading-tight sm:text-4xl">{focusedScreenTitle}</p>
                             </div>
-                            {focusedLiveReportUrl ? (
-                              <a
-                                href={focusedLiveReportUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                title="Open the selected screen's current video"
-                                className="beam-preview-button inline-flex min-h-10 shrink-0 items-center justify-center rounded-md px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2"
-                              >
-                                Current video
-                              </a>
-                            ) : null}
+                            <div className="flex flex-wrap items-start justify-end gap-2">
+                              {focusedLiveReportUrl ? (
+                                <a
+                                  href={focusedLiveReportUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title="Open the selected screen's current video"
+                                  className="beam-preview-button inline-flex min-h-10 shrink-0 items-center justify-center rounded-md px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2"
+                                >
+                                  Current video
+                                </a>
+                              ) : null}
+                              <ScreenSnapshotButton
+                                deviceId={focusedScreen?.id ?? null}
+                                disabled={focusedActionBusy}
+                              />
+                            </div>
                           </div>
                           <p className="beam-preview-detail mt-3 max-w-sm text-sm leading-6">{focusedScreenDetail}</p>
                         </div>
@@ -2085,6 +2163,41 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                       </div>
                       <div className="absolute bottom-3 left-1/2 h-2 w-24 -translate-x-1/2 rounded-full bg-white/30" aria-hidden="true" />
                     </div>
+                  </div>
+                  <div className="mt-4 rounded-lg border border-zinc-200 bg-white p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <h3 className="text-sm font-semibold uppercase text-zinc-600">Latest snapshot</h3>
+                        <p className="mt-1 text-sm text-zinc-600">
+                          {focusedSnapshotPending
+                            ? focusedSnapshotStatus ?? "Snapshot is queued. The Pi will capture the display on its next cloud check-in."
+                            : focusedSnapshot
+                              ? `Captured ${formatRelativeTime(focusedSnapshot.capturedAt)} from ${focusedSnapshot.hostname ?? focusedSnapshot.deviceId}.`
+                              : "No snapshot has been captured for this screen yet."}
+                        </p>
+                      </div>
+                      {focusedSnapshot ? (
+                        <StatusPill
+                          label={focusedSnapshotPending ? "Updating" : "Captured"}
+                          tone={focusedSnapshotPending ? "warn" : "good"}
+                        />
+                      ) : null}
+                    </div>
+                    {focusedSnapshot ? (
+                      <figure className="mt-3 overflow-hidden rounded-md border border-zinc-200 bg-zinc-950">
+                        <img
+                          src={focusedSnapshot.dataUrl}
+                          alt={`Snapshot captured from ${focusedSnapshot.hostname ?? focusedSnapshot.deviceId}`}
+                          className="block aspect-video w-full object-contain"
+                          width={focusedSnapshot.width}
+                          height={focusedSnapshot.height}
+                        />
+                        <figcaption className="grid gap-1 border-t border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-300 sm:grid-cols-2">
+                          <span>{focusedSnapshot.displayOutput ?? "Display"} · {focusedSnapshot.displayMode ?? "mode unknown"}</span>
+                          <span className="sm:text-right">{Math.round(focusedSnapshot.sizeBytes / 1024)} KB preview</span>
+                        </figcaption>
+                      </figure>
+                    ) : null}
                   </div>
                 </div>
               </div>

@@ -63,6 +63,10 @@ Recent changes incorporated into this baseline:
 - Remote diagnostics command plane
 - Remote recovery command plane
 - Remote audio mute/unmute command support
+- Remote screen snapshot command prototype:
+  - captures the Pi display output with `grim`
+  - compresses a small JPEG preview with `ffmpeg`
+  - returns the result through the Beam command plane for operator-requested evidence
 - Single audio toggle UI behavior on Screens
 - Cloud schedule delivery to Pi agents
 - Schedule-aware cloud heartbeat fields:
@@ -320,10 +324,10 @@ ae7252d0fc886f5fc134c8e4f7a677b01ee391371cec79583b0077f4465755ec  pisignage-play
 Compiled device agent:
 
 ```text
-ae4bd8badb0157d77f22fcebf9b5fc8d07fd123ddf3015b49b8b51d1531a28d8  device-agent/dist/index.js
+bfa8c5f76bf1d2790e7e3ed0180daadb79d06a4ef7796a56f3a18aec2e6f044a  device-agent/dist/index.js
 ```
 
-This hash supersedes the 2026-07-03 baseline hash and includes the current command-plane behavior deployed to C5, including schedule-aware heartbeat reporting and the remote Open store action.
+This hash supersedes the 2026-07-06 schedule baseline hash and includes the current command-plane behavior deployed to C5, including schedule-aware heartbeat reporting, the remote Open store action, and the remote screen snapshot prototype.
 
 ## Required Baseline Update Workflow
 

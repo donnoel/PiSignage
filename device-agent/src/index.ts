@@ -47,6 +47,8 @@ type Heartbeat = {
 
 type PlayerStatus = {
   currentAssetId?: string | null;
+  displayMode?: string | null;
+  displayOutput?: string | null;
   playlistId?: string;
   playlistVersion?: unknown;
   state?: string;
@@ -116,7 +118,7 @@ type DeviceCommand = {
   requestedAt: string;
   status: "pending" | "running";
   statusUrl?: string;
-  type: "collect-diagnostics" | "mute-audio" | "open-screen" | "reboot-device" | "reset-device" | "restart-playback" | "run-recovery" | "unmute-audio";
+  type: "collect-diagnostics" | "mute-audio" | "open-screen" | "reboot-device" | "reset-device" | "restart-playback" | "run-recovery" | "screen-snapshot" | "unmute-audio";
 };
 
 type ScheduleStatus = {
@@ -135,9 +137,27 @@ type DiagnosticProbe = {
   ok: boolean;
 };
 
+type ScreenSnapshotResult = {
+  capturedAt: string;
+  currentAssetId: string | null;
+  dataUrl: string;
+  deviceId: string;
+  displayMode: string | null;
+  displayOutput: string | null;
+  height: number;
+  hostname: string | null;
+  kind: "screen-snapshot";
+  localIpAddress: string | null;
+  mimeType: "image/jpeg";
+  playbackState: string | null;
+  sizeBytes: number;
+  width: number;
+};
+
 const appVersion = "0.1.0";
 const currentPlaylistFileName = "current.json";
 const currentReleaseFileName = "current-release.json";
+const maxSnapshotBytes = 120_000;
 const execFileAsync = promisify(execFile);
 let stopping = false;
 
@@ -868,6 +888,79 @@ async function unmuteVlcAudio(): Promise<string> {
   return "Audio unmuted. VLC was restarted with audio enabled for this Pi.";
 }
 
+async function convertSnapshotToJpeg(inputPath: string, outputPath: string, width: number, quality: number): Promise<void> {
+  await execFileAsync("ffmpeg", [
+    "-y",
+    "-i",
+    inputPath,
+    "-frames:v",
+    "1",
+    "-vf",
+    `scale=${width}:-2`,
+    "-q:v",
+    String(quality),
+    outputPath
+  ], {
+    maxBuffer: 128 * 1024,
+    timeout: 30_000
+  });
+}
+
+async function captureScreenSnapshot(cacheDirectory: string): Promise<ScreenSnapshotResult> {
+  const capturedAt = new Date().toISOString();
+  const snapshotDirectory = path.join(cacheDirectory, "snapshots");
+  const basePath = path.join(snapshotDirectory, `snapshot-${Date.now()}`);
+  const pngPath = `${basePath}.png`;
+  const jpegPath = `${basePath}.jpg`;
+  const compactJpegPath = `${basePath}-compact.jpg`;
+  const runtimeDirectory = process.env.XDG_RUNTIME_DIR?.trim() || `/run/user/${typeof process.getuid === "function" ? process.getuid() : 1000}`;
+  const waylandDisplay = process.env.WAYLAND_DISPLAY?.trim() || "wayland-0";
+
+  await fs.mkdir(snapshotDirectory, { recursive: true });
+  await execFileAsync("grim", [pngPath], {
+    env: {
+      ...process.env,
+      XDG_RUNTIME_DIR: runtimeDirectory,
+      WAYLAND_DISPLAY: waylandDisplay
+    },
+    timeout: 20_000
+  });
+
+  await convertSnapshotToJpeg(pngPath, jpegPath, 960, 6);
+  let imageBuffer = await fs.readFile(jpegPath);
+  let width = 960;
+
+  if (imageBuffer.byteLength > maxSnapshotBytes) {
+    await convertSnapshotToJpeg(pngPath, compactJpegPath, 640, 8);
+    imageBuffer = await fs.readFile(compactJpegPath);
+    width = 640;
+  }
+
+  await fs.rm(pngPath, { force: true });
+
+  if (imageBuffer.byteLength > maxSnapshotBytes) {
+    throw new Error(`Snapshot was ${imageBuffer.byteLength} bytes after compression, above the ${maxSnapshotBytes} byte prototype limit.`);
+  }
+
+  const playerStatus = await readPlayerStatus();
+  return {
+    capturedAt,
+    currentAssetId: playerStatus?.currentAssetId ?? null,
+    dataUrl: `data:image/jpeg;base64,${imageBuffer.toString("base64")}`,
+    deviceId: configuredDeviceId(),
+    displayMode: playerStatus?.displayMode ?? null,
+    displayOutput: playerStatus?.displayOutput ?? null,
+    height: Math.round(width * 9 / 16),
+    hostname: os.hostname() || null,
+    kind: "screen-snapshot",
+    localIpAddress: localIpAddress(),
+    mimeType: "image/jpeg",
+    playbackState: playerStatus?.state ?? null,
+    sizeBytes: imageBuffer.byteLength,
+    width
+  };
+}
+
 async function runRecoveryStep(title: string, command: string, timeoutMs = 30_000): Promise<string> {
   try {
     const { stdout, stderr } = await execFileAsync("/bin/sh", ["-lc", command], {
@@ -940,6 +1033,9 @@ function actionRunningMessage(type: DeviceCommand["type"]): string {
   if (type === "run-recovery") {
     return "Full recovery is running on the Pi.";
   }
+  if (type === "screen-snapshot") {
+    return "Snapshot is running on the Pi.";
+  }
   if (type === "reboot-device") {
     return "Reboot is running on the Pi.";
   }
@@ -967,8 +1063,13 @@ async function runActionCommand(root: string, cacheDirectory: string, command: D
   });
 
   try {
+    const snapshotResult = command.type === "screen-snapshot"
+      ? await captureScreenSnapshot(cacheDirectory)
+      : null;
     const message =
-      command.type === "mute-audio"
+      snapshotResult
+        ? "Snapshot captured from the Pi display output."
+      : command.type === "mute-audio"
         ? await muteVlcAudio()
         : command.type === "unmute-audio"
         ? await unmuteVlcAudio()
@@ -985,6 +1086,7 @@ async function runActionCommand(root: string, cacheDirectory: string, command: D
       finishedAt,
       message,
       requestedAt: command.requestedAt,
+      result: snapshotResult,
       startedAt,
       status: "succeeded",
       type: command.type
@@ -992,6 +1094,7 @@ async function runActionCommand(root: string, cacheDirectory: string, command: D
     await postCommandStatus(command, "succeeded", {
       finishedAt,
       message,
+      result: snapshotResult,
       startedAt
     });
     log("info", "cloud.command.action.complete", {
@@ -1215,6 +1318,7 @@ async function fetchCloudPlaylist(cacheDirectory: string): Promise<{
       body.command.type === "unmute-audio" ||
       body.command.type === "open-screen" ||
       body.command.type === "run-recovery" ||
+      body.command.type === "screen-snapshot" ||
       body.command.type === "reboot-device"
     ) {
       await runActionCommand(repoRoot(), cacheDirectory, body.command);

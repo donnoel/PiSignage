@@ -28,7 +28,7 @@ type DeviceRecord = {
   actionStartedAt?: string | null;
   actionStatus?: "failed" | "pending" | "running" | "succeeded" | null;
   actionStatusMessage?: string | null;
-  actionType?: "mute-audio" | "open-screen" | "reboot-device" | "restart-playback" | "run-recovery" | "unmute-audio" | null;
+  actionType?: "mute-audio" | "open-screen" | "reboot-device" | "restart-playback" | "run-recovery" | "screen-snapshot" | "unmute-audio" | null;
   actionUpdatedAt?: string | null;
   diagnosticsFinishedAt?: string | null;
   diagnosticsRequestedAt?: string | null;
@@ -615,6 +615,9 @@ function actionName(type: DeviceRecord["actionType"]): string {
   if (type === "run-recovery") {
     return "Recovery check";
   }
+  if (type === "screen-snapshot") {
+    return "Snapshot";
+  }
   if (type === "reboot-device") {
     return "Reboot";
   }
@@ -696,6 +699,18 @@ function summarizedActionDetail(device: DeviceRecord, fallback: string): string 
     }
     if (device.actionStatus === "succeeded") {
       return "Recovery check completed. VLC was restarted, service state was verified, and playback/cache/health evidence was collected.";
+    }
+  }
+
+  if (device.actionType === "screen-snapshot") {
+    if (device.actionStatus === "pending") {
+      return "Snapshot is queued. The Pi will capture it on its next cloud check-in.";
+    }
+    if (device.actionStatus === "running") {
+      return "Capturing a snapshot from the Pi display output.";
+    }
+    if (device.actionStatus === "succeeded") {
+      return "Snapshot captured from the Pi display output.";
     }
   }
 
