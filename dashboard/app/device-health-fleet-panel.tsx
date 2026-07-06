@@ -28,7 +28,7 @@ type DeviceRecord = {
   actionStartedAt?: string | null;
   actionStatus?: "failed" | "pending" | "running" | "succeeded" | null;
   actionStatusMessage?: string | null;
-  actionType?: "mute-audio" | "reboot-device" | "restart-playback" | "run-recovery" | "unmute-audio" | null;
+  actionType?: "mute-audio" | "open-screen" | "reboot-device" | "restart-playback" | "run-recovery" | "unmute-audio" | null;
   actionUpdatedAt?: string | null;
   diagnosticsFinishedAt?: string | null;
   diagnosticsRequestedAt?: string | null;
@@ -72,6 +72,9 @@ type DeviceLiveStatus = {
     updatedAt?: string;
   } | null;
   reachable: boolean;
+  scheduleDetail: string | null;
+  scheduleOverrideExpiresAt: string | null;
+  scheduleState: string | null;
   stale: boolean;
   timestampLabel: string;
 };
@@ -123,6 +126,9 @@ type RowState = {
   resetTone: Tone;
   reportedAddress: string | null;
   savedAddress: string;
+  scheduleDetail: string | null;
+  scheduleOverrideExpiresAt: string | null;
+  scheduleState: string | null;
   syncDetail: string;
   syncLabel: string;
   syncTone: Tone;
@@ -464,6 +470,7 @@ function rowActionFor(input: {
   isOffline: boolean;
   isStale: boolean;
   rowPlaybackHealthy: boolean;
+  scheduledClosed: boolean;
   screenLinked: boolean;
   syncLabel: string;
   syncTone: Tone;
@@ -513,6 +520,14 @@ function rowActionFor(input: {
       detail: "Refresh status or inspect diagnostics before recovery.",
       label: "Refresh status",
       tone: "warn"
+    };
+  }
+
+  if (input.scheduledClosed) {
+    return {
+      detail: "The screen is intentionally off outside scheduled hours.",
+      label: "Closed by schedule",
+      tone: "muted"
     };
   }
 
@@ -591,6 +606,9 @@ function actionName(type: DeviceRecord["actionType"]): string {
   if (type === "unmute-audio") {
     return "Unmute audio";
   }
+  if (type === "open-screen") {
+    return "Open store";
+  }
   if (type === "restart-playback") {
     return "Restart playback";
   }
@@ -642,6 +660,18 @@ function summarizedActionDetail(device: DeviceRecord, fallback: string): string 
     }
     if (device.actionStatus === "succeeded") {
       return "Audio unmute completed and VLC was restarted with audio enabled.";
+    }
+  }
+
+  if (device.actionType === "open-screen") {
+    if (device.actionStatus === "pending") {
+      return "Open store is queued. The Pi will run it on its next cloud check-in.";
+    }
+    if (device.actionStatus === "running") {
+      return "Opening the screen outside scheduled hours.";
+    }
+    if (device.actionStatus === "succeeded") {
+      return "Open store completed. The screen will return to schedule control at the next scheduled close.";
     }
   }
 
@@ -872,7 +902,7 @@ export function DeviceHealthFleetPanel({
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [publishFeedbackByDeviceId, setPublishFeedbackByDeviceId] = useState<Record<string, PublishFeedback>>({});
-  const [busyAction, setBusyAction] = useState<"assign" | "diagnostics" | "inventory" | "mute" | "publish" | "reboot" | "recover" | "reset" | "restart" | "unmute" | null>(null);
+  const [busyAction, setBusyAction] = useState<"assign" | "diagnostics" | "inventory" | "mute" | "open" | "publish" | "reboot" | "recover" | "reset" | "restart" | "unmute" | null>(null);
   const [busyDeviceId, setBusyDeviceId] = useState<string | null>(null);
   const [rebootWatch, setRebootWatch] = useState<{
     baselineStatusUpdatedAt: string | null;
@@ -920,6 +950,8 @@ export function DeviceHealthFleetPanel({
         const reachable = status?.reachable ?? false;
         const rowPlaybackHealthy = status?.playbackHealthy ?? false;
         const rowPlaybackLabel = status?.playbackLabel ?? "unknown";
+        const scheduledClosed = status?.scheduleState === "off";
+        const scheduleOverrideOpen = status?.scheduleState === "override-open";
         const deploymentReady = rowPlaybackLabel === "Ready for deployment";
         const rowStale = status?.stale ?? false;
         const reportedPlaylistId = status?.playerStatus?.playlistId ?? null;
@@ -980,9 +1012,15 @@ export function DeviceHealthFleetPanel({
           playbackLabel = "Not available";
           playbackDetail = "Playback may continue locally, but Beam cannot verify it until the screen is reachable.";
           playbackTone = "warn";
+        } else if (isLive && scheduledClosed) {
+          playbackLabel = "Closed";
+          playbackDetail = status?.scheduleDetail ?? "This screen is intentionally off outside scheduled hours.";
+          playbackTone = "muted";
         } else if (isLive && rowPlaybackHealthy) {
-          playbackLabel = "Playing";
-          playbackDetail = "Beam has a fresh report that this screen is playing.";
+          playbackLabel = scheduleOverrideOpen ? "Open override" : "Playing";
+          playbackDetail = scheduleOverrideOpen
+            ? status?.scheduleDetail ?? "This screen was opened manually outside scheduled hours."
+            : "Beam has a fresh report that this screen is playing.";
           playbackTone = "good";
         } else if (isLive) {
           playbackLabel = plainPlaybackLabel(rowPlaybackLabel);
@@ -1035,7 +1073,7 @@ export function DeviceHealthFleetPanel({
           isOffline ||
           isStale ||
           syncTone === "warn" ||
-          (isLive && !rowPlaybackHealthy && !deploymentReady);
+          (isLive && !scheduledClosed && !rowPlaybackHealthy && !deploymentReady);
         const attentionReason = !hostConfigured
           ? "setup needed"
           : !linkedScreen
@@ -1046,7 +1084,7 @@ export function DeviceHealthFleetPanel({
               ? "stale report"
               : syncTone === "warn"
                 ? "sync needed"
-                : isLive && !rowPlaybackHealthy && !deploymentReady
+                : isLive && !scheduledClosed && !rowPlaybackHealthy && !deploymentReady
                   ? "playback not confirmed"
                   : "no action needed";
 
@@ -1057,6 +1095,7 @@ export function DeviceHealthFleetPanel({
           isOffline,
           isStale,
           rowPlaybackHealthy,
+          scheduledClosed,
           screenLinked: Boolean(linkedScreen),
           syncLabel,
           syncTone
@@ -1107,6 +1146,9 @@ export function DeviceHealthFleetPanel({
           resetTone: resetState.tone,
           reportedAddress,
           savedAddress,
+          scheduleDetail: status?.scheduleDetail ?? null,
+          scheduleOverrideExpiresAt: status?.scheduleOverrideExpiresAt ?? null,
+          scheduleState: status?.scheduleState ?? null,
           syncDetail,
           syncLabel,
           syncTone,
@@ -1445,9 +1487,10 @@ export function DeviceHealthFleetPanel({
     }
   }
 
-  async function runAction(action: "diagnostics" | "mute" | "publish" | "reboot" | "recover" | "reset" | "restart" | "unmute", row: RowState) {
+  async function runAction(action: "diagnostics" | "mute" | "open" | "publish" | "reboot" | "recover" | "reset" | "restart" | "unmute", row: RowState) {
     const remoteRecoveryAction = action === "mute" ||
       action === "unmute" ||
+      action === "open" ||
       action === "restart" ||
       action === "recover" ||
       action === "reboot";
@@ -1482,6 +1525,10 @@ export function DeviceHealthFleetPanel({
       setMessage("Remote audio controls are available from the AWS dashboard after the device-agent is installed.");
       return;
     }
+    if (action === "open" && dashboardMode !== "cloud") {
+      setMessage("Open store is available from the AWS dashboard after the device-agent is installed.");
+      return;
+    }
     if (
       action === "reset" &&
       !window.confirm(
@@ -1511,6 +1558,8 @@ export function DeviceHealthFleetPanel({
           ? `Queueing audio mute for ${targetName}...`
         : action === "unmute"
           ? `Queueing audio unmute for ${targetName}...`
+        : action === "open"
+          ? `Queueing open store for ${targetName}...`
         : action === "restart"
           ? `Restarting playback for ${targetName}...`
           : action === "reboot"
@@ -1538,6 +1587,8 @@ export function DeviceHealthFleetPanel({
                     ? "mute-audio"
                     : action === "unmute"
                     ? "unmute-audio"
+                    : action === "open"
+                    ? "open-screen"
                     : action === "restart"
                     ? "restart-playback"
                     : action === "reboot"
@@ -2098,6 +2149,16 @@ export function DeviceHealthFleetPanel({
                     <div className="min-w-0">
                       <h5 className="text-xs font-semibold uppercase text-zinc-500">Recovery</h5>
                       <div className="mt-2 flex flex-wrap gap-2">
+                        {selectedRow.scheduleState === "off" ? (
+                          <button
+                            type="button"
+                            disabled={!selectedRow.isLive || isBusy || selectedRow.actionActive || selectedRow.resetActive || selectedRow.diagnosticsActive}
+                            onClick={() => void runAction("open", selectedRow)}
+                            className="min-h-9 rounded-md border border-emerald-200 bg-white px-3 py-1.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {busyAction === "open" ? "Queueing..." : "Open store"}
+                          </button>
+                        ) : null}
                         {(() => {
                           const audioAction = audioToggleActionFor(selectedRow);
                           return (

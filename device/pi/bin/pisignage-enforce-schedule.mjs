@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { constants as fsConstants } from "node:fs";
-import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -17,11 +17,17 @@ const statusPath = path.resolve(
   process.env.PISIGNAGE_SCHEDULE_STATUS_PATH ??
     path.join(process.env.HOME ?? repoRoot, ".local/state/pisignage/schedule-status.json")
 );
+const overridePath = path.resolve(
+  process.env.PISIGNAGE_SCHEDULE_OVERRIDE_PATH ??
+    path.join(process.env.HOME ?? repoRoot, ".local/state/pisignage/schedule-override.json")
+);
 const screenId = process.env.PISIGNAGE_SCREEN_ID ?? "screen-primary";
 const vlcService = process.env.PISIGNAGE_VLC_SERVICE ?? "pisignage-vlc.service";
 const displayOutput = process.env.PISIGNAGE_DISPLAY_OUTPUT ?? "HDMI-A-1";
 const displayMode = process.env.PISIGNAGE_DISPLAY_RESOLUTION ?? "1920x1080@60.000000";
 const dryRun = process.argv.includes("--dry-run");
+const openOverride = process.argv.includes("--open-override");
+const clearOverride = process.argv.includes("--clear-override");
 const nowArg = process.argv.find((argument) => argument.startsWith("--now="));
 const now = nowArg ? new Date(nowArg.slice("--now=".length)) : new Date();
 
@@ -124,6 +130,14 @@ async function writeStatus(update) {
   await rename(temporaryPath, statusPath);
 }
 
+async function writeJsonAtomic(filePath, value) {
+  const statusDirectory = path.dirname(filePath);
+  const temporaryPath = `${filePath}.${process.pid}.tmp`;
+  await mkdir(statusDirectory, { recursive: true });
+  await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await rename(temporaryPath, filePath);
+}
+
 async function readScheduleStore() {
   try {
     await access(schedulePath, fsConstants.R_OK);
@@ -134,6 +148,81 @@ async function readScheduleStore() {
   }
 
   return JSON.parse(await readFile(schedulePath, "utf8"));
+}
+
+async function readJsonFile(filePath) {
+  try {
+    return JSON.parse(await readFile(filePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+async function removeOpenOverride() {
+  if (dryRun) {
+    log(`dry run: remove ${overridePath}`);
+    return;
+  }
+
+  await rm(overridePath, { force: true });
+}
+
+function assignedSchedulesActive(assigned, date) {
+  return assigned.some((schedule) => scheduleIsActive(schedule, date));
+}
+
+function findNextScheduledClose(assigned, date) {
+  let sawOpenWindow = assignedSchedulesActive(assigned, date);
+  const maxMinutes = 8 * 24 * 60;
+
+  for (let minuteOffset = 1; minuteOffset <= maxMinutes; minuteOffset += 1) {
+    const candidate = new Date(date.getTime() + minuteOffset * 60_000);
+    const active = assignedSchedulesActive(assigned, candidate);
+
+    if (sawOpenWindow && !active) {
+      return candidate;
+    }
+    if (active) {
+      sawOpenWindow = true;
+    }
+  }
+
+  return new Date(date.getTime() + 12 * 60 * 60_000);
+}
+
+async function createOpenOverride(assigned) {
+  const expiresAt = findNextScheduledClose(assigned, now).toISOString();
+  const override = {
+    action: "open",
+    createdAt: new Date().toISOString(),
+    expiresAt,
+    reason: "operator-open-store"
+  };
+
+  if (dryRun) {
+    log(`dry run: write ${overridePath} ${JSON.stringify(override)}`);
+    return override;
+  }
+
+  await writeJsonAtomic(overridePath, override);
+  return override;
+}
+
+async function activeOpenOverride() {
+  const override = await readJsonFile(overridePath);
+  if (!override || override.action !== "open" || typeof override.expiresAt !== "string") {
+    return null;
+  }
+
+  const expiresAt = new Date(override.expiresAt);
+  if (Number.isNaN(expiresAt.getTime()) || expiresAt <= now) {
+    await removeOpenOverride();
+    return null;
+  }
+
+  return {
+    expiresAt: override.expiresAt
+  };
 }
 
 function runSystemctl(action) {
@@ -276,26 +365,36 @@ async function enforce() {
     throw new Error("Invalid --now timestamp.");
   }
 
+  if (clearOverride) {
+    await removeOpenOverride();
+  }
+
   const store = await readScheduleStore();
   const schedules = Array.isArray(store.items) ? store.items : [];
   const assigned = schedules.filter((schedule) => Array.isArray(schedule.screenIds) && schedule.screenIds.includes(screenId));
   const active = assigned.find((schedule) => scheduleIsActive(schedule, now));
+  const override = openOverride && assigned.length > 0 && !active
+    ? await createOpenOverride(assigned)
+    : await activeOpenOverride();
 
-  if (active) {
+  if (active || override) {
     const display = setDisplayPower("on");
     runSystemctl("start");
     await writeStatus({
       action: dryRun ? "would-start" : "start",
-      activeScheduleId: active.id ?? null,
-      activeScheduleName: active.name ?? null,
-      detail: `Schedule window is active. ${display.detail}`,
+      activeScheduleId: active?.id ?? null,
+      activeScheduleName: active?.name ?? null,
+      detail: override
+        ? `Open store override is active until ${override.expiresAt}. ${display.detail}`
+        : `Schedule window is active. ${display.detail}`,
       displayAction: display.action,
       displayControlOk: display.ok,
       displayOutput,
-      state: "on"
+      overrideExpiresAt: override?.expiresAt ?? null,
+      state: override ? "override-open" : "on"
     });
     log(
-      `schedule active for ${screenId}; ${display.detail} ${
+      `${override ? "open override active" : "schedule active"} for ${screenId}; ${display.detail} ${
         dryRun ? "would start" : "started"
       } ${vlcService}`
     );

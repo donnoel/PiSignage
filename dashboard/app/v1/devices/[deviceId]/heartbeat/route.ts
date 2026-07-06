@@ -20,6 +20,11 @@ type HeartbeatBody = {
   networkOnline?: unknown;
   playbackState?: unknown;
   playlistVersion?: unknown;
+  scheduleDetail?: unknown;
+  scheduleDisplayAction?: unknown;
+  scheduleDisplayControlOk?: unknown;
+  scheduleOverrideExpiresAt?: unknown;
+  scheduleState?: unknown;
   timestamp?: unknown;
 };
 
@@ -44,6 +49,10 @@ function nullableString(value: unknown): value is string | null | undefined {
 
 function nullableNumber(value: unknown): value is number | null | undefined {
   return value === undefined || value === null || (typeof value === "number" && Number.isFinite(value));
+}
+
+function nullableBoolean(value: unknown): value is boolean | null | undefined {
+  return value === undefined || value === null || typeof value === "boolean";
 }
 
 function errorResponse(status: number, code: string, message: string) {
@@ -97,6 +106,21 @@ function validateHeartbeat(body: HeartbeatBody, pathDeviceId: string): string | 
   if (!nullableNumber(body.playlistVersion)) {
     return "Heartbeat playlistVersion must be a number or null.";
   }
+  if (!nullableString(body.scheduleDetail)) {
+    return "Heartbeat scheduleDetail must be a string or null.";
+  }
+  if (!nullableString(body.scheduleDisplayAction)) {
+    return "Heartbeat scheduleDisplayAction must be a string or null.";
+  }
+  if (!nullableBoolean(body.scheduleDisplayControlOk)) {
+    return "Heartbeat scheduleDisplayControlOk must be a boolean or null.";
+  }
+  if (!nullableString(body.scheduleOverrideExpiresAt)) {
+    return "Heartbeat scheduleOverrideExpiresAt must be a string or null.";
+  }
+  if (!nullableString(body.scheduleState)) {
+    return "Heartbeat scheduleState must be a string or null.";
+  }
 
   return null;
 }
@@ -119,6 +143,11 @@ function heartbeatFromItem(item: Record<string, { BOOL?: boolean; N?: string; NU
     playbackState: item.playbackState?.S ?? null,
     playlistVersion: item.playlistVersion?.N ? Number(item.playlistVersion.N) : null,
     receivedAt: item.receivedAt?.S ?? null,
+    scheduleDetail: item.scheduleDetail?.S ?? null,
+    scheduleDisplayAction: item.scheduleDisplayAction?.S ?? null,
+    scheduleDisplayControlOk: item.scheduleDisplayControlOk?.BOOL ?? null,
+    scheduleOverrideExpiresAt: item.scheduleOverrideExpiresAt?.S ?? null,
+    scheduleState: item.scheduleState?.S ?? null,
     timestamp: item.timestamp?.S ?? null
   };
 }
@@ -194,6 +223,11 @@ export async function POST(request: Request, context: RouteContext) {
       playbackState: body.playbackState === null || body.playbackState === undefined ? { NULL: true } : { S: String(body.playbackState) },
       playlistVersion: body.playlistVersion === null || body.playlistVersion === undefined ? { NULL: true } : { N: String(body.playlistVersion) },
       receivedAt: { S: receivedAt },
+      scheduleDetail: body.scheduleDetail === null || body.scheduleDetail === undefined ? { NULL: true } : { S: String(body.scheduleDetail) },
+      scheduleDisplayAction: body.scheduleDisplayAction === null || body.scheduleDisplayAction === undefined ? { NULL: true } : { S: String(body.scheduleDisplayAction) },
+      scheduleDisplayControlOk: body.scheduleDisplayControlOk === null || body.scheduleDisplayControlOk === undefined ? { NULL: true } : { BOOL: Boolean(body.scheduleDisplayControlOk) },
+      scheduleOverrideExpiresAt: body.scheduleOverrideExpiresAt === null || body.scheduleOverrideExpiresAt === undefined ? { NULL: true } : { S: String(body.scheduleOverrideExpiresAt) },
+      scheduleState: body.scheduleState === null || body.scheduleState === undefined ? { NULL: true } : { S: String(body.scheduleState) },
       timestamp: { S: stringOrNull(body.timestamp) ?? receivedAt }
     },
     TableName: tableName

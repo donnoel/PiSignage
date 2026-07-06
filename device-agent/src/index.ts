@@ -38,6 +38,11 @@ type Heartbeat = {
   networkOnline: boolean;
   playbackState: string | null;
   playlistVersion: number | null;
+  scheduleDetail: string | null;
+  scheduleDisplayAction: string | null;
+  scheduleDisplayControlOk: boolean | null;
+  scheduleOverrideExpiresAt: string | null;
+  scheduleState: string | null;
 };
 
 type PlayerStatus = {
@@ -111,7 +116,15 @@ type DeviceCommand = {
   requestedAt: string;
   status: "pending" | "running";
   statusUrl?: string;
-  type: "collect-diagnostics" | "mute-audio" | "reboot-device" | "reset-device" | "restart-playback" | "run-recovery" | "unmute-audio";
+  type: "collect-diagnostics" | "mute-audio" | "open-screen" | "reboot-device" | "reset-device" | "restart-playback" | "run-recovery" | "unmute-audio";
+};
+
+type ScheduleStatus = {
+  detail?: string;
+  displayAction?: string;
+  displayControlOk?: boolean;
+  overrideExpiresAt?: string | null;
+  state?: string;
 };
 
 type CommandStatus = "failed" | "running" | "succeeded";
@@ -588,6 +601,10 @@ function resetScriptPath(root: string): string {
   return process.env.PISIGNAGE_RESET_SCRIPT_PATH?.trim() || path.join(root, "device", "pi", "bin", "pisignage-reset-device.sh");
 }
 
+function scheduleEnforcerPath(root: string): string {
+  return process.env.PISIGNAGE_SCHEDULE_ENFORCER_PATH?.trim() || path.join(root, "device", "pi", "bin", "pisignage-enforce-schedule.mjs");
+}
+
 function resetRebootEnabled(): boolean {
   return process.env.PISIGNAGE_RESET_REBOOT_AFTER_SUCCESS?.trim().toLowerCase() !== "false";
 }
@@ -791,6 +808,20 @@ async function restartPlaybackService(): Promise<string> {
   return `VLC playback restarted. Service state: ${stdout.trim() || "unknown"}.`;
 }
 
+async function openScheduledScreen(root: string): Promise<string> {
+  const scriptPath = scheduleEnforcerPath(root);
+  await execFileAsync("node", [scriptPath, "--open-override"], {
+    cwd: root,
+    env: {
+      ...process.env,
+      PISIGNAGE_REPO_ROOT: root
+    },
+    timeout: 45_000
+  });
+
+  return "Open store completed. The screen was opened now and will return to schedule control at the next scheduled close.";
+}
+
 async function muteVlcAudio(): Promise<string> {
   const overrideDirectory = path.join(os.homedir(), ".config", "systemd", "user", "pisignage-vlc.service.d");
   const overridePath = path.join(overrideDirectory, "audio.conf");
@@ -903,6 +934,9 @@ function actionRunningMessage(type: DeviceCommand["type"]): string {
   if (type === "restart-playback") {
     return "Restart playback is running on the Pi.";
   }
+  if (type === "open-screen") {
+    return "Open store is running on the Pi.";
+  }
   if (type === "run-recovery") {
     return "Full recovery is running on the Pi.";
   }
@@ -912,7 +946,7 @@ function actionRunningMessage(type: DeviceCommand["type"]): string {
   return "Remote command is running on the Pi.";
 }
 
-async function runActionCommand(cacheDirectory: string, command: DeviceCommand): Promise<void> {
+async function runActionCommand(root: string, cacheDirectory: string, command: DeviceCommand): Promise<void> {
   const startedAt = new Date().toISOString();
   const commandPath = commandStatusPath(cacheDirectory, command.id);
   await writeJsonAtomic(commandPath, {
@@ -940,6 +974,8 @@ async function runActionCommand(cacheDirectory: string, command: DeviceCommand):
         ? await unmuteVlcAudio()
         : command.type === "restart-playback"
         ? await restartPlaybackService()
+        : command.type === "open-screen"
+        ? await openScheduledScreen(root)
         : command.type === "reboot-device"
           ? await requestCommandReboot()
           : await runRecoveryAction(cacheDirectory);
@@ -1177,10 +1213,11 @@ async function fetchCloudPlaylist(cacheDirectory: string): Promise<{
       body.command.type === "restart-playback" ||
       body.command.type === "mute-audio" ||
       body.command.type === "unmute-audio" ||
+      body.command.type === "open-screen" ||
       body.command.type === "run-recovery" ||
       body.command.type === "reboot-device"
     ) {
-      await runActionCommand(cacheDirectory, body.command);
+      await runActionCommand(repoRoot(), cacheDirectory, body.command);
     }
   }
 
@@ -1331,6 +1368,17 @@ async function readPlayerStatus(): Promise<PlayerStatus | null> {
   return null;
 }
 
+async function readScheduleStatus(): Promise<ScheduleStatus | null> {
+  const statusPath = process.env.PISIGNAGE_SCHEDULE_STATUS_PATH?.trim() ||
+    path.join(os.homedir(), ".local", "state", "pisignage", "schedule-status.json");
+
+  try {
+    return JSON.parse(await fs.readFile(statusPath, "utf8")) as ScheduleStatus;
+  } catch {
+    return null;
+  }
+}
+
 function cloudHeartbeatConfig(): CloudHeartbeatConfig | null {
   const baseUrl = process.env.PISIGNAGE_CLOUD_API_URL?.trim().replace(/\/+$/, "");
   const apiKey = process.env.PISIGNAGE_CLOUD_API_KEY?.trim();
@@ -1410,6 +1458,7 @@ async function runHeartbeatOnce(): Promise<void> {
     cacheDirectory
   });
   const playerStatus = await readPlayerStatus();
+  const scheduleStatus = await readScheduleStatus();
   const currentAssetId = playerStatus?.currentAssetId ?? null;
 
   const heartbeat: Heartbeat = {
@@ -1423,7 +1472,12 @@ async function runHeartbeatOnce(): Promise<void> {
     localIpAddress: localIpAddress(),
     networkOnline,
     playbackState: playerStatus?.state ?? null,
-    playlistVersion: playlistVersionOrNull(playerStatus?.playlistVersion) ?? playlist.version ?? null
+    playlistVersion: playlistVersionOrNull(playerStatus?.playlistVersion) ?? playlist.version ?? null,
+    scheduleDetail: scheduleStatus?.detail ?? null,
+    scheduleDisplayAction: scheduleStatus?.displayAction ?? null,
+    scheduleDisplayControlOk: typeof scheduleStatus?.displayControlOk === "boolean" ? scheduleStatus.displayControlOk : null,
+    scheduleOverrideExpiresAt: scheduleStatus?.overrideExpiresAt ?? null,
+    scheduleState: scheduleStatus?.state ?? null
   };
 
   await writeJsonAtomic(heartbeatPath, heartbeat);

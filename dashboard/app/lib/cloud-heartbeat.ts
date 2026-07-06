@@ -14,6 +14,11 @@ export type CloudHeartbeat = {
   playbackState: string | null;
   playlistVersion: number | null;
   receivedAt: string | null;
+  scheduleDetail: string | null;
+  scheduleDisplayAction: string | null;
+  scheduleDisplayControlOk: boolean | null;
+  scheduleOverrideExpiresAt: string | null;
+  scheduleState: string | null;
   timestamp: string | null;
 };
 
@@ -83,6 +88,11 @@ function heartbeatFromDynamoItem(item: Record<string, AttributeValue>): CloudHea
     playbackState: item.playbackState?.S ?? null,
     playlistVersion: item.playlistVersion?.NULL ? null : numberOrNull(item.playlistVersion?.N),
     receivedAt: item.receivedAt?.S ?? null,
+    scheduleDetail: item.scheduleDetail?.S ?? null,
+    scheduleDisplayAction: item.scheduleDisplayAction?.S ?? null,
+    scheduleDisplayControlOk: item.scheduleDisplayControlOk?.NULL ? null : item.scheduleDisplayControlOk?.BOOL ?? null,
+    scheduleOverrideExpiresAt: item.scheduleOverrideExpiresAt?.S ?? null,
+    scheduleState: item.scheduleState?.S ?? null,
     timestamp: item.timestamp?.S ?? null
   };
 }

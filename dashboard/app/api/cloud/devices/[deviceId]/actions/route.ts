@@ -19,6 +19,7 @@ export const dynamic = "force-dynamic";
 
 function actionType(value: unknown): DeviceActionType | null {
   return value === "mute-audio" ||
+    value === "open-screen" ||
     value === "reboot-device" ||
     value === "restart-playback" ||
     value === "run-recovery" ||

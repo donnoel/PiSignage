@@ -119,6 +119,9 @@ type DeviceLiveStatus = {
   playbackLabel: string;
   playerStatus: PlayerStatus | null;
   reachable: boolean;
+  scheduleDetail: string | null;
+  scheduleOverrideExpiresAt: string | null;
+  scheduleState: string | null;
   stale: boolean;
   timestampLabel: string;
 };
@@ -875,16 +878,23 @@ function cloudDeviceStatus(device: DeviceRecord, cloudHeartbeat: CloudHeartbeatS
   const ageMs = statusAgeMs(timestamp);
   const fresh = ageMs !== null && ageMs <= staleHeartbeatThresholdMs;
   const state = heartbeat.playbackState ?? "unknown";
+  const scheduleState = heartbeat.scheduleState ?? null;
+  const scheduledClosed = fresh && scheduleState === "off";
+  const scheduleOverrideOpen = fresh && scheduleState === "override-open";
   const deploymentReady =
     state === "ready-for-publishing" ||
     heartbeat.currentPlaylistId === "playlist-ready-for-publishing";
-  const playbackHealthy = fresh && state === "playing";
+  const playbackHealthy = fresh && !scheduledClosed && state === "playing";
 
   return {
     ageLabel: formatStatusAge(timestamp),
     host: heartbeat.localIpAddress ?? device.host,
     playbackHealthy,
-    playbackLabel: playbackHealthy ? "Playing" : deploymentReady && fresh ? "Ready for deployment" : fresh ? "Cloud heartbeat" : "Stale",
+    playbackLabel: scheduledClosed
+      ? "Closed"
+      : playbackHealthy
+        ? scheduleOverrideOpen ? "Open override" : "Playing"
+        : deploymentReady && fresh ? "Ready for deployment" : fresh ? "Cloud heartbeat" : "Stale",
     playerStatus: {
       currentAssetId: heartbeat.currentAssetId,
       playlistId: heartbeat.currentPlaylistId ?? undefined,
@@ -893,6 +903,9 @@ function cloudDeviceStatus(device: DeviceRecord, cloudHeartbeat: CloudHeartbeatS
       updatedAt: timestamp
     },
     reachable: fresh && heartbeat.networkOnline,
+    scheduleDetail: heartbeat.scheduleDetail,
+    scheduleOverrideExpiresAt: heartbeat.scheduleOverrideExpiresAt,
+    scheduleState,
     stale: !fresh,
     timestampLabel: formatTimestamp(timestamp)
   };
@@ -931,6 +944,9 @@ async function loadDeviceStatuses(
           playbackLabel: playbackHealthy ? "Playing" : isPlaying ? "Stale" : playbackState,
           playerStatus: status,
           reachable: probe.reachable,
+          scheduleDetail: null,
+          scheduleOverrideExpiresAt: null,
+          scheduleState: null,
           stale: isPlaying && !fresh,
           timestampLabel: formatTimestamp(status?.updatedAt)
         }
@@ -1182,6 +1198,9 @@ type FleetCommandRow = {
   lastReportLabel: string;
   playbackLabel: string;
   reachable: boolean;
+  scheduleDetail: string | null;
+  scheduleOverrideExpiresAt: string | null;
+  scheduleState: string | null;
   screenId: string;
   screenName: string;
   reportedCurrentAssetId: string | null;
@@ -1247,6 +1266,8 @@ function fleetCommandRows({
       const reportedPlaylistVersion = deviceStatus?.playerStatus?.playlistVersion;
       const rowPlaybackHealthy = deviceStatus?.playbackHealthy ?? false;
       const rowPlaybackLabel = deviceStatus?.playbackLabel ?? "Unknown";
+      const scheduledClosed = deviceStatus?.scheduleState === "off";
+      const scheduleOverrideOpen = deviceStatus?.scheduleState === "override-open";
       const livePlaybackStale = deviceStatus?.stale ?? false;
       const reportedPlaylist = reportedPlaylistId ? playlistsById.get(reportedPlaylistId) ?? null : null;
       const playbackStatusIsPlaying = deviceStatus?.playerStatus?.state === "playing";
@@ -1288,13 +1309,15 @@ function fleetCommandRows({
         syncLabel = "Review";
       }
 
-      const playback = isLive ? (!reachable ? "No live report" : rowPlaybackHealthy ? "Playing" : rowPlaybackLabel) : "Unknown";
+      const playback = isLive ? (!reachable ? "No live report" : scheduledClosed ? "Closed" : rowPlaybackHealthy ? (scheduleOverrideOpen ? "Open override" : "Playing") : rowPlaybackLabel) : "Unknown";
       const needsAttention =
         !hostConfigured ||
         syncTone === "warn" ||
-        (isLive && (!reachable || !rowPlaybackHealthy || livePlaybackStale)) ||
+        (isLive && (!reachable || (!scheduledClosed && !rowPlaybackHealthy) || livePlaybackStale)) ||
         (!isLive && hostConfigured);
-      const detail = !hostConfigured
+      const detail = scheduledClosed
+        ? deviceStatus?.scheduleDetail ?? "This screen is closed by its assigned schedule."
+        : !hostConfigured
         ? "Add a local address before this Pi can report."
         : isLive
           ? reachable
@@ -1321,6 +1344,9 @@ function fleetCommandRows({
         playbackLabel: playback,
         reachable,
         reportedCurrentAssetId,
+        scheduleDetail: deviceStatus?.scheduleDetail ?? null,
+        scheduleOverrideExpiresAt: deviceStatus?.scheduleOverrideExpiresAt ?? null,
+        scheduleState: deviceStatus?.scheduleState ?? null,
         screenId: linkedScreen?.id ?? device.screenId ?? device.id,
         screenName: linkedScreen?.name ?? "No screen linked",
         syncLabel,
@@ -1676,6 +1702,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const notReportingDeviceCount = fleetRows.filter((row) => row.healthLabel === "Not reporting").length;
   const disconnectedDeviceCount = offlineDeviceCount + notReportingDeviceCount;
   const playingDeviceCount = fleetRows.filter((row) => row.playbackLabel === "Playing").length;
+  const closedDeviceCount = fleetRows.filter((row) => row.playbackLabel === "Closed").length;
   const staleDeviceCount = fleetRows.filter((row) => row.playbackLabel === "Stale").length;
   const syncIssueCount = fleetRows.filter((row) => row.syncTone === "warn").length;
   const screenCount = inventory.screens.items.length;
@@ -1683,6 +1710,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const onlineScreensLabel = screenCount > 0 ? `${onlineDeviceCount}/${screenCount}` : "0";
   const playingDetail = staleDeviceCount > 0
     ? `${staleDeviceCount} stale report`
+    : closedDeviceCount > 0
+      ? `${closedDeviceCount} closed by schedule`
     : playingDeviceCount === screenCount && screenCount > 0
       ? null
       : disconnectedDeviceCount > 0
@@ -1730,16 +1759,22 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const focusedSyncLabel = focusedScreen?.syncLabel ?? playlistSyncState.label;
   const focusedScreenHost = focusedScreen ? focusedScreen.host || "No host" : pi.host || "No host";
   const focusedCurrentItem = focusedScreen?.currentItem ?? null;
+  const focusedScheduledClosed = focusedScreen?.scheduleState === "off";
+  const focusedScheduleOverrideOpen = focusedScreen?.scheduleState === "override-open";
   const focusedPlaylistLoopLabel =
     `${focusedScreen?.assignedPlaylistName ?? playlist.name} · ${focusedScreen?.assignedPlaylistAssetCount ?? playlist.assets.length} items · ${focusedScreen?.assignedPlaylistDuration ?? totalDuration}`;
   const focusedCurrentItemLabel = focusedCurrentItem
     ? `${focusedCurrentItem.title}${focusedCurrentItem.durationLabel ? ` · ${focusedCurrentItem.durationLabel}` : ""}`
+    : focusedScheduledClosed
+      ? "Closed by schedule"
     : focusedScreen?.reportedCurrentAssetId
       ? "Reported but not matched"
       : "Not reported";
   const focusedScreenTitle = focusedScreenIsLive
     ? focusedScreenReachable
-      ? focusedCurrentItem?.title ?? focusedScreen.assignedPlaylistName
+      ? focusedScheduledClosed
+        ? "Closed by schedule"
+        : focusedCurrentItem?.title ?? focusedScreen.assignedPlaylistName
       : "Screen offline"
     : "Waiting for check-in";
   let focusedScreenDetail = "This screen is saved in Beam. Once it checks in, its current playback will appear here.";
@@ -1747,7 +1782,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     focusedScreenDetail = focusedScreen.detail;
 
     if (focusedScreenReachable) {
-      if (focusedCurrentItem) {
+      if (focusedScheduledClosed) {
+        focusedScreenDetail = focusedScreen.scheduleDetail ?? "This screen is intentionally off outside scheduled hours.";
+      } else if (focusedScheduleOverrideOpen) {
+        focusedScreenDetail = focusedScreen.scheduleDetail ?? "This screen was opened manually outside scheduled hours and will return to schedule control.";
+      } else if (focusedCurrentItem) {
         focusedScreenDetail = `VLC reports item ${focusedCurrentItem.index + 1} of ${focusedCurrentItem.total} from ${focusedScreen.assignedPlaylistName}${focusedCurrentItem.durationLabel ? ` (${focusedCurrentItem.durationLabel})` : ""}.`;
       } else if (focusedScreen.reportedCurrentAssetId) {
         focusedScreenDetail = "VLC reports a current item id, but Beam cannot match it to this playlist yet.";
@@ -1765,13 +1804,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     ? focusedScreenReachable
       ? focusedPlaybackLabel === "Playing"
         ? "Playing live"
-        : focusedPlaybackLabel
+      : focusedPlaybackLabel
       : "Offline"
     : "Not reporting";
   const focusedScreenSummary = focusedScreenIsLive && focusedScreenReachable
-    ? `${focusedLiveSummary} · ${focusedSyncLabel} · Last report ${focusedLastReportLabel}`
+    ? `${focusedScheduledClosed ? "Closed by schedule" : focusedLiveSummary} · ${focusedSyncLabel} · Last report ${focusedLastReportLabel}`
     : [focusedLiveSummary, focusedScreenIsLive ? "Playback unknown" : "No live report"].join(" · ");
-  const previewEyebrow = focusedScreenIsLive && focusedScreenReachable ? "Showing now" : "Screen status";
+  const previewEyebrow = focusedScheduledClosed ? "Closed now" : focusedScreenIsLive && focusedScreenReachable ? "Showing now" : "Screen status";
   const focusedLiveReportUrl = focusedScreen ? screenLiveReportUrl(focusedScreen.id) : null;
   const screenFocusOptions = fleetRows.map((row) => ({
     location: row.location,

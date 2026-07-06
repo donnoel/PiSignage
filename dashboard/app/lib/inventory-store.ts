@@ -287,6 +287,7 @@ function actionStatusOrNull(value: AttributeValue | undefined): DeviceActionStat
 function actionTypeOrNull(value: AttributeValue | undefined): DeviceActionType | null {
   const type = stringOrNullAttribute(value);
   return type === "mute-audio" ||
+    type === "open-screen" ||
     type === "reboot-device" ||
     type === "restart-playback" ||
     type === "run-recovery" ||
@@ -1034,6 +1035,9 @@ function actionLabel(type: DeviceActionType): string {
   }
   if (type === "unmute-audio") {
     return "Unmute audio";
+  }
+  if (type === "open-screen") {
+    return "Open store";
   }
   if (type === "restart-playback") {
     return "Restart playback";

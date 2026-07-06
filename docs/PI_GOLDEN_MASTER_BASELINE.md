@@ -1,6 +1,6 @@
 # PI Golden Master Baseline
 
-Last updated: 2026-07-06 08:33 PDT
+Last updated: 2026-07-06 09:30 PDT
 
 ## Baseline Rule
 
@@ -55,7 +55,7 @@ Important packaging note: `device-agent/dist/index.js` is an ignored build artif
 
 - Repo: `/Users/donnoel/Development/PiSignage`
 - Branch: `main`
-- HEAD before this baseline update: `5f17bf5 Use PI golden master for reset deployment`
+- HEAD before this baseline update: `8b51678 Keep HDMI attached during schedule power cycles`
 - Dashboard URL: `https://8yyptjawdv.us-west-2.awsapprunner.com`
 
 Recent changes incorporated into this baseline:
@@ -65,6 +65,16 @@ Recent changes incorporated into this baseline:
 - Remote audio mute/unmute command support
 - Single audio toggle UI behavior on Screens
 - Cloud schedule delivery to Pi agents
+- Schedule-aware cloud heartbeat fields:
+  - `scheduleState`
+  - `scheduleDetail`
+  - `scheduleDisplayAction`
+  - `scheduleDisplayControlOk`
+  - `scheduleOverrideExpiresAt`
+- Remote `Open store` command support:
+  - creates a local schedule override on the Pi
+  - opens display/playback outside scheduled hours
+  - returns to normal schedule control after the next scheduled close
 - Schedule display recovery hardening:
   - after-hours schedule enforcement powers the display down without disabling `HDMI-A-1` in the Wayland session
   - open-hours schedule enforcement verifies `HDMI-A-1` is still enabled before reporting display-on success
@@ -201,8 +211,14 @@ Heartbeat facts at capture:
 - disk free bytes: `19750252544`
 - current-video heartbeat field present:
   - `currentAssetId`
+- schedule heartbeat fields present:
+  - `scheduleState`
+  - `scheduleDetail`
+  - `scheduleDisplayAction`
+  - `scheduleDisplayControlOk`
+  - `scheduleOverrideExpiresAt`
 
-At capture time, `heartbeat.json` reported current asset ID `asset-union-county-fair-2026-signage-1080p`. This may differ briefly from `player-status.json` because the player can advance between reads.
+At capture time, `heartbeat.json` reported current asset ID `asset-2026-02-12-commercial-tire-cv-signage-1080p` and `scheduleState` `on`. This may differ briefly from `player-status.json` because the player can advance between reads.
 
 ## Schedule Evidence
 
@@ -234,6 +250,17 @@ Controlled schedule cycle validation on 2026-07-06:
 - `HDMI-A-1` returned at `1920x1080@60.000000`
 - `pisignage-vlc.service`, `pisignage-schedule.timer`, and `pisignage-device-agent.service` were active after the cycle
 - player status returned to `playing`
+
+Controlled open-store override validation on 2026-07-06:
+
+- forced after-hours open override created local state `override-open`
+- override detail reported: `Open store override is active until 2026-07-08T00:00:00.000Z. vcgencmd set HDMI-A-1 on.`
+- display action remained `display-on`
+- display control ok remained `true`
+- override was cleared immediately after validation
+- current schedule status returned to `state: on`
+- follow-up heartbeat reported `scheduleState: on` and `scheduleOverrideExpiresAt: null`
+- `pisignage-vlc.service`, `pisignage-device-agent.service`, and `pisignage-schedule.timer` stayed active
 
 ## Cache And Playlist Baseline
 
@@ -269,7 +296,7 @@ Managed Pi scripts:
 ```text
 75104faff5c772e90230edc1a9a560549f131ab63e2bb048309958aa70c30ba1  pisignage-call-home-now.sh
 714c3dbf585980c3cb8829f7f88b280f0bb1e6026b3890b41b4153434eb4d577  pisignage-configure-wifi.sh
-b22ded2b2647a661d9a0a6f553e194a677dfe717a4219659647359b87083418d  pisignage-enforce-schedule.mjs
+12bb2cb86c79e7c3a7c6e59da6e9b116cfe56cf784135d5290e09e480cb315c3  pisignage-enforce-schedule.mjs
 c577963b8233b225a663319fb95c0411015cf85c5a1635dc2e5e76801cd92a08  pisignage-hide-desktop.sh
 d5b0d4e750e068a8e7666ddb3d26014c9bb0b3e70cfe46fd3789a299a5cc3578  pisignage-install-runtime.sh
 76e47c87c4afb21b8d682c4a58542aae072328fc0789b9b7492b788bd5c4f56d  pisignage-provision-device.sh
@@ -293,10 +320,10 @@ ae7252d0fc886f5fc134c8e4f7a677b01ee391371cec79583b0077f4465755ec  pisignage-play
 Compiled device agent:
 
 ```text
-0b2fc5a3ab0aa39d7a73cd5033d811c887dd59bdb330a8a5cbfedb6650173726  device-agent/dist/index.js
+ae4bd8badb0157d77f22fcebf9b5fc8d07fd123ddf3015b49b8b51d1531a28d8  device-agent/dist/index.js
 ```
 
-This hash supersedes the 2026-07-03 baseline hash and includes the current command-plane behavior deployed to C5.
+This hash supersedes the 2026-07-03 baseline hash and includes the current command-plane behavior deployed to C5, including schedule-aware heartbeat reporting and the remote Open store action.
 
 ## Required Baseline Update Workflow
 
@@ -327,7 +354,7 @@ sha256sum /home/donnoel/PiSignage/device-agent/dist/index.js
 
 ## C1-C4 And Future Pi Rollout Note
 
-C1-C4 were not reachable from the study at this capture time. They still need to be compared against and, where appropriate, updated to this PI golden master baseline when back at the studio. In particular, C1-C4 need the 2026-07-06 schedule display recovery hardening before schedule-off/schedule-on behavior can be considered fleet-consistent.
+C1-C4 were not reachable from the study at this capture time. They still need to be compared against and, where appropriate, updated to this PI golden master baseline when back at the studio. In particular, C1-C4 need the 2026-07-06 schedule display recovery hardening, schedule-aware heartbeat runtime, and Open store command support before schedule-off/schedule-on behavior can be considered fleet-consistent.
 
 For C1-C4 or any new Beam Pi, always reference this file first. Do not use a previous chat transcript, stale IP address, or old C5 snapshot as the appliance source of truth.
 
