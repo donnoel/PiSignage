@@ -258,8 +258,26 @@ function scheduleStorePath(root: string): string {
   );
 }
 
+function firstIpv4Address(addresses: os.NetworkInterfaceInfo[] | undefined): string | null {
+  for (const address of addresses ?? []) {
+    if (address.family === "IPv4" && !address.internal) {
+      return address.address;
+    }
+  }
+
+  return null;
+}
+
 function localIpAddress(): string | null {
-  for (const addresses of Object.values(os.networkInterfaces())) {
+  const interfaces = os.networkInterfaces();
+  for (const preferredInterface of ["wlan0", "eth0"]) {
+    const address = firstIpv4Address(interfaces[preferredInterface]);
+    if (address) {
+      return address;
+    }
+  }
+
+  for (const addresses of Object.values(interfaces)) {
     for (const address of addresses ?? []) {
       if (address.family === "IPv4" && !address.internal) {
         return address.address;

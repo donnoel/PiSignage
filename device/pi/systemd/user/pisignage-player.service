@@ -4,7 +4,7 @@ Description=PiSignage Player Static Server
 [Service]
 Type=simple
 WorkingDirectory=/home/donnoel/PiSignage
-ExecStart=/usr/bin/node /home/donnoel/PiSignage/device/pi/bin/pisignage-serve-player.mjs
+ExecStart=/usr/bin/node %h/.local/bin/pisignage-serve-player.mjs
 Restart=always
 RestartSec=5
 

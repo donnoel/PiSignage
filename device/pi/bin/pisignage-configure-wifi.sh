@@ -75,6 +75,7 @@ fi
 
 echo "Beam Wi-Fi setup"
 echo "  interface: ${ifname}"
+echo "  route preference: Wi-Fi is preferred when Ethernet and Wi-Fi are both active"
 echo "  credential entry: prompted by NetworkManager; not accepted by this script"
 echo "  note: if you are connected over SSH, the session may drop after the network route changes"
 
@@ -109,9 +110,12 @@ fi
 
 echo "NetworkManager may ask for the Wi-Fi password now."
 nmcli_with_privilege --ask device wifi connect "$ssid" ifname "$ifname"
+nmcli_with_privilege connection modify "$ssid" connection.autoconnect yes connection.autoconnect-priority 0 ipv4.route-metric 50 ipv6.route-metric 50
 
 echo "Wi-Fi connection command completed."
 echo "Current Wi-Fi evidence:"
 ip -br -4 addr show dev "$ifname" 2>/dev/null || true
 printf 'defaultRoute='
 ip route get 1.1.1.1 2>/dev/null | head -n 1 || true
+echo "Saved Wi-Fi route preference:"
+nmcli connection show "$ssid" | awk '/connection.autoconnect:/ || /connection.autoconnect-priority:/ || /connection.interface-name:/ || /802-11-wireless.ssid:/ || /ipv4.route-metric:/ || /ipv6.route-metric:/ { print }' || true

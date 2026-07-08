@@ -892,17 +892,29 @@ function runCommand(command, args) {
 }
 
 async function configureDisplay() {
+  let outputPowerOk = true;
+  try {
+    await access("/usr/bin/wlopm", fsConstants.X_OK);
+    await runCommand("/usr/bin/wlopm", ["--on", displayOutput]);
+    log(`display power set to ${displayOutput} on`);
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      outputPowerOk = false;
+      log(`display power check failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   try {
     await access("/usr/bin/wlr-randr", fsConstants.X_OK);
   } catch {
     log("wlr-randr unavailable; skipping display mode check");
-    return true;
+    return outputPowerOk;
   }
 
   try {
     await runCommand("/usr/bin/wlr-randr", ["--output", displayOutput, "--on", "--mode", displayMode]);
     log(`display set to ${displayOutput} ${displayMode}`);
-    return true;
+    return outputPowerOk;
   } catch (error) {
     log(`display mode check failed: ${error instanceof Error ? error.message : String(error)}`);
     return false;

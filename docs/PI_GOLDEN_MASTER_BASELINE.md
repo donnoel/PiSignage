@@ -1,6 +1,6 @@
 # PI Golden Master Baseline
 
-Last updated: 2026-07-06 09:30 PDT
+Last updated: 2026-07-07 14:56 PDT
 
 ## Baseline Rule
 
@@ -55,7 +55,7 @@ Important packaging note: `device-agent/dist/index.js` is an ignored build artif
 
 - Repo: `/Users/donnoel/Development/PiSignage`
 - Branch: `main`
-- HEAD before this baseline update: `8b51678 Keep HDMI attached during schedule power cycles`
+- HEAD before this baseline update: `36fc0b8 Add remote screen snapshot prototype`
 - Dashboard URL: `https://8yyptjawdv.us-west-2.awsapprunner.com`
 
 Recent changes incorporated into this baseline:
@@ -80,9 +80,13 @@ Recent changes incorporated into this baseline:
   - opens display/playback outside scheduled hours
   - returns to normal schedule control after the next scheduled close
 - Schedule display recovery hardening:
-  - after-hours schedule enforcement powers the display down without disabling `HDMI-A-1` in the Wayland session
-  - open-hours schedule enforcement verifies `HDMI-A-1` is still enabled before reporting display-on success
-  - VLC startup explicitly re-enables `HDMI-A-1` before applying the display mode
+  - after-hours schedule enforcement prefers verified `wlopm` output power control so closed screens go dark without disabling `HDMI-A-1` in the Wayland session
+  - `vcgencmd display_power` is treated as a fallback and verified instead of trusted on exit status alone
+  - open-hours schedule enforcement verifies `HDMI-A-1` is powered and enabled before reporting display-on success
+  - VLC startup explicitly powers and re-enables `HDMI-A-1` before applying the display mode
+- Network transport determinism:
+  - device-agent heartbeat prefers `wlan0`, then `eth0`, then any other non-internal IPv4 address
+  - Wi-Fi setup applies route metric `50` after successful Wi-Fi configuration so Wi-Fi is preferred when Ethernet and Wi-Fi are both active
 - Cloud media upload/prep hardening and S3 upload path
 - C5 emergency recovery cleanup after failed HDMI rescue:
   - removed stray `donnoel` line from `/boot/firmware/cmdline.txt`
@@ -94,9 +98,10 @@ Recent changes incorporated into this baseline:
 
 - Hostname: `C5`
 - Reachable host: `C5.local`
-- Wired IP at capture: not connected
-- Wi-Fi IP at capture: `192.168.100.27` on `wlan0`
-- Default route: `192.168.100.1` via `wlan0`
+- Wired IP at capture: `192.168.100.34` on `eth0`
+- Wi-Fi IP at capture: disconnected on `wlan0`
+- Default route: `192.168.100.1` via `eth0`
+- Saved Wi-Fi route preference: `Chicane` has `ipv4.route-metric=50` and `ipv6.route-metric=50` so Wi-Fi is preferred when both transports are active
 - SSH user: `donnoel`
 - Cloud device ID: `device-c5-aws-pilot`
 - Cloud API URL: `https://8yyptjawdv.us-west-2.awsapprunner.com`
@@ -192,9 +197,9 @@ Current player facts at capture:
 
 At capture time, `player-status.json` reported:
 
-- current asset ID: `asset-2102-still-10s`
-- current asset path: `/home/donnoel/.local/cache/pisignage/device-agent/assets/2102.still-10s.mp4`
-- current asset duration: `10`
+- current asset ID: `asset-2026-06-26-legacy-cv-ad-signage-1080p`
+- current asset path: `/home/donnoel/.local/cache/pisignage/device-agent/assets/2026-06-26-Legacy-CV-ad.signage-1080p.mp4`
+- current asset duration: `30.034`
 
 Heartbeat path:
 
@@ -212,7 +217,7 @@ Heartbeat facts at capture:
 - playlist version: `32`
 - playback state: `playing`
 - network online: `true`
-- disk free bytes: `19750252544`
+- disk free bytes: `19747893248`
 - current-video heartbeat field present:
   - `currentAssetId`
 - schedule heartbeat fields present:
@@ -222,7 +227,7 @@ Heartbeat facts at capture:
   - `scheduleDisplayControlOk`
   - `scheduleOverrideExpiresAt`
 
-At capture time, `heartbeat.json` reported current asset ID `asset-2026-02-12-commercial-tire-cv-signage-1080p` and `scheduleState` `on`. This may differ briefly from `player-status.json` because the player can advance between reads.
+At capture time, `heartbeat.json` reported current asset ID `asset-2025-08-25-apple-eye-care-30-second-ad-signage-1080p`, `scheduleState` `on`, and `scheduleDetail` `Schedule window is active. wlopm set HDMI-A-1 on.` This may differ briefly from `player-status.json` because the player can advance between reads.
 
 ## Schedule Evidence
 
@@ -240,7 +245,7 @@ Current schedule facts at capture:
 - state: `on`
 - action: `start`
 - active schedule name: `Customer 5 hours`
-- detail: `Schedule window is active. vcgencmd set HDMI-A-1 on.`
+- detail: `Schedule window is active. wlopm set HDMI-A-1 on.`
 - display action: `display-on`
 - display control ok: `true`
 - display output: `HDMI-A-1`
@@ -254,6 +259,25 @@ Controlled schedule cycle validation on 2026-07-06:
 - `HDMI-A-1` returned at `1920x1080@60.000000`
 - `pisignage-vlc.service`, `pisignage-schedule.timer`, and `pisignage-device-agent.service` were active after the cycle
 - player status returned to `playing`
+
+Controlled schedule cycle validation on 2026-07-07:
+
+- forced after-hours evaluation stopped `pisignage-vlc.service`
+- after-hours display action used `wlopm --off HDMI-A-1`
+- `wlopm` reported `HDMI-A-1 off`
+- `vcgencmd display_power 0` remained unreliable on this C5 and read back `display_power=1`; it is fallback-only evidence, not the close guarantee
+- forced open-hours evaluation used `wlopm --on HDMI-A-1`
+- `HDMI-A-1` returned at `1920x1080@60.000000`
+- compositor snapshot after reopen showed fullscreen VLC playback with no desktop panel and no Wi-Fi authentication dialog visible
+- follow-up heartbeat reported `playbackState: playing`, `scheduleState: on`, and `scheduleDisplayControlOk: true`
+- `pisignage-vlc.service`, `pisignage-schedule.timer`, and `pisignage-device-agent.service` were active after the cycle
+
+Natural schedule validation on 2026-07-08:
+
+- operator observed C5 close at the scheduled close and reopen at the scheduled open
+- follow-up live check at `2026-07-08T07:47:20-07:00` reported `scheduleState: on`, `playbackState: playing`, and `scheduleDetail: Schedule window is active. wlopm set HDMI-A-1 on.`
+- `wlopm` reported `HDMI-A-1 on`
+- `pisignage-vlc.service`, `pisignage-schedule.timer`, and `pisignage-device-agent.service` were active after the natural open
 
 Controlled open-store override validation on 2026-07-06:
 
@@ -299,35 +323,35 @@ Managed Pi scripts:
 
 ```text
 75104faff5c772e90230edc1a9a560549f131ab63e2bb048309958aa70c30ba1  pisignage-call-home-now.sh
-714c3dbf585980c3cb8829f7f88b280f0bb1e6026b3890b41b4153434eb4d577  pisignage-configure-wifi.sh
-12bb2cb86c79e7c3a7c6e59da6e9b116cfe56cf784135d5290e09e480cb315c3  pisignage-enforce-schedule.mjs
+60f2e66f5afc2337cf4743229feabbe41cf3cb0fdfeae2dbdfc13c37431e4564  pisignage-configure-wifi.sh
+eda895b17ca672f1d9842fb67c6d23b25a52663da3d9636672051cc01627e8e0  pisignage-enforce-schedule.mjs
 c577963b8233b225a663319fb95c0411015cf85c5a1635dc2e5e76801cd92a08  pisignage-hide-desktop.sh
 d5b0d4e750e068a8e7666ddb3d26014c9bb0b3e70cfe46fd3789a299a5cc3578  pisignage-install-runtime.sh
 76e47c87c4afb21b8d682c4a58542aae072328fc0789b9b7492b788bd5c4f56d  pisignage-provision-device.sh
 e9173990a980d64690f542d4c9d5bfab8e7b376f32cc6ee667569cd4d4254784  pisignage-reset-device.sh
 bc01cf6dc91e857da42d753361113c7cf979c6f9486e391ba86e38c64b6e71f0  pisignage-serve-player.mjs
 5ad55c8d2fb4a027693113f8c9bd2ebd92e83b1619e54468f8e997030d7a52b0  pisignage-start-display.sh
-f3920f726bea4f0ee1a5e1553b01b96697f0d76b41da855960389c119a82ba1d  pisignage-vlc-playlist.mjs
+ef486f92112e6919e59c523f1f8fa939ca6baa3ac6b29def775e0b30b983100d  pisignage-vlc-playlist.mjs
 ```
 
 Managed user services:
 
 ```text
-cc2b91728f1fa9eb7b11b1ae62ff3a7a85340c36c5a49ffb76b54940cb90bbb8  pisignage-device-agent.service
-726a6456ab2d877ba1b7ece992fba006679598cab550578806684b02e9e33aa1  pisignage-vlc.service
-46b769fd2b619074811c9a6958f15d654969f1e508059ca95b4fe14ada5b8317  pisignage-schedule.service
+c3874fdf862c5c2848b7e4beb3141512c7afe5698c24920da847c441683e6157  pisignage-device-agent.service
+6ff1d651e227fd2a7ffd8e68a21de407da90a75cbce87a8670c5bae879ed784b  pisignage-vlc.service
+a79d98fd2a9f3dabf6314b413e9501c620862cf2253452ce198a754b6637a42e  pisignage-schedule.service
 596b5adad2708f97b21c2cb38fb6798e54dd4b5e95163bfd10ea38c235b27c74  pisignage-schedule.timer
-ae7252d0fc886f5fc134c8e4f7a677b01ee391371cec79583b0077f4465755ec  pisignage-player.service
+323beab51690837cc6fde5cc58277dbb5b272d167ae991953beb85e0b1741761  pisignage-player.service
 7308c0a0cac88246a8e041d21a1c74e7bf88ef8a6500201237b78ee2efe7491f  pisignage-kiosk.service
 ```
 
 Compiled device agent:
 
 ```text
-bfa8c5f76bf1d2790e7e3ed0180daadb79d06a4ef7796a56f3a18aec2e6f044a  device-agent/dist/index.js
+d2b5fbe68713364548c7cc4f12cc528687b33dacc9ab3b354a1452f637769f80  device-agent/dist/index.js
 ```
 
-This hash supersedes the 2026-07-06 schedule baseline hash and includes the current command-plane behavior deployed to C5, including schedule-aware heartbeat reporting, the remote Open store action, and the remote screen snapshot prototype.
+This hash supersedes the 2026-07-06 schedule baseline hash and includes the current command-plane behavior deployed to C5, including schedule-aware heartbeat reporting, the remote Open store action, the remote screen snapshot prototype, deterministic Wi-Fi-first heartbeat address selection, and verified `wlopm` display power control for schedule close/open.
 
 ## Required Baseline Update Workflow
 
@@ -358,7 +382,7 @@ sha256sum /home/donnoel/PiSignage/device-agent/dist/index.js
 
 ## C1-C4 And Future Pi Rollout Note
 
-C1-C4 were not reachable from the study at this capture time. They still need to be compared against and, where appropriate, updated to this PI golden master baseline when back at the studio. In particular, C1-C4 need the 2026-07-06 schedule display recovery hardening, schedule-aware heartbeat runtime, and Open store command support before schedule-off/schedule-on behavior can be considered fleet-consistent.
+C1-C4 were not reachable from the study at this capture time. They still need to be compared against and, where appropriate, updated to this PI golden master baseline when back at the studio. In particular, C1-C4 need the 2026-07-07 `wlopm` schedule display power hardening, deterministic Wi-Fi-first heartbeat address selection, Wi-Fi route metric helper behavior, schedule-aware heartbeat runtime, and Open store command support before schedule-off/schedule-on behavior can be considered fleet-consistent.
 
 For C1-C4 or any new Beam Pi, always reference this file first. Do not use a previous chat transcript, stale IP address, or old C5 snapshot as the appliance source of truth.
 

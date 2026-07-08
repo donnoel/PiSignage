@@ -296,9 +296,80 @@ function wlrOutputEnabled() {
   return false;
 }
 
+function wlopmOutputPowerState() {
+  if (!commandExists("/usr/bin/wlopm")) {
+    return null;
+  }
+
+  const result = spawnSync("/usr/bin/wlopm", [], {
+    encoding: "utf8"
+  });
+  if (result.status !== 0) {
+    const message = result.stderr.trim() || result.stdout.trim() || "wlopm failed";
+    log(`display power verification failed: ${message}`);
+    return null;
+  }
+
+  for (const line of result.stdout.split(/\r?\n/)) {
+    const [output, state] = line.trim().split(/\s+/);
+    if (output === displayOutput && (state === "on" || state === "off")) {
+      return state;
+    }
+  }
+
+  log(`display power verification failed: ${displayOutput} was not reported by wlopm`);
+  return null;
+}
+
+function vcgencmdDisplayPowerState() {
+  if (!commandExists("/usr/bin/vcgencmd")) {
+    return null;
+  }
+
+  const result = spawnSync("/usr/bin/vcgencmd", ["display_power"], {
+    encoding: "utf8"
+  });
+  if (result.status !== 0) {
+    const message = result.stderr.trim() || result.stdout.trim() || "vcgencmd display_power failed";
+    log(`display power verification failed: ${message}`);
+    return null;
+  }
+
+  const match = result.stdout.match(/display_power=([01])/);
+  if (!match) {
+    log(`display power verification failed: unexpected vcgencmd output: ${result.stdout.trim()}`);
+    return null;
+  }
+
+  return match[1] === "1";
+}
+
+function ensureWlrOutputOn() {
+  if (!commandExists("/usr/bin/wlr-randr")) {
+    return true;
+  }
+
+  return runDisplayCommand("/usr/bin/wlr-randr", [
+    "--output",
+    displayOutput,
+    "--on",
+    "--mode",
+    displayMode
+  ]);
+}
+
 function setDisplayPower(power) {
   const enabled = power === "on";
   const attempts = [];
+
+  if (commandExists("/usr/bin/wlopm")) {
+    attempts.push({
+      command: "/usr/bin/wlopm",
+      label: "wlopm",
+      offArgs: ["--off", displayOutput],
+      onArgs: ["--on", displayOutput]
+    });
+  }
 
   if (commandExists("/usr/bin/vcgencmd")) {
     attempts.push({
@@ -333,7 +404,38 @@ function setDisplayPower(power) {
       continue;
     }
     if (runDisplayCommand(attempt.command, args)) {
+      if (dryRun) {
+        return {
+          ok: true,
+          action: enabled ? "display-on" : "display-off",
+          detail: `${attempt.label} would set ${displayOutput} ${power}.${
+            enabled ? "" : " HDMI output would stay attached to the display session."
+          }`
+        };
+      }
+
+      if (attempt.label === "wlopm") {
+        const powerState = wlopmOutputPowerState();
+        const expectedState = enabled ? "on" : "off";
+        if (powerState !== expectedState) {
+          log(`${attempt.label} returned success, but ${displayOutput} power is ${powerState ?? "unknown"}`);
+          continue;
+        }
+      }
+
+      if (attempt.label === "vcgencmd") {
+        const displayPowered = vcgencmdDisplayPowerState();
+        if (displayPowered !== null && displayPowered !== enabled) {
+          log(`${attempt.label} returned success, but display_power is still ${displayPowered ? "on" : "off"}`);
+          continue;
+        }
+      }
+
       if (enabled) {
+        if (attempt.label !== "wlr-randr" && !ensureWlrOutputOn()) {
+          continue;
+        }
+
         const outputEnabled = wlrOutputEnabled();
         if (outputEnabled === false) {
           log(`${attempt.label} returned success, but ${displayOutput} is still disabled`);

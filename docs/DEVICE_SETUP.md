@@ -60,6 +60,12 @@ The helper accepts an optional `--ssid` value, but it deliberately has no
 password flag. NetworkManager owns the credential prompt and stores the resulting
 network profile on the Pi.
 
+Beam Pis may run on Ethernet or Wi-Fi. The active transport should be used, and
+when both Ethernet and Wi-Fi are active the Wi-Fi route is preferred. The setup
+helper applies Wi-Fi route metrics after a successful connection so the
+dashboard/device-agent evidence stays deterministic without requiring one fixed
+transport for every screen.
+
 Use this validation sequence for C5:
 
 1. With Ethernet connected, confirm dashboard Troubleshooting can reach
