@@ -900,7 +900,7 @@ function cloudDeviceStatus(device: DeviceRecord, cloudHeartbeat: CloudHeartbeatS
       ? "Closed"
       : playbackHealthy
         ? scheduleOverrideOpen ? "Open override" : "Playing"
-        : deploymentReady && fresh ? "Ready for deployment" : fresh ? "Cloud heartbeat" : "Stale",
+        : deploymentReady && fresh ? "Ready for deployment" : fresh ? "Cloud heartbeat" : "Waiting for update",
     playerStatus: {
       currentAssetId: heartbeat.currentAssetId,
       playlistId: heartbeat.currentPlaylistId ?? undefined,
@@ -947,7 +947,7 @@ async function loadDeviceStatuses(
           ageLabel: formatStatusAge(status?.updatedAt),
           host: probe.host,
           playbackHealthy,
-          playbackLabel: playbackHealthy ? "Playing" : isPlaying ? "Stale" : playbackState,
+          playbackLabel: playbackHealthy ? "Playing" : isPlaying ? "Waiting for update" : playbackState,
           playerStatus: status,
           reachable: probe.reachable,
           scheduleDetail: null,
@@ -1455,7 +1455,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const heartbeatAgeMs = statusAgeMs(heartbeat?.timestamp);
   const isHeartbeatFresh = heartbeatAgeMs !== null && heartbeatAgeMs <= staleHeartbeatThresholdMs;
   const playbackHealthy = isPlaying && isPlayerStatusFresh;
-  const playbackLabel = playbackHealthy ? "Playing" : isPlaying ? "Stale" : playbackState;
+  const playbackLabel = playbackHealthy ? "Playing" : isPlaying ? "Waiting for update" : playbackState;
   const playerFreshnessDetail = statusFreshnessDetail(pi, playerStatus, isPlayerStatusFresh);
   const localScreenName = screenLabel(pi, heartbeat, isHeartbeatFresh);
   const localLocationName = locationLabel();
@@ -1736,7 +1736,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   if (!playbackHealthy) {
     attentionItems.push({
       detail: playerFreshnessDetail,
-      label: isPlaying ? "Playback status stale" : "Playback not confirmed",
+      label: isPlaying ? "Playback update delayed" : "Playback not confirmed",
       tone: "warn"
     });
   }
@@ -1768,13 +1768,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const disconnectedDeviceCount = offlineDeviceCount + notReportingDeviceCount;
   const playingDeviceCount = fleetRows.filter((row) => row.playbackLabel === "Playing").length;
   const closedDeviceCount = fleetRows.filter((row) => row.playbackLabel === "Closed").length;
-  const staleDeviceCount = fleetRows.filter((row) => row.playbackLabel === "Stale").length;
+  const staleDeviceCount = fleetRows.filter((row) => row.playbackLabel === "Waiting for update").length;
   const syncIssueCount = fleetRows.filter((row) => row.syncTone === "warn").length;
   const screenCount = inventory.screens.items.length;
   const confirmedPlaybackLabel = screenCount > 0 ? `${playingDeviceCount}/${screenCount}` : "0";
   const onlineScreensLabel = screenCount > 0 ? `${onlineDeviceCount}/${screenCount}` : "0";
   const playingDetail = staleDeviceCount > 0
-    ? `${staleDeviceCount} stale report`
+    ? `${staleDeviceCount} waiting for update`
     : closedDeviceCount > 0
       ? `${closedDeviceCount} closed by schedule`
     : playingDeviceCount === screenCount && screenCount > 0
@@ -1873,7 +1873,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       : "Offline"
     : "Not reporting";
   const focusedScreenSummary = focusedScreenIsLive && focusedScreenReachable
-    ? `${focusedScheduledClosed ? "Closed by schedule" : focusedLiveSummary} · ${focusedSyncLabel} · Last report ${focusedLastReportLabel}`
+    ? `${focusedScheduledClosed ? "Closed by schedule" : focusedLiveSummary} · ${focusedSyncLabel} · Last update ${focusedLastReportLabel}`
     : [focusedLiveSummary, focusedScreenIsLive ? "Playback unknown" : "No live report"].join(" · ");
   const previewEyebrow = focusedScheduledClosed ? "Closed now" : focusedScreenIsLive && focusedScreenReachable ? "Showing now" : "Screen status";
   const focusedLiveReportUrl = focusedScreen ? screenLiveReportUrl(focusedScreen.id) : null;

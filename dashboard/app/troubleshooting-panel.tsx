@@ -313,7 +313,7 @@ function statusLabelForScreen(screen: TroubleshootingScreen): string {
   }
 
   if (screen.liveStatus.stale) {
-    return "Stale report";
+    return "Waiting for update";
   }
 
   return screen.liveStatus.reachable ? "Live status" : "Offline";
@@ -460,7 +460,7 @@ export function TroubleshootingPanel({ screens }: TroubleshootingPanelProps) {
     ? [
         {
           detail: selectedLiveStatus
-            ? `Last report ${selectedLiveStatus.ageLabel}. ${selectedLiveStatus.timestampLabel}.`
+            ? `Last update ${selectedLiveStatus.ageLabel}. ${selectedLiveStatus.timestampLabel}.`
             : "This screen has not checked in yet.",
           label: "Check-in",
           tone: statusToneForScreen(selectedScreen),

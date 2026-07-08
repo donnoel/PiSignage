@@ -251,7 +251,10 @@ function publishRequiredDetail(localVersion: number, reportedVersion: number): s
 
 function plainPlaybackLabel(value: string): string {
   if (value === "Stale") {
-    return "Old report";
+    return "Waiting for update";
+  }
+  if (value === "Waiting for update") {
+    return value;
   }
   if (value === "unreachable") {
     return "Not available";

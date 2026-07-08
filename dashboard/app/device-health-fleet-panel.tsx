@@ -304,7 +304,10 @@ function plainPlaybackLabel(value: string): string {
     return "Ready screen";
   }
   if (value === "Stale") {
-    return "Old report";
+    return "Waiting for update";
+  }
+  if (value === "Waiting for update") {
+    return value;
   }
   if (value === "unreachable") {
     return "Not available";
@@ -1096,7 +1099,7 @@ export function DeviceHealthFleetPanel({
           : isOffline
             ? "screen offline"
             : isStale
-              ? "stale report"
+              ? "waiting for update"
               : syncTone === "warn"
                 ? "sync needed"
                 : isLive && !scheduledClosed && !rowPlaybackHealthy && !deploymentReady
@@ -1211,7 +1214,7 @@ export function DeviceHealthFleetPanel({
       return row.healthLabel === "Offline";
     }
     if (filter === "stale") {
-      return row.playbackLabel === "Old report";
+      return row.playbackLabel === "Waiting for update";
     }
     if (filter === "sync") {
       return row.syncTone === "warn";
@@ -1263,7 +1266,7 @@ export function DeviceHealthFleetPanel({
   const selectedTargetName = selectedRow ? screenName(selectedRow) : "selected screen";
   const onlineCount = rows.filter((row) => row.healthLabel === "Online").length;
   const offlineCount = rows.filter((row) => row.healthLabel === "Offline").length;
-  const staleCount = rows.filter((row) => row.playbackLabel === "Old report").length;
+  const staleCount = rows.filter((row) => row.playbackLabel === "Waiting for update").length;
   const attentionCount = rows.filter((row) => row.needsAttention).length;
   const syncIssueCount = rows.filter((row) => row.syncTone === "warn").length;
   const waitingCount = rows.filter((row) => row.healthLabel === "Waiting").length;
@@ -1701,7 +1704,7 @@ export function DeviceHealthFleetPanel({
       count: staleCount,
       hideWhenZero: true,
       key: "stale",
-      label: "Stale report",
+      label: "Waiting for update",
       toneClassName: "bg-amber-50 text-amber-900 ring-amber-100 hover:bg-amber-100"
     },
     {

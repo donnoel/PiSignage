@@ -116,7 +116,7 @@ export function RemoteScreenPlayer({
           </div>
           <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-300">
             <span className="rounded-full border border-white/15 px-3 py-1">{playbackStateLabel}</span>
-            <span className="rounded-full border border-white/15 px-3 py-1">Last report {lastReportLabel}</span>
+            <span className="rounded-full border border-white/15 px-3 py-1">Last update {lastReportLabel}</span>
             <span className="rounded-full border border-white/15 px-3 py-1">{hostLabel}</span>
           </div>
         </header>
