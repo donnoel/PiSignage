@@ -390,7 +390,28 @@ sha256sum /home/donnoel/PiSignage/device-agent/dist/index.js
 
 ## C1-Cx Rollout Note
 
-C1-C4 were not reachable from the study at this capture time. They still need to be compared against and, where appropriate, updated to this PI golden master baseline when back at the studio. The same rule applies to every future C1-Cx appliance. In particular, C1-C4 need the 2026-07-07 `wlopm` schedule display power hardening, deterministic Wi-Fi-first heartbeat address selection, Wi-Fi route metric helper behavior, schedule-aware heartbeat runtime, Open store command support, the dedicated device heartbeat API configuration, and the 30-second heartbeat service/runtime before schedule-off/schedule-on and cloud status behavior can be considered fleet-consistent.
+C1-C4 were refreshed from this PI golden master baseline at the studio on 2026-07-08.
+
+Rollout payload:
+
+```text
+939d944c58a4087528a30832e1b635434098f07fd9624661773dfd37d3a56284  /tmp/beam-pi-golden-20260708-d489690.tgz
+```
+
+The rollout preserved each Pi's identity and network fields, then refreshed the Beam-managed scripts, generated user services, first-run playlist/media, and compiled device-agent runtime. The private device-agent env on C1-C4 was also corrected to use the dedicated device heartbeat API URL while preserving each device's API key value. Stale `audio.conf` VLC drop-ins that forced audio off were removed from C2-C4 so the only remaining VLC drop-in on C1-C4 is the expected cloud cache override.
+
+Validated C1-C4 after rollout:
+
+| Pi | IP | Device ID | Dedicated heartbeat API | Agent hash | VLC drop-ins | Cache | Cloud heartbeat |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| C1 | `192.168.1.131` | `device-c1-aws-pilot` | configured | `6c206f1b457fd0eaa19127d6e2be1451201f05554c9679e8d7ab62bac4355f35` | `10-cloud-cache.conf` | 29 assets | playing, playlist `playlist-community-vision` v32 |
+| C2 | `192.168.1.64` | `device-c2-aws-pilot` | configured | `6c206f1b457fd0eaa19127d6e2be1451201f05554c9679e8d7ab62bac4355f35` | `10-cloud-cache.conf` | 29 assets | playing, playlist `playlist-community-vision` v32 |
+| C3 | `192.168.1.169` | `device-c3-aws-pilot` | configured | `6c206f1b457fd0eaa19127d6e2be1451201f05554c9679e8d7ab62bac4355f35` | `10-cloud-cache.conf` | 29 assets | playing, playlist `playlist-community-vision` v32 |
+| C4 | `192.168.1.177` | `device-c4-aws-pilot` | configured | `6c206f1b457fd0eaa19127d6e2be1451201f05554c9679e8d7ab62bac4355f35` | `10-cloud-cache.conf` | 29 assets | playing, playlist `playlist-community-vision` v32 |
+
+On all four Pis, `pisignage-device-agent.service`, `pisignage-vlc.service`, and `pisignage-schedule.timer` were enabled and active. `pisignage-player.service` and `pisignage-kiosk.service` were disabled and inactive. Forced call-home completed through the dedicated device heartbeat API on all four devices.
+
+The same rule applies to every future C1-Cx appliance.
 
 For any C1-Cx Beam Pi, always reference this file first. Do not use a previous chat transcript, stale IP address, or old C5 snapshot as the appliance source of truth.
 
