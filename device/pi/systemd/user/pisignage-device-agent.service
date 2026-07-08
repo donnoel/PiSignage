@@ -9,7 +9,8 @@ WorkingDirectory=/home/donnoel/PiSignage
 Environment=PISIGNAGE_PLAYLIST_PATH=/home/donnoel/PiSignage/sample-content/playlist.local.json
 Environment=PISIGNAGE_CACHE_DIR=%h/.local/cache/pisignage/device-agent
 Environment=PISIGNAGE_HEARTBEAT_PATH=%h/.local/state/pisignage/heartbeat.json
-Environment=PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS=60
+Environment=PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS=30
+Environment=PISIGNAGE_HEARTBEAT_JITTER_SECONDS=5
 EnvironmentFile=-%h/.config/pisignage/device-agent.env
 ExecStart=/usr/bin/node /home/donnoel/PiSignage/device-agent/dist/index.js --loop
 Restart=always

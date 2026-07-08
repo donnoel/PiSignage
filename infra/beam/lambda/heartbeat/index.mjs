@@ -1,10 +1,12 @@
 import { DynamoDBClient, GetItemCommand, PutItemCommand } from "@aws-sdk/client-dynamodb";
+import { timingSafeEqual } from "node:crypto";
 
 const dynamoDb = new DynamoDBClient({});
 const devicesTableName = process.env.DEVICES_TABLE_NAME;
+const deviceApiKey = process.env.DEVICE_API_KEY?.trim() ?? "";
 const heartbeatTableName = process.env.HEARTBEATS_TABLE_NAME;
 const defaultAccountId = process.env.DEFAULT_ACCOUNT_ID ?? "beam-dev";
-const nextHeartbeatInSeconds = Number.parseInt(process.env.NEXT_HEARTBEAT_IN_SECONDS ?? "60", 10);
+const nextHeartbeatInSeconds = Number.parseInt(process.env.NEXT_HEARTBEAT_IN_SECONDS ?? "30", 10);
 
 function jsonResponse(statusCode, body) {
   return {
@@ -47,11 +49,15 @@ function stringOrNull(value) {
 }
 
 function nullableString(value) {
-  return value === null || typeof value === "string";
+  return value === undefined || value === null || typeof value === "string";
 }
 
 function nullableNumber(value) {
-  return value === null || (typeof value === "number" && Number.isFinite(value));
+  return value === undefined || value === null || (typeof value === "number" && Number.isFinite(value));
+}
+
+function nullableBoolean(value) {
+  return value === undefined || value === null || typeof value === "boolean";
 }
 
 function numberOrNull(attribute) {
@@ -65,6 +71,14 @@ function numberOrNull(attribute) {
 
 function stringOrNullAttribute(attribute) {
   return attribute?.S ?? null;
+}
+
+function booleanOrNull(attribute) {
+  if (!attribute || attribute.NULL) {
+    return null;
+  }
+
+  return attribute.BOOL ?? null;
 }
 
 function heartbeatFromItem(item) {
@@ -85,6 +99,11 @@ function heartbeatFromItem(item) {
     networkOnline: item.networkOnline?.BOOL ?? false,
     playbackState: stringOrNullAttribute(item.playbackState),
     playlistVersion: numberOrNull(item.playlistVersion),
+    scheduleDetail: stringOrNullAttribute(item.scheduleDetail),
+    scheduleDisplayAction: stringOrNullAttribute(item.scheduleDisplayAction),
+    scheduleDisplayControlOk: booleanOrNull(item.scheduleDisplayControlOk),
+    scheduleOverrideExpiresAt: stringOrNullAttribute(item.scheduleOverrideExpiresAt),
+    scheduleState: stringOrNullAttribute(item.scheduleState),
     receivedAt: stringOrNullAttribute(item.receivedAt)
   };
 }
@@ -170,20 +189,107 @@ function validateHeartbeat(body, pathDeviceId) {
   if (body.playlistVersion !== undefined && !nullableNumber(body.playlistVersion)) {
     return "Heartbeat playlistVersion must be a number or null.";
   }
+  if (!nullableString(body.scheduleDetail)) {
+    return "Heartbeat scheduleDetail must be a string or null.";
+  }
+  if (!nullableString(body.scheduleDisplayAction)) {
+    return "Heartbeat scheduleDisplayAction must be a string or null.";
+  }
+  if (!nullableBoolean(body.scheduleDisplayControlOk)) {
+    return "Heartbeat scheduleDisplayControlOk must be a boolean or null.";
+  }
+  if (!nullableString(body.scheduleOverrideExpiresAt)) {
+    return "Heartbeat scheduleOverrideExpiresAt must be a string or null.";
+  }
+  if (!nullableString(body.scheduleState)) {
+    return "Heartbeat scheduleState must be a string or null.";
+  }
+
+  return null;
+}
+
+function methodFromEvent(event) {
+  return event.httpMethod ?? event.requestContext?.http?.method ?? "";
+}
+
+function deviceIdFromPath(event) {
+  if (event.pathParameters?.deviceId) {
+    return event.pathParameters.deviceId;
+  }
+
+  const rawPath = event.rawPath ?? event.path ?? "";
+  const match = rawPath.match(/^\/v1\/devices\/([^/]+)\/heartbeat\/?$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function headerValue(event, headerName) {
+  const headers = event.headers ?? {};
+  const lowered = headerName.toLowerCase();
+
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === lowered) {
+      return Array.isArray(value) ? value[0] : value;
+    }
+  }
+
+  return null;
+}
+
+function safeStringEquals(left, right) {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function authorizeDeviceRequest(event) {
+  if (!deviceApiKey) {
+    return {
+      code: "server_misconfigured",
+      message: "Device API authentication is not configured.",
+      statusCode: 500
+    };
+  }
+
+  const providedKey = headerValue(event, "x-api-key")?.trim();
+  if (!providedKey) {
+    return {
+      code: "missing_api_key",
+      message: "Device API requests must include x-api-key.",
+      statusCode: 401
+    };
+  }
+
+  if (!safeStringEquals(providedKey, deviceApiKey)) {
+    return {
+      code: "device_not_authenticated",
+      message: "Device API key is invalid.",
+      statusCode: 403
+    };
+  }
 
   return null;
 }
 
 export async function handler(event, context) {
   const requestId = context.awsRequestId;
-  const pathDeviceId = event.pathParameters?.deviceId;
-  const httpMethod = event.httpMethod;
+  const pathDeviceId = deviceIdFromPath(event);
+  const httpMethod = methodFromEvent(event);
 
   if (!heartbeatTableName) {
     return errorResponse(500, "server_misconfigured", "Heartbeat storage is not configured.", requestId);
   }
   if (!pathDeviceId) {
     return errorResponse(400, "invalid_heartbeat", "Missing deviceId path parameter.", requestId);
+  }
+
+  const authError = authorizeDeviceRequest(event);
+  if (authError) {
+    return errorResponse(authError.statusCode, authError.code, authError.message, requestId);
   }
 
   if (httpMethod === "GET") {
@@ -235,6 +341,11 @@ export async function handler(event, context) {
     networkOnline: { BOOL: body.networkOnline },
     playbackState: body.playbackState === null || body.playbackState === undefined ? { NULL: true } : { S: body.playbackState },
     playlistVersion: body.playlistVersion === null || body.playlistVersion === undefined ? { NULL: true } : { N: String(body.playlistVersion) },
+    scheduleDetail: body.scheduleDetail === null || body.scheduleDetail === undefined ? { NULL: true } : { S: body.scheduleDetail },
+    scheduleDisplayAction: body.scheduleDisplayAction === null || body.scheduleDisplayAction === undefined ? { NULL: true } : { S: body.scheduleDisplayAction },
+    scheduleDisplayControlOk: body.scheduleDisplayControlOk === null || body.scheduleDisplayControlOk === undefined ? { NULL: true } : { BOOL: body.scheduleDisplayControlOk },
+    scheduleOverrideExpiresAt: body.scheduleOverrideExpiresAt === null || body.scheduleOverrideExpiresAt === undefined ? { NULL: true } : { S: body.scheduleOverrideExpiresAt },
+    scheduleState: body.scheduleState === null || body.scheduleState === undefined ? { NULL: true } : { S: body.scheduleState },
     receivedAt: { S: receivedAt }
   };
 

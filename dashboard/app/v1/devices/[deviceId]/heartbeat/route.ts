@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 
 import { ensureCloudCallHomeDevice } from "../../../../lib/inventory-store";
 
+// Legacy compatibility route for devices still provisioned to the App Runner
+// dashboard URL. New fleet provisioning should use the dedicated device API
+// Lambda Function URL from the Beam CDK stack.
+
 type RouteContext = {
   params: Promise<{
     deviceId: string;
@@ -33,7 +37,7 @@ export const dynamic = "force-dynamic";
 
 const defaultAccountId = "beam-dev";
 const dynamoDb = new DynamoDBClient({});
-const nextHeartbeatInSeconds = 60;
+const nextHeartbeatInSeconds = 30;
 
 function heartbeatsTableName(): string | null {
   return process.env.BEAM_HEARTBEATS_TABLE_NAME?.trim() || null;

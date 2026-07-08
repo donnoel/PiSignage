@@ -10,11 +10,12 @@ Options:
   --device-id ID              Stable Beam device id for this Pi. Required.
   --dashboard-url URL         Beam dashboard URL. Used to build the cloud playlist URL.
   --cloud-playlist-url URL    Explicit cloud playlist URL. Overrides --dashboard-url.
-  --api-url URL               Beam cloud API base URL for heartbeat posts.
+  --api-url URL               Beam device API base URL for heartbeat posts.
   --api-key KEY               Beam cloud API key. Written only to the private env file.
   --environment NAME          Device environment label for device.json. Default: local.
   --network-online true|false Report networkOnline in heartbeat. Defaults to true for cloud config.
-  --heartbeat-interval N      Heartbeat loop interval in seconds. Default: 60.
+  --heartbeat-interval N      Heartbeat loop interval in seconds. Default: 30.
+  --heartbeat-jitter N        Additional random sleep jitter in seconds. Default: 5.
   --repo-root PATH            PiSignage repo path on this Pi. Default: detected repo root.
   --install-service           Install the user systemd device-agent service.
   --enable-service            Enable and start the user systemd device-agent service.
@@ -25,8 +26,8 @@ Examples:
   device/pi/bin/pisignage-provision-device.sh \
     --device-id device-c5-aws-pilot \
     --dashboard-url https://example.awsapprunner.com \
-    --api-url https://example.execute-api.us-west-2.amazonaws.com/dev \
-    --api-key paste-dev-api-key
+    --api-url https://example.lambda-url.us-west-2.on.aws \
+    --api-key paste-device-api-key
 USAGE
 }
 
@@ -45,7 +46,8 @@ cloud_api_url=""
 cloud_api_key=""
 environment_name="local"
 network_online=""
-heartbeat_interval="60"
+heartbeat_interval="30"
+heartbeat_jitter="5"
 install_service="false"
 enable_service="false"
 dry_run="false"
@@ -84,6 +86,10 @@ while [[ $# -gt 0 ]]; do
       heartbeat_interval="${2:-}"
       shift 2
       ;;
+    --heartbeat-jitter)
+      heartbeat_jitter="${2:-}"
+      shift 2
+      ;;
     --repo-root)
       repo_root="${2:-}"
       shift 2
@@ -118,6 +124,7 @@ done
   die "--environment must be 2-40 chars: letters, numbers, dot, underscore, colon, or dash"
 [[ "$heartbeat_interval" =~ ^[0-9]+$ ]] || die "--heartbeat-interval must be a positive integer"
 (( heartbeat_interval >= 5 )) || die "--heartbeat-interval must be at least 5 seconds"
+[[ "$heartbeat_jitter" =~ ^[0-9]+$ ]] || die "--heartbeat-jitter must be a non-negative integer"
 
 validate_no_whitespace() {
   local name="$1"
@@ -184,6 +191,7 @@ write_files() {
     echo "PISIGNAGE_CACHE_DIR=${cache_dir}"
     echo "PISIGNAGE_HEARTBEAT_PATH=${heartbeat_path}"
     echo "PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS=${heartbeat_interval}"
+    echo "PISIGNAGE_HEARTBEAT_JITTER_SECONDS=${heartbeat_jitter}"
     echo "PISIGNAGE_NETWORK_ONLINE=${network_online}"
     if [[ -n "$cloud_playlist_url" ]]; then
       echo "PISIGNAGE_CLOUD_PLAYLIST_URL=${cloud_playlist_url}"
@@ -232,6 +240,7 @@ echo "  identity file: ${identity_file}"
 echo "  repo root: ${repo_root}"
 echo "  cloud playlist: $([[ -n "$cloud_playlist_url" ]] && echo configured || echo not configured)"
 echo "  cloud heartbeat: $([[ -n "$cloud_api_url" ]] && echo configured || echo not configured)"
+echo "  heartbeat interval: ${heartbeat_interval}s (+0-${heartbeat_jitter}s jitter)"
 echo "  api key: $([[ -n "$cloud_api_key" ]] && echo written-redacted || echo not configured)"
 echo "  install service: ${install_service}"
 echo "  enable service: ${enable_service}"

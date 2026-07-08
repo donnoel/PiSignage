@@ -6,6 +6,7 @@
   "cloudPlaylistUrl": "https://your-dashboard.awsapprunner.com/api/cloud/devices/device-local-demo/playlist",
   "cacheDirectory": "device-agent/local-cache",
   "heartbeatPath": "device-agent/local-state/heartbeat.json",
-  "pollIntervalSeconds": 60,
+  "pollIntervalSeconds": 30,
+  "pollJitterSeconds": 5,
   "appVersion": "0.1.0"
 }

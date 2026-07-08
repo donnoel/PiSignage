@@ -1529,12 +1529,30 @@ async function postCloudHeartbeat(config: CloudHeartbeatConfig, heartbeat: Heart
 }
 
 function heartbeatIntervalMs(): number {
-  const seconds = Number.parseInt(process.env.PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS ?? "60", 10);
+  const seconds = Number.parseInt(process.env.PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS ?? "30", 10);
   if (!Number.isFinite(seconds) || seconds < 5) {
-    return 60_000;
+    return 30_000;
   }
 
   return seconds * 1_000;
+}
+
+function heartbeatJitterMs(): number {
+  const seconds = Number.parseInt(process.env.PISIGNAGE_HEARTBEAT_JITTER_SECONDS ?? "5", 10);
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return 5_000;
+  }
+
+  return seconds * 1_000;
+}
+
+function heartbeatSleepMs(intervalMs: number): number {
+  const jitterMs = heartbeatJitterMs();
+  if (jitterMs <= 0) {
+    return intervalMs;
+  }
+
+  return intervalMs + Math.floor(Math.random() * (jitterMs + 1));
 }
 
 function playlistVersionOrNull(value: unknown): number | null {
@@ -1634,8 +1652,10 @@ async function runHeartbeatOnce(): Promise<void> {
 
 async function runHeartbeatLoop(): Promise<void> {
   const intervalMs = heartbeatIntervalMs();
+  const jitterMs = heartbeatJitterMs();
   log("info", "agent.loop.start", {
-    intervalSeconds: intervalMs / 1_000
+    intervalSeconds: intervalMs / 1_000,
+    jitterSeconds: jitterMs / 1_000
   });
 
   while (!stopping) {
@@ -1648,7 +1668,7 @@ async function runHeartbeatLoop(): Promise<void> {
     }
 
     if (!stopping) {
-      await sleep(intervalMs);
+      await sleep(heartbeatSleepMs(intervalMs));
     }
   }
 

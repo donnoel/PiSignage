@@ -14,7 +14,7 @@ Implemented or scaffolded now:
 - App Runner dashboard container from `Dockerfile.dashboard`.
 - Private S3 buckets for source media, playback media, thumbnails, and logs.
 - DynamoDB tables for accounts, devices, screens, playlists, assets, heartbeats, and activity.
-- API Gateway and Lambda routes for latest-device heartbeat write/read.
+- Lambda Function URL device API and Lambda handler for latest-device heartbeat write/read.
 - Dashboard cloud mode for Screens, Devices, playlist catalog, media source upload/cataloging, manual playlist publish markers, and heartbeat reads.
 - Device-agent cloud release checks, publish-gated manifest sync, cached media verification, and heartbeat post when provisioned with ignored local environment variables.
 - Dev device playlist endpoint at `/api/cloud/devices/{deviceId}/playlist`.
@@ -25,7 +25,7 @@ Still not production-ready:
 
 - No Cognito dashboard authentication.
 - No IoT certificates or MQTT command channel.
-- No production device-auth boundary for playlist fetch.
+- Playlist fetch still uses App Runner dashboard routes and a temporary pilot API key. Production per-device auth remains future work.
 - No CloudFront distribution or production signed URL strategy.
 - No OTA update system, screenshot capture, analytics, billing, or enterprise-grade custom RBAC.
 - No multi-client production use until workspace ownership and access enforcement are implemented.
@@ -33,7 +33,7 @@ Still not production-ready:
 
 ## Services
 
-- API Gateway: HTTPS API for dashboard and device contract endpoints.
+- Device API: Lambda Function URL for lightweight outbound device heartbeat check-ins.
 - Lambda: small request handlers for heartbeat now; pairing, playlist, asset, and assignment API handlers remain target design where not already served by the dashboard.
 - DynamoDB: account, screen, device, playlist, asset, assignment, and heartbeat metadata.
 - S3: private source media and processed media storage.
@@ -43,7 +43,7 @@ Still not production-ready:
 
 Greengrass may be considered later, but it is not part of the initial alpha.
 
-App Runner can remain a short-term dev alpha dashboard host, but it is not the final default. Before expanding hosted compute, compare the expected cost and operational value against a smaller API Gateway/Lambda path, ECS Express Mode, or another lower-cost option.
+App Runner can remain a short-term dev alpha dashboard host, but device heartbeat should not depend on the dashboard server. Before expanding hosted compute, compare the expected cost and operational value against a smaller API Gateway HTTP API/Lambda path, Lambda Function URLs, ECS Express Mode, or another lower-cost option.
 
 ## S3 Media Bucket And Key Strategy
 
@@ -336,11 +336,11 @@ Rules:
 
 | Contract | AWS services | Notes |
 | --- | --- | --- |
-| `POST /v1/devices/pair` | API Gateway, Lambda, DynamoDB, future IoT provisioning | Pair one Pi to one screen. Credential provisioning needs separate approval. |
-| `POST /v1/devices/{deviceId}/heartbeat` | API Gateway, Lambda, DynamoDB, optional IoT | Store latest heartbeat; failure must not stop playback. |
-| `GET /v1/devices/{deviceId}/playlist` | API Gateway, Lambda, DynamoDB, CloudFront signing | Return assignment and signed asset URLs. |
-| `POST /v1/assets/upload-url` | API Gateway, Lambda, DynamoDB, S3 | Return signed upload URL, never log it. |
-| `PUT /v1/screens/{screenId}/assignment` | API Gateway, Lambda, DynamoDB, IoT publish | Update assignment and publish lightweight playlist update. |
+| `POST /v1/devices/pair` | Future API Gateway HTTP API or Lambda Function URL, Lambda, DynamoDB, future IoT provisioning | Pair one Pi to one screen. Credential provisioning needs separate approval. |
+| `POST /v1/devices/{deviceId}/heartbeat` | Lambda Function URL, Lambda, DynamoDB | Store latest heartbeat from outbound device HTTPS; failure must not stop playback. |
+| `GET /v1/devices/{deviceId}/playlist` | App Runner dashboard route today; future API Gateway HTTP API or Lambda Function URL, Lambda, DynamoDB, CloudFront signing | Return publish-gated assignment/release metadata and signed asset URLs only when needed. |
+| `POST /v1/assets/upload-url` | App Runner dashboard route today; future API Gateway HTTP API or Lambda Function URL, Lambda, DynamoDB, S3 | Return signed upload URL, never log it. |
+| `PUT /v1/screens/{screenId}/assignment` | Future API Gateway HTTP API or Lambda Function URL, Lambda, DynamoDB, IoT publish | Update assignment and publish lightweight playlist update. |
 
 ## Local Mock-To-AWS Migration Path
 

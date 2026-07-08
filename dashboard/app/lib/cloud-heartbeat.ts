@@ -32,29 +32,11 @@ export type CloudHeartbeatState = {
   status: "available" | "error" | "not_configured" | "not_found";
 };
 
-type CloudHeartbeatResponse = {
-  heartbeat?: CloudHeartbeat;
-  error?: {
-    code?: string;
-    message?: string;
-  };
-};
-
-const cloudHeartbeatTimeoutMs = 4_000;
 const dynamoDb = new DynamoDBClient({});
 
 function trimmedEnv(name: string): string | null {
   const value = process.env[name]?.trim();
   return value ? value : null;
-}
-
-function cloudApiUrl(): string | null {
-  const rawUrl = trimmedEnv("BEAM_CLOUD_API_URL") ?? trimmedEnv("PISIGNAGE_CLOUD_API_URL");
-  return rawUrl ? rawUrl.replace(/\/+$/, "") : null;
-}
-
-function cloudApiKey(): string | null {
-  return trimmedEnv("BEAM_CLOUD_API_KEY") ?? trimmedEnv("PISIGNAGE_CLOUD_API_KEY");
 }
 
 function cloudDeviceId(): string {
@@ -103,7 +85,7 @@ function notConfiguredState(deviceId: string): CloudHeartbeatState {
     deviceId,
     fetchedAt: null,
     heartbeat: null,
-    message: "Set BEAM_CLOUD_API_URL and BEAM_CLOUD_API_KEY on the dashboard server to read AWS heartbeat status.",
+    message: "Set BEAM_HEARTBEATS_TABLE_NAME on the dashboard server to read AWS heartbeat status.",
     ok: false,
     status: "not_configured"
   };
@@ -191,91 +173,30 @@ export async function readCloudHeartbeats(deviceIds: string[]): Promise<Record<s
 export async function readCloudHeartbeat(): Promise<CloudHeartbeatState> {
   const deviceId = cloudDeviceId();
   const tableName = heartbeatsTableName();
-  const apiUrl = cloudApiUrl();
-  const apiKey = cloudApiKey();
   const fetchedAt = new Date().toISOString();
 
-  if (tableName) {
-    try {
-      const result = await dynamoDb.send(new GetItemCommand({
-        ConsistentRead: true,
-        Key: {
-          deviceId: { S: deviceId }
-        },
-        TableName: tableName
-      }));
-
-      if (!result.Item) {
-        return {
-          configured: true,
-          deviceId,
-          fetchedAt,
-          heartbeat: null,
-          message: "AWS has not recorded a heartbeat for this device yet.",
-          ok: false,
-          status: "not_found"
-        };
-      }
-
-      return {
-        configured: true,
-        deviceId,
-        fetchedAt,
-        heartbeat: heartbeatFromDynamoItem(result.Item),
-        message: "Latest AWS heartbeat read from DynamoDB.",
-        ok: true,
-        status: "available"
-      };
-    } catch (error) {
-      return {
-        configured: true,
-        deviceId,
-        fetchedAt,
-        heartbeat: null,
-        message: error instanceof Error ? error.message : "AWS heartbeat read failed.",
-        ok: false,
-        status: "error"
-      };
-    }
-  }
-
-  if (!apiUrl || !apiKey) {
+  if (!tableName) {
     return notConfiguredState(deviceId);
   }
 
-  const url = `${apiUrl}/v1/devices/${encodeURIComponent(deviceId)}/heartbeat`;
-
   try {
-    const response = await fetch(url, {
-      cache: "no-store",
-      headers: {
-        "x-api-key": apiKey
+    const result = await dynamoDb.send(new GetItemCommand({
+      ConsistentRead: true,
+      Key: {
+        deviceId: { S: deviceId }
       },
-      signal: AbortSignal.timeout(cloudHeartbeatTimeoutMs)
-    });
-    const body = (await response.json().catch(() => ({}))) as CloudHeartbeatResponse;
+      TableName: tableName
+    }));
 
-    if (response.status === 404) {
+    if (!result.Item) {
       return {
         configured: true,
         deviceId,
         fetchedAt,
         heartbeat: null,
-        message: body.error?.message ?? "AWS has not recorded a heartbeat for this device yet.",
+        message: "AWS has not recorded a heartbeat for this device yet.",
         ok: false,
         status: "not_found"
-      };
-    }
-
-    if (!response.ok || !body.heartbeat) {
-      return {
-        configured: true,
-        deviceId,
-        fetchedAt,
-        heartbeat: null,
-        message: body.error?.message ?? `AWS heartbeat read failed with HTTP ${response.status}.`,
-        ok: false,
-        status: "error"
       };
     }
 
@@ -283,7 +204,7 @@ export async function readCloudHeartbeat(): Promise<CloudHeartbeatState> {
       configured: true,
       deviceId,
       fetchedAt,
-      heartbeat: body.heartbeat,
+      heartbeat: heartbeatFromDynamoItem(result.Item),
       message: "Latest AWS heartbeat read from DynamoDB.",
       ok: true,
       status: "available"

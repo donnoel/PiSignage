@@ -247,9 +247,11 @@ npm --workspace device-agent run build
 device/pi/bin/pisignage-provision-device.sh \
   --device-id device-c5-aws-pilot \
   --dashboard-url https://your-dashboard.awsapprunner.com \
-  --api-url https://your-api-id.execute-api.us-west-2.amazonaws.com/dev \
-  --api-key 'replace-with-dev-api-key' \
+  --api-url https://your-device-api.lambda-url.us-west-2.on.aws \
+  --api-key 'replace-with-device-api-key' \
   --environment dev \
+  --heartbeat-interval 30 \
+  --heartbeat-jitter 5 \
   --install-service \
   --enable-service
 ```
@@ -261,7 +263,7 @@ The script writes:
 ~/.config/pisignage/device.json
 ```
 
-`device-agent.env` is mode `600` and may contain the dev API key. `device.json`
+`device-agent.env` is mode `600` and may contain the device API key. `device.json`
 is a non-secret identity summary for troubleshooting. For fully local operation,
 run the same script with only `--device-id`. In that mode the agent still reads
 the local playlist, writes local heartbeat JSON, and logs that cloud work was

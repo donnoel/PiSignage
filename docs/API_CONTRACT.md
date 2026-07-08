@@ -1,6 +1,6 @@
 # API Contract
 
-This document records the API and MQTT contract direction for Beam. The current repository uses local files, local dashboard routes, and direct Pi SSH/SCP operations for the default local product path, and it also includes a limited AWS `dev` alpha for heartbeat, cloud-backed dashboard data, media cataloging, and device playlist fetch.
+This document records the API and MQTT contract direction for Beam. The current repository uses local files, local dashboard routes, and direct Pi SSH/SCP operations for the default local product path. The AWS `dev` alpha uses a dedicated device API for heartbeat, App Runner dashboard routes for publish-gated playlist/release checks, and DynamoDB-backed dashboard data, media cataloging, and status reads.
 
 These contracts are intentionally scoped to the initial product path: one pilot workspace, a small fleet, reusable media, playlists, and playback-safe assets. Local behavior must remain testable without AWS credentials. Production multi-client use must follow `docs/WORKSPACES_AND_ROLES.md` so users can belong to multiple workspaces without crossing client boundaries.
 
@@ -88,7 +88,7 @@ Response:
   "screenId": "screen-lobby",
   "screenName": "Lobby TV",
   "mqttClientId": "device-local-demo",
-  "heartbeatIntervalSeconds": 60,
+  "heartbeatIntervalSeconds": 30,
   "playlistPollIntervalSeconds": 300
 }
 ```
@@ -109,13 +109,13 @@ Security notes:
 
 Heartbeat is the first monitoring model. It tells the dashboard whether the device recently reported status, but it is not a command channel.
 
-Implemented in the dev AWS alpha:
+Implemented in the dev AWS alpha as a dedicated device API endpoint. Each Pi posts outbound HTTPS from whatever network it is on; Beam does not require inbound network access to the Pi for heartbeat.
 
 ```http
 POST /v1/devices/{deviceId}/heartbeat
 ```
 
-The dev AWS alpha currently gates heartbeat write and read routes with an API Gateway API key. That is a temporary alpha control, not the final device identity or dashboard auth model. Production device authentication remains a future pairing/certificate contract, and production dashboard reads still need a real authenticated UI/backend boundary.
+The dev AWS alpha currently gates heartbeat write/read with a generated shared pilot device API key stored in AWS Secrets Manager and sent as `x-api-key`. This is a temporary pilot control, not the final device identity model. Production device authentication remains a future pairing/certificate contract, and production dashboard reads still need a real authenticated UI/backend boundary.
 
 Request:
 
@@ -127,7 +127,14 @@ Request:
   "currentPlaylistId": "playlist-local-demo",
   "currentAssetId": "asset-welcome",
   "diskFreeBytes": 1234567890,
-  "networkOnline": false
+  "networkOnline": false,
+  "playbackState": "playing",
+  "playlistVersion": 3,
+  "scheduleState": "on",
+  "scheduleDetail": "Schedule window is active.",
+  "scheduleDisplayAction": "on",
+  "scheduleDisplayControlOk": true,
+  "scheduleOverrideExpiresAt": null
 }
 ```
 
@@ -137,15 +144,15 @@ Response:
 {
   "accepted": true,
   "serverTime": "2026-05-20T20:17:33.100Z",
-  "nextHeartbeatInSeconds": 60
+  "nextHeartbeatInSeconds": 30
 }
 ```
 
 Expected failures:
 
 - `400 invalid_heartbeat`
-- `401 device_not_authenticated`
-- `403 forbidden` when the dev API key is missing or invalid
+- `401 missing_api_key`
+- `403 device_not_authenticated`
 - `404 device_not_found`
 
 Device behavior:
@@ -154,6 +161,7 @@ Device behavior:
 - Device should log the failure and retry on the next interval.
 - Device should keep writing local heartbeat JSON for local diagnostics.
 - The current device-agent alpha sends cloud heartbeat only when `PISIGNAGE_CLOUD_API_URL` and `PISIGNAGE_CLOUD_API_KEY` are configured.
+- `PISIGNAGE_CLOUD_API_URL` should point at the dedicated device API, not the App Runner dashboard URL.
 
 ### Latest Heartbeat Read
 
@@ -183,7 +191,8 @@ Response:
 
 Expected failures:
 
-- `403 forbidden` when the dev API key is missing or invalid
+- `401 missing_api_key`
+- `403 device_not_authenticated`
 - `404 heartbeat_not_found`
 
 ## Playlist Fetch

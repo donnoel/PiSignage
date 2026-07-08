@@ -12,7 +12,7 @@ The current repository provides a local-first product foundation plus an opt-in 
 - `docs/`: architecture, phase plan, API contract, AWS alpha notes, security notes, and device setup.
 - `docs/WORKSPACES_AND_ROLES.md`: planned client workspace and role model for multi-workspace users and server-enforced tenant isolation.
 - `sample-content/`: tracked seed playlist and local media fixtures.
-- `infra/`: AWS CDK scaffold for the Beam `dev` alpha. It includes App Runner, DynamoDB, S3, API Gateway, Lambda, and log resources when deliberately deployed.
+- `infra/`: AWS CDK scaffold for the Beam `dev` alpha. It includes App Runner for the dashboard, a dedicated Lambda Function URL for device heartbeat check-ins, DynamoDB, S3, Lambda, and log resources when deliberately deployed.
 
 ## Local Requirements
 

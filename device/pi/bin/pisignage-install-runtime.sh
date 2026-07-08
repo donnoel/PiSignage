@@ -194,7 +194,8 @@ WorkingDirectory=${repo_root}
 Environment=PISIGNAGE_PLAYLIST_PATH=${repo_root}/sample-content/playlist.local.json
 Environment=PISIGNAGE_CACHE_DIR=%h/.local/cache/pisignage/device-agent
 Environment=PISIGNAGE_HEARTBEAT_PATH=%h/.local/state/pisignage/heartbeat.json
-Environment=PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS=60
+Environment=PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS=30
+Environment=PISIGNAGE_HEARTBEAT_JITTER_SECONDS=5
 EnvironmentFile=-%h/.config/pisignage/device-agent.env
 ExecStart=${node_bin} ${device_agent_dist} --loop
 Restart=always

@@ -1,7 +1,6 @@
 import * as cdk from "aws-cdk-lib";
 import { Duration, RemovalPolicy, Stack } from "aws-cdk-lib";
 import type { StackProps } from "aws-cdk-lib";
-import * as apigateway from "aws-cdk-lib/aws-apigateway";
 import * as apprunner from "aws-cdk-lib/aws-apprunner";
 import * as budgets from "aws-cdk-lib/aws-budgets";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
@@ -12,6 +11,7 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as nodeLambda from "aws-cdk-lib/aws-lambda-nodejs";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as s3 from "aws-cdk-lib/aws-s3";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import path from "node:path";
 import type { Construct } from "constructs";
 
@@ -60,6 +60,15 @@ export class BeamFoundationStack extends Stack {
     const releasesTable = tableById(tablesById, "Releases");
     const screensTable = tableById(tablesById, "Screens");
     const heartbeatFunctionName = `${namePrefix}-heartbeat`;
+    const deviceApiSecret = new secretsmanager.Secret(this, "DeviceApiSecret", {
+      description: "Shared pilot key for Beam device API check-ins. Replace with per-device credentials before production multi-client rollout.",
+      generateSecretString: {
+        excludePunctuation: true,
+        passwordLength: 40
+      },
+      removalPolicy: RemovalPolicy.RETAIN,
+      secretName: `${namePrefix}-device-api-key`
+    });
     const logGroups = ["api", "device", "media", "dashboard"].map((serviceName) =>
       new logs.LogGroup(this, `${serviceName}LogGroup`, {
         logGroupName: `/beam/${props.environmentName}/${serviceName}`,
@@ -148,8 +157,9 @@ export class BeamFoundationStack extends Stack {
       environment: {
         DEFAULT_ACCOUNT_ID: "beam-dev",
         DEVICES_TABLE_NAME: devicesTable.tableName,
+        DEVICE_API_KEY: deviceApiSecret.secretValue.unsafeUnwrap(),
         HEARTBEATS_TABLE_NAME: heartbeatsTable.tableName,
-        NEXT_HEARTBEAT_IN_SECONDS: "60"
+        NEXT_HEARTBEAT_IN_SECONDS: "30"
       },
       functionName: `${heartbeatFunctionName}-v2`,
       handler: "index.handler",
@@ -169,40 +179,8 @@ export class BeamFoundationStack extends Stack {
       actions: ["dynamodb:DescribeTable", "dynamodb:PutItem"],
       resources: [devicesTable.tableArn]
     }));
-
-    const api = new apigateway.RestApi(this, "BeamApiRestored", {
-      deployOptions: {
-        stageName: props.environmentName,
-        throttlingBurstLimit: 20,
-        throttlingRateLimit: 10
-      },
-      description: "Beam dev API.",
-      restApiName: `${namePrefix}-api-v2`
-    });
-    const plan = api.addUsagePlan("DevDeviceUsagePlan", {
-      name: `${namePrefix}-device-dev-v2`,
-      throttle: {
-        burstLimit: 20,
-        rateLimit: 10
-      }
-    });
-    plan.addApiStage({
-      stage: api.deploymentStage
-    });
-    const apiKey = api.addApiKey("DevDeviceApiKey", {
-      apiKeyName: `${namePrefix}-device-dev-v2`
-    });
-    plan.addApiKey(apiKey);
-
-    const v1 = api.root.addResource("v1");
-    const devices = v1.addResource("devices");
-    const device = devices.addResource("{deviceId}");
-    const heartbeat = device.addResource("heartbeat");
-    heartbeat.addMethod("POST", new apigateway.LambdaIntegration(heartbeatFunction), {
-      apiKeyRequired: true
-    });
-    heartbeat.addMethod("GET", new apigateway.LambdaIntegration(heartbeatFunction), {
-      apiKeyRequired: true
+    const deviceApiUrl = heartbeatFunction.addFunctionUrl({
+      authType: lambda.FunctionUrlAuthType.NONE
     });
 
     const dashboardImage = new ecrAssets.DockerImageAsset(this, "DashboardImage", {
@@ -306,10 +284,6 @@ export class BeamFoundationStack extends Stack {
                 value: "cloud"
               },
               {
-                name: "BEAM_CLOUD_API_URL",
-                value: api.url
-              },
-              {
                 name: "BEAM_DEVICES_TABLE_NAME",
                 value: devicesTable.tableName
               },
@@ -366,8 +340,8 @@ export class BeamFoundationStack extends Stack {
       logBucket,
       ...tables,
       ...logGroups,
+      deviceApiSecret,
       heartbeatFunction,
-      api,
       dashboardService
     ].forEach((resource) => {
       cdk.Tags.of(resource).add("Application", "Beam");
@@ -390,8 +364,11 @@ export class BeamFoundationStack extends Stack {
     new cdk.CfnOutput(this, "LogBucketName", {
       value: logBucket.bucketName
     });
-    new cdk.CfnOutput(this, "BeamApiUrl", {
-      value: api.url
+    new cdk.CfnOutput(this, "BeamDeviceApiUrl", {
+      value: deviceApiUrl.url
+    });
+    new cdk.CfnOutput(this, "BeamDeviceApiSecretArn", {
+      value: deviceApiSecret.secretArn
     });
     new cdk.CfnOutput(this, "BeamDashboardServiceUrl", {
       value: `https://${dashboardService.attrServiceUrl}`

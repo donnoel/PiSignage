@@ -14,7 +14,8 @@ No config file should contain AWS credentials, IoT private keys, signed URLs, or
   "playlistSourcePath": "sample-content/playlist.local.json",
   "cacheDirectory": "device-agent/local-cache",
   "heartbeatPath": "device-agent/local-state/heartbeat.json",
-  "pollIntervalSeconds": 60,
+  "pollIntervalSeconds": 30,
+  "pollJitterSeconds": 5,
   "appVersion": "0.1.0"
 }
 ```
@@ -28,7 +29,8 @@ No config file should contain AWS credentials, IoT private keys, signed URLs, or
 - `playlistSourcePath`: local playlist path or cloud dashboard playlist endpoint.
 - `cacheDirectory`: local last-known-good playlist and asset cache root.
 - `heartbeatPath`: local heartbeat JSON output path.
-- `pollIntervalSeconds`: device-agent loop interval. The default loop interval is 60 seconds.
+- `pollIntervalSeconds`: device-agent loop interval. The default loop interval is 30 seconds.
+- `pollJitterSeconds`: additional random sleep added to each loop so screens on different networks do not all check in at the same instant. The default jitter is 5 seconds.
 - `appVersion`: agent/player version reported in heartbeat.
 
 ## Current Environment Variable Mapping
@@ -40,6 +42,7 @@ PISIGNAGE_CACHE_DIR
 PISIGNAGE_HEARTBEAT_PATH
 PISIGNAGE_NETWORK_ONLINE
 PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS
+PISIGNAGE_HEARTBEAT_JITTER_SECONDS
 PISIGNAGE_AGENT_LOOP
 PISIGNAGE_CLOUD_PLAYLIST_URL
 PISIGNAGE_CLOUD_API_URL
@@ -60,19 +63,19 @@ PISIGNAGE_CLOUD_API_KEY
 
 ## Optional Cloud Heartbeat
 
-The device agent can fetch an assigned cloud playlist and send the same heartbeat payload to the Beam dev API when these environment variables are present:
+The device agent can fetch an assigned cloud playlist from the hosted dashboard and send the same heartbeat payload to the dedicated Beam device API when these environment variables are present. This is outbound HTTPS from each Pi, so screens can live on different networks without inbound access to the Pi.
 
 ```sh
 PISIGNAGE_CLOUD_PLAYLIST_URL=https://example.awsapprunner.com/api/cloud/devices/device-c5-aws-pilot/playlist
-PISIGNAGE_CLOUD_API_URL=https://example.execute-api.us-west-2.amazonaws.com/dev
-PISIGNAGE_CLOUD_API_KEY='<dev-api-key>'
+PISIGNAGE_CLOUD_API_URL=https://example.lambda-url.us-west-2.on.aws
+PISIGNAGE_CLOUD_API_KEY='<device-api-key>'
 ```
 
 The agent can run once or continuously:
 
 ```sh
 npm run agent:heartbeat
-PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS=60 npm run agent:loop
+PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS=30 PISIGNAGE_HEARTBEAT_JITTER_SECONDS=5 npm run agent:loop
 ```
 
 On a Pi, keep cloud settings in an ignored local env file loaded by the user
@@ -82,19 +85,9 @@ service:
 ~/.config/pisignage/device-agent.env
 ```
 
-On the dashboard server, use dashboard-only environment variables so the API key
-never reaches browser JavaScript:
-
-```sh
-BEAM_CLOUD_API_URL=https://example.execute-api.us-west-2.amazonaws.com/dev
-BEAM_CLOUD_API_KEY='<dev-api-key>'
-BEAM_CLOUD_DEVICE_ID=device-c5-aws-pilot
-```
-
 Rules:
 
 - Keep `PISIGNAGE_CLOUD_API_KEY` in the shell, systemd environment, or another ignored local secret store.
-- Keep `BEAM_CLOUD_API_KEY` only in ignored dashboard server environment.
 - Do not commit cloud API keys to git.
 - `PISIGNAGE_DEVICE_ID` is required when cloud playlist or heartbeat settings are configured.
 - A cloud playlist fetch failure must fall back to the local playlist or last cached playlist.
