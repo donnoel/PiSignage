@@ -8,7 +8,7 @@ C5 is the Beam prototype appliance and the source of truth for the current PI go
 
 Every Pi-touching change deployed to C5 must update this document before the work is considered complete. That includes changes to device-agent behavior, managed Pi scripts, systemd services or drop-ins, VLC/display/playback behavior, schedule enforcement, command-plane actions, heartbeat/current-video reporting, recovery, reset, cache, playlist, and published media behavior.
 
-C1-C4 and any future Beam Pi must be built, repaired, or updated from this PI golden master baseline. They should remain identical except intentional identity, network, screen, and location fields:
+Every C1-Cx Beam Pi must be built, repaired, or updated from this PI golden master baseline. They should remain identical except intentional identity, network, screen, and location fields:
 
 - hostname
 - IP address and network route
@@ -49,7 +49,7 @@ Reset intentionally clears runtime/publish state:
 - heartbeat
 - device-agent cache
 
-Important packaging note: `device-agent/dist/index.js` is an ignored build artifact, so a git fetch alone does not replace that compiled runtime. When device-agent source changes, build and deploy the compiled device-agent runtime to C5 before updating this baseline, and roll that runtime to C1-C4 when they are reachable.
+Important packaging note: `device-agent/dist/index.js` is an ignored build artifact, so a git fetch alone does not replace that compiled runtime. When device-agent source changes, build and deploy the compiled device-agent runtime to C5 before updating this baseline, and roll that runtime to every affected C1-Cx appliance when it is reachable.
 
 ## Workstation State
 
@@ -368,7 +368,7 @@ Use this workflow for every future Pi-touching C5 prototype change:
 1. Make and validate the C5 change live.
 2. Confirm C5 playback/display/network/service state is healthy.
 3. Update this PI golden master baseline with the new evidence and hashes.
-4. Note whether C1-C4 still need the change when they are reachable.
+4. Note which C1-Cx appliances still need the change when they are reachable.
 5. Do not call the Pi work complete until this file is current.
 
 Minimum live validation before updating this baseline:
@@ -388,11 +388,11 @@ sha256sum ~/.config/systemd/user/pisignage-*.service ~/.config/systemd/user/pisi
 sha256sum /home/donnoel/PiSignage/device-agent/dist/index.js
 ```
 
-## C1-C4 And Future Pi Rollout Note
+## C1-Cx Rollout Note
 
-C1-C4 were not reachable from the study at this capture time. They still need to be compared against and, where appropriate, updated to this PI golden master baseline when back at the studio. In particular, C1-C4 need the 2026-07-07 `wlopm` schedule display power hardening, deterministic Wi-Fi-first heartbeat address selection, Wi-Fi route metric helper behavior, schedule-aware heartbeat runtime, Open store command support, the dedicated device heartbeat API configuration, and the 30-second heartbeat service/runtime before schedule-off/schedule-on and cloud status behavior can be considered fleet-consistent.
+C1-C4 were not reachable from the study at this capture time. They still need to be compared against and, where appropriate, updated to this PI golden master baseline when back at the studio. The same rule applies to every future C1-Cx appliance. In particular, C1-C4 need the 2026-07-07 `wlopm` schedule display power hardening, deterministic Wi-Fi-first heartbeat address selection, Wi-Fi route metric helper behavior, schedule-aware heartbeat runtime, Open store command support, the dedicated device heartbeat API configuration, and the 30-second heartbeat service/runtime before schedule-off/schedule-on and cloud status behavior can be considered fleet-consistent.
 
-For C1-C4 or any new Beam Pi, always reference this file first. Do not use a previous chat transcript, stale IP address, or old C5 snapshot as the appliance source of truth.
+For any C1-Cx Beam Pi, always reference this file first. Do not use a previous chat transcript, stale IP address, or old C5 snapshot as the appliance source of truth.
 
 Rollout rule: copy the managed Beam runtime and generated service shape proven on C5, not C5's identity. Preserve or reprovision each Pi's hostname, network configuration, cloud device ID, screen assignment, location label, local API key, and secrets.
 
