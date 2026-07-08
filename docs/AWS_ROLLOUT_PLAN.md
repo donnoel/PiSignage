@@ -6,7 +6,7 @@ Every phase must follow `docs/AWS_COST_GUARDRAILS.md`. AWS rollout is not ready 
 
 ## Current Snapshot
 
-Beam now has a real `dev` alpha scaffold and partial cloud workflows. Foundation resources, App Runner dashboard hosting, DynamoDB-backed dashboard stores, cloud source-media cataloging, latest heartbeat routes, device-agent cloud heartbeat, device-agent playlist fetch, manual publish markers, and a cloud reset queue are present in code. Production auth, IoT/MQTT, complete media processing, cloud schedule parity, and production device identity remain future work.
+Beam now has a real `dev` alpha scaffold and partial cloud workflows. Foundation resources, App Runner dashboard hosting, DynamoDB-backed dashboard stores, cloud source-media cataloging, a dedicated Lambda Function URL device heartbeat API, device-agent cloud heartbeat, device-agent playlist fetch, manual publish markers, and a cloud reset queue are present in code. Production auth, IoT/MQTT, complete media processing, cloud schedule parity, and production device identity remain future work.
 
 ## Phase 1: Foundation
 
@@ -33,7 +33,7 @@ Validation:
 
 Create real backend endpoints before moving dashboard behavior.
 
-Status: partially implemented. Heartbeat routes exist through API Gateway/Lambda. Several dashboard workflows use DynamoDB/S3 directly from the server-side dashboard in cloud mode. Pairing and production API boundaries remain future work.
+Status: partially implemented. Device heartbeat check-ins use the dedicated Lambda Function URL -> Lambda -> DynamoDB path. Several dashboard workflows use DynamoDB/S3 directly from the server-side dashboard in cloud mode. Pairing and production API boundaries remain future work.
 
 Deliverables:
 
@@ -46,6 +46,7 @@ Deliverables:
 - `GET /v1/devices/{deviceId}/playlist`
 - Structured API errors with request IDs.
 - Least-privilege Lambda roles.
+- Future cleanup: remove the legacy App Runner heartbeat compatibility route after every reachable C1-Cx appliance has been confirmed on the Pi Golden Master device heartbeat API path.
 
 Validation:
 

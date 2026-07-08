@@ -26,6 +26,10 @@ Map/location UI is deferred. Near-term screen organization should use clear tabl
 - AWS dev alpha: approved and partially implemented, but every deploy or infrastructure mutation still requires explicit approval.
 - Production: only after local pilot and cloud reliability, recovery, and control findings are resolved or explicitly accepted.
 
+## Future Sprint Cleanup
+
+- Remove the legacy App Runner heartbeat compatibility route after every reachable C1-Cx appliance has been reprovisioned from the Pi Golden Master and confirmed to check in through the dedicated device heartbeat API.
+
 ## Phase 0: Existing Local Foundation
 
 Goal: preserve the working local proof while the product shape changes.

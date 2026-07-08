@@ -34,7 +34,7 @@ Currently implemented or scaffolded:
 - `infra/beam` CDK stack for foundation resources and App Runner dashboard hosting.
 - DynamoDB-backed cloud Screens, Devices, playlist catalog, media catalog records, heartbeat, and activity tables.
 - Private S3 source/playback/thumbnail/log buckets.
-- API Gateway/Lambda latest-heartbeat write/read.
+- Dedicated Lambda Function URL device heartbeat write path backed by Lambda and DynamoDB.
 - Dashboard cloud mode with manual playlist publish markers.
 - Device-agent cloud playlist fetch and cloud heartbeat post, with local cache fallback.
 
@@ -64,4 +64,6 @@ npm install
 npm run synth
 ```
 
-Before each deploy, review the synthesized template and confirm the intended scope. The `dev` stack includes private S3 buckets, DynamoDB tables, CloudWatch log groups, API Gateway/Lambda heartbeat routes, and App Runner dashboard hosting.
+Before each deploy, review the synthesized template and confirm the intended scope. The `dev` stack includes private S3 buckets, DynamoDB tables, CloudWatch log groups, the Lambda Function URL device heartbeat path, and App Runner dashboard hosting.
+
+Future cleanup: after every reachable C1-Cx appliance is reprovisioned from the Pi Golden Master and confirmed on the dedicated device heartbeat API, remove the legacy App Runner heartbeat compatibility route.
