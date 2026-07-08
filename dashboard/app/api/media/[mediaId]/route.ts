@@ -35,15 +35,20 @@ type RouteContext = {
 export const dynamic = "force-dynamic";
 
 function parseTags(value: unknown): string[] {
-  if (typeof value !== "string") {
+  const entries = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/[\n,]/)
+      : [];
+
+  if (entries.length === 0) {
     return [];
   }
 
   return Array.from(
     new Set(
-      value
-        .split(/[\n,]/)
-        .map((entry) => entry.trim())
+      entries
+        .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
         .filter(Boolean)
         .map((entry) => entry.slice(0, 48))
     )
@@ -133,7 +138,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     const workspaceContext = workspaceContextFromSession(session);
     const body = (await request.json()) as {
       description?: string;
-      tags?: string;
+      tags?: string | string[];
       title?: string;
     };
 

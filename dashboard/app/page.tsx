@@ -142,7 +142,13 @@ type PublishStatus = {
   playlistId?: string;
   playlistName?: string;
   playlistVersion: number;
+  targets?: PublishStatusTarget[];
   timestamp: string;
+};
+
+type PublishStatusTarget = {
+  deviceId: string | null;
+  screenId: string | null;
 };
 
 type StatusTone = "good" | "warn" | "muted";
@@ -1247,14 +1253,55 @@ function publishRequiredDetail(localVersion: number, reportedVersion: number | s
   return `Beam v${localVersion}; Pi v${reportedVersion}. Publish required.`;
 }
 
+function publishIsAwaitingConfirmation({
+  assignedPlaylist,
+  deviceId,
+  publishStatus,
+  reportedPlaylistId,
+  reportedPlaylistVersion,
+  screenId
+}: {
+  assignedPlaylist: Playlist | null;
+  deviceId: string;
+  publishStatus: PublishStatus | null;
+  reportedPlaylistId: string | null;
+  reportedPlaylistVersion: number | undefined;
+  screenId: string | null;
+}): boolean {
+  if (
+    !assignedPlaylist ||
+    !publishStatus?.ok ||
+    publishStatus.playlistId !== assignedPlaylist.playlistId ||
+    publishStatus.playlistVersion !== assignedPlaylist.version
+  ) {
+    return false;
+  }
+
+  if (
+    reportedPlaylistId === assignedPlaylist.playlistId &&
+    reportedPlaylistVersion === assignedPlaylist.version
+  ) {
+    return false;
+  }
+
+  const targets = publishStatus.targets ?? [];
+  if (targets.length === 0) {
+    return true;
+  }
+
+  return targets.some((target) => target.deviceId === deviceId || Boolean(screenId && target.screenId === screenId));
+}
+
 function fleetCommandRows({
   deviceStatuses,
   inventory,
-  playlistStore
+  playlistStore,
+  publishStatus
 }: {
   deviceStatuses: DashboardState["deviceStatuses"];
   inventory: DashboardState["inventory"];
   playlistStore: PlaylistStore;
+  publishStatus: PublishStatus | null;
 }): FleetCommandRow[] {
   const screensByDeviceId = new Map<string, ScreenRecord>();
   const playlistsById = new Map(playlistStore.items.map((item) => [item.playlistId, item]));
@@ -1285,6 +1332,7 @@ function fleetCommandRows({
       const linkedScreen = screensByDeviceId.get(device.id) ?? null;
       const assignedPlaylistId = assignedPlaylistIdForDevice(device, linkedScreen);
       const assignedPlaylist = assignedPlaylistId ? playlistsById.get(assignedPlaylistId) ?? null : null;
+      const screenId = linkedScreen?.id ?? device.screenId ?? device.id;
       const hostConfigured = Boolean(device.host.trim()) && device.host !== "Not configured";
       const deviceStatus = deviceStatuses[device.id];
       const isLive = Boolean(deviceStatus);
@@ -1305,10 +1353,21 @@ function fleetCommandRows({
       let syncDetail = "No playlist is assigned to this screen.";
       let syncLabel = "Unassigned";
       let syncTone: "good" | "warn" | "muted" = "warn";
+      const publishAwaitingConfirmation = publishIsAwaitingConfirmation({
+        assignedPlaylist,
+        deviceId: device.id,
+        publishStatus,
+        reportedPlaylistId,
+        reportedPlaylistVersion,
+        screenId
+      });
 
       if (assignedPlaylistId && !assignedPlaylist) {
         syncDetail = "This screen points to a playlist Beam cannot find in the saved catalog.";
         syncLabel = "Review";
+      } else if (assignedPlaylist && publishAwaitingConfirmation) {
+        syncDetail = `Sent ${assignedPlaylist.name}; waiting for this screen to confirm it.`;
+        syncLabel = "Publishing";
       } else if (assignedPlaylist && !isLive) {
         syncDetail = "No live playlist report has been received for this saved screen.";
         syncLabel = "Unknown";
@@ -1378,7 +1437,7 @@ function fleetCommandRows({
         scheduleDetail: deviceStatus?.scheduleDetail ?? null,
         scheduleOverrideExpiresAt: deviceStatus?.scheduleOverrideExpiresAt ?? null,
         scheduleState: deviceStatus?.scheduleState ?? null,
-        screenId: linkedScreen?.id ?? device.screenId ?? device.id,
+        screenId,
         screenName: linkedScreen?.name ?? "No screen linked",
         syncLabel,
         syncTone
@@ -1760,7 +1819,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const fleetRows = fleetCommandRows({
     deviceStatuses,
     inventory,
-    playlistStore
+    playlistStore,
+    publishStatus
   });
   const onlineDeviceCount = fleetRows.filter((row) => row.healthLabel === "Online").length;
   const offlineDeviceCount = fleetRows.filter((row) => row.healthLabel === "Offline").length;
@@ -2219,6 +2279,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 playlistId: item.playlistId,
                 version: item.version
               }))}
+              publishStatus={publishStatus}
             />
           </section>
 

@@ -59,6 +59,7 @@ type FleetDeviceHealthPanelProps = {
     playlistId: string;
     version: number;
   }>;
+  publishStatus: PublishStatus | null;
 };
 
 type DeviceLiveStatus = {
@@ -155,6 +156,57 @@ type PublishFeedback = {
 };
 
 type ScreenActionTone = "danger" | "neutral" | "primary";
+
+type PublishStatus = {
+  ok: boolean;
+  playlistId?: string;
+  playlistVersion: number;
+  targets?: PublishStatusTarget[];
+};
+
+type PublishStatusTarget = {
+  deviceId: string | null;
+  screenId: string | null;
+};
+
+function publishIsAwaitingConfirmation({
+  assignedPlaylist,
+  deviceId,
+  publishStatus,
+  reportedPlaylistId,
+  reportedPlaylistVersion,
+  screenId
+}: {
+  assignedPlaylist: { playlistId: string; version: number } | null | undefined;
+  deviceId: string;
+  publishStatus: PublishStatus | null;
+  reportedPlaylistId: string | null;
+  reportedPlaylistVersion: number | undefined;
+  screenId: string | null;
+}): boolean {
+  if (
+    !assignedPlaylist ||
+    !publishStatus?.ok ||
+    publishStatus.playlistId !== assignedPlaylist.playlistId ||
+    publishStatus.playlistVersion !== assignedPlaylist.version
+  ) {
+    return false;
+  }
+
+  if (
+    reportedPlaylistId === assignedPlaylist.playlistId &&
+    reportedPlaylistVersion === assignedPlaylist.version
+  ) {
+    return false;
+  }
+
+  const targets = publishStatus.targets ?? [];
+  if (targets.length === 0) {
+    return true;
+  }
+
+  return targets.some((target) => target.deviceId === deviceId || Boolean(screenId && target.screenId === screenId));
+}
 
 function displayedSyncState(row: RowState, publishFeedback: PublishFeedback | null): { detail: string; label: string; tone: Tone } {
   if (publishFeedback?.status === "pending") {
@@ -910,7 +962,8 @@ export function DeviceHealthFleetPanel({
   deviceStatuses,
   devices,
   screens,
-  playlists
+  playlists,
+  publishStatus
 }: FleetDeviceHealthPanelProps) {
   const router = useRouter();
   const [filter, setFilter] = useState<FilterKey>("all");
@@ -963,6 +1016,7 @@ export function DeviceHealthFleetPanel({
         const linkedScreen = screensByDeviceId.get(device.id) ?? null;
         const assignedPlaylistId = assignedPlaylistIdForDevice(device, linkedScreen);
         const assignedPlaylist = assignedPlaylistId ? playlistsById.get(assignedPlaylistId) : null;
+        const screenId = linkedScreen?.id ?? device.screenId ?? null;
         const status = deviceStatuses[device.id] ?? null;
         const isLive = Boolean(status);
         const reachable = status?.reachable ?? false;
@@ -1051,6 +1105,14 @@ export function DeviceHealthFleetPanel({
         let syncLabel = "Waiting";
         let syncDetail = "No playlist update report has been received from this screen yet.";
         let syncTone: Tone = "muted";
+        const publishAwaitingConfirmation = publishIsAwaitingConfirmation({
+          assignedPlaylist,
+          deviceId: device.id,
+          publishStatus,
+          reportedPlaylistId,
+          reportedPlaylistVersion,
+          screenId
+        });
 
         if (deploymentReady && !linkedScreen) {
           syncLabel = "Ready";
@@ -1063,6 +1125,10 @@ export function DeviceHealthFleetPanel({
         } else if (!assignedPlaylist) {
           syncLabel = "Review";
           syncDetail = "This screen points to a playlist Beam cannot find locally.";
+          syncTone = "warn";
+        } else if (assignedPlaylist && publishAwaitingConfirmation) {
+          syncLabel = "Publishing";
+          syncDetail = `Sent ${assignedPlaylist.name}; waiting for this screen to confirm it.`;
           syncTone = "warn";
         } else if (isLive && reachable && reportedPlaylistVersion !== null && reportedPlaylistVersion !== undefined && reportedPlaylistId) {
           if (reportedPlaylistId !== assignedPlaylist.playlistId) {
@@ -1182,6 +1248,7 @@ export function DeviceHealthFleetPanel({
     devices,
     deviceStatuses,
     playlistsById,
+    publishStatus,
     screensByDeviceId,
   ]);
 

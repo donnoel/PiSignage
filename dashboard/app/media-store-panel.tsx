@@ -1434,6 +1434,10 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
       return;
     }
 
+    const nextTags = tagsFromText(
+      editingTagDraft.trim() ? appendTagText(editingTags, editingTagDraft) : editingTags
+    );
+
     setUpdatingTagMediaId(item.id);
     setMessage(`Updating tags for ${item.title}...`);
     setMessageTone("idle");
@@ -1445,7 +1449,7 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          tags: editingTags
+          tags: nextTags
         })
       });
       const result = (await response.json()) as MediaUpdateResponse;
