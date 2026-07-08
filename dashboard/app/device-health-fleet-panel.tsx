@@ -398,6 +398,11 @@ function sshUrlFor(row: RowState): string | null {
   return host ? `ssh://${host}` : null;
 }
 
+function remoteDesktopUrlFor(row: RowState): string | null {
+  const host = operationalHostFor(row);
+  return host ? `vnc://${host}` : null;
+}
+
 function screenName(row: RowState): string {
   return row.linkedScreen?.name ?? row.device.name;
 }
@@ -1328,6 +1333,7 @@ export function DeviceHealthFleetPanel({
   const selectedPublishFeedback = selectedRow ? publishFeedbackByDeviceId[selectedRow.device.id] ?? null : null;
   const selectedSyncState = selectedRow ? displayedSyncState(selectedRow, selectedPublishFeedback) : null;
   const selectedLiveReportUrl = selectedRow ? liveReportUrlFor(selectedRow) : null;
+  const selectedRemoteDesktopUrl = selectedRow ? remoteDesktopUrlFor(selectedRow) : null;
   const selectedSshUrl = selectedRow ? sshUrlFor(selectedRow) : null;
   const selectedDiagnosticsReport = selectedRow ? diagnosticsReportFromResult(selectedRow.diagnosticsResult) : null;
   const selectedTargetName = selectedRow ? screenName(selectedRow) : "selected screen";
@@ -2189,6 +2195,14 @@ export function DeviceHealthFleetPanel({
                             className="inline-flex min-h-9 items-center rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
                           >
                             Open SSH
+                          </a>
+                        ) : null}
+                        {selectedRemoteDesktopUrl ? (
+                          <a
+                            href={selectedRemoteDesktopUrl}
+                            className="inline-flex min-h-9 items-center rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
+                          >
+                            Remote desktop
                           </a>
                         ) : null}
                       </div>

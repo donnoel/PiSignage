@@ -1,6 +1,6 @@
 # PI Golden Master Baseline
 
-Last updated: 2026-07-08 11:54 PDT
+Last updated: 2026-07-08 16:05 PDT
 
 ## Baseline Rule
 
@@ -69,6 +69,10 @@ Recent changes incorporated into this baseline:
 - Remote diagnostics command plane
 - Remote recovery command plane
 - Remote audio mute/unmute command support
+- Remote desktop prototype on C5:
+  - dashboard opens the Pi through the operator's local VNC client
+  - C5 runs WayVNC with PAM authentication on port `5900`
+  - C1-C4 rollout should happen after C5 manual proof confirms the operator flow
 - Remote screen snapshot command prototype:
   - captures the Pi display output with `grim`
   - compresses a small JPEG preview with `ffmpeg`
@@ -160,6 +164,7 @@ Physical note: during the 2026-07-04 recovery, the monitor only returned to a cl
 | `pisignage-vlc.service` | enabled | active | running | VLC playback path |
 | `pisignage-schedule.timer` | enabled | active | running | Runs schedule enforcement every minute |
 | `pisignage-schedule.service` | static | transient | start | One-shot schedule enforcement |
+| `wayvnc.service` | enabled | active | running | Remote desktop prototype for operator-requested local VNC access |
 | `pisignage-player.service` | disabled | inactive | dead | Browser player fallback/experimental |
 | `pisignage-kiosk.service` | disabled | inactive | dead | Browser kiosk fallback/experimental |
 

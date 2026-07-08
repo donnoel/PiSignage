@@ -906,7 +906,7 @@ function cloudDeviceStatus(device: DeviceRecord, cloudHeartbeat: CloudHeartbeatS
       ? "Closed"
       : playbackHealthy
         ? scheduleOverrideOpen ? "Open override" : "Playing"
-        : deploymentReady && fresh ? "Ready for deployment" : fresh ? "Cloud heartbeat" : "Waiting for update",
+        : deploymentReady && fresh ? "Ready for deployment" : fresh ? "Checking playback" : "Waiting for update",
     playerStatus: {
       currentAssetId: heartbeat.currentAssetId,
       playlistId: heartbeat.currentPlaylistId ?? undefined,
