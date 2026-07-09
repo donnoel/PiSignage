@@ -400,7 +400,11 @@ function sshUrlFor(row: RowState): string | null {
 
 function remoteDesktopUrlFor(row: RowState): string | null {
   const host = operationalHostFor(row);
-  return host ? `vnc://${host}` : null;
+  return host ? `vnc://${host}:5900` : null;
+}
+
+function compactPlaybackLabel(label: string): string {
+  return label === "Checking playback" ? "Checking" : label;
 }
 
 function screenName(row: RowState): string {
@@ -1993,7 +1997,7 @@ export function DeviceHealthFleetPanel({
                         <StatusPill label={row.healthLabel} tone={row.healthTone} />
                       </span>
                       <span className="justify-self-start" title={row.playbackDetail}>
-                        <StatusPill label={row.playbackLabel} tone={row.playbackTone} />
+                        <StatusPill label={compactPlaybackLabel(row.playbackLabel)} tone={row.playbackTone} />
                       </span>
                       <span className="justify-self-start">
                         <span className="block">

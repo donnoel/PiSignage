@@ -1,6 +1,6 @@
 # PI Golden Master Baseline
 
-Last updated: 2026-07-08 16:05 PDT
+Last updated: 2026-07-08 17:38 PDT
 
 ## Baseline Rule
 
@@ -71,7 +71,9 @@ Recent changes incorporated into this baseline:
 - Remote audio mute/unmute command support
 - Remote desktop prototype on C5:
   - dashboard opens the Pi through the operator's local VNC client
-  - C5 runs WayVNC with PAM authentication on port `5900`
+  - C5 runs system WayVNC on port `5900`
+  - C5 currently uses `enable_auth=false` in `/etc/wayvnc/config` because Apple Screen Sharing does not support WayVNC's PAM/VeNCrypt handshake
+  - until Tailscale ACLs are in place, this prototype should only be enabled on trusted local networks
   - C1-C4 rollout should happen after C5 manual proof confirms the operator flow
 - Remote screen snapshot command prototype:
   - captures the Pi display output with `grim`
@@ -164,7 +166,7 @@ Physical note: during the 2026-07-04 recovery, the monitor only returned to a cl
 | `pisignage-vlc.service` | enabled | active | running | VLC playback path |
 | `pisignage-schedule.timer` | enabled | active | running | Runs schedule enforcement every minute |
 | `pisignage-schedule.service` | static | transient | start | One-shot schedule enforcement |
-| `wayvnc.service` | enabled | active | running | Remote desktop prototype for operator-requested local VNC access |
+| `wayvnc.service` | enabled | active | running | System WayVNC remote desktop prototype on port `5900`; C5 config uses `enable_auth=false` for Apple Screen Sharing compatibility |
 | `pisignage-player.service` | disabled | inactive | dead | Browser player fallback/experimental |
 | `pisignage-kiosk.service` | disabled | inactive | dead | Browser kiosk fallback/experimental |
 
