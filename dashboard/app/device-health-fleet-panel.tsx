@@ -714,13 +714,13 @@ function summarizedActionDetail(device: DeviceRecord, fallback: string): string 
 
   if (device.actionType === "show-desktop") {
     if (device.actionStatus === "pending") {
-      return "Show desktop is queued. The Pi will pause signage on its next cloud check-in.";
+      return "Show desktop is queued. The Pi will pause signage and schedule control on its next cloud check-in.";
     }
     if (device.actionStatus === "running") {
-      return "Pausing signage so the desktop can be administered remotely.";
+      return "Pausing signage and schedule control so the desktop can be administered remotely.";
     }
     if (device.actionStatus === "succeeded") {
-      return "Desktop is ready for remote administration. Use Resume playback when you are finished.";
+      return "Desktop is ready for remote administration. Schedule control is paused until Resume playback runs.";
     }
   }
 

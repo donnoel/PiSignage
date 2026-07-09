@@ -856,6 +856,9 @@ async function restartPlaybackService(): Promise<string> {
 }
 
 async function showDesktop(): Promise<string> {
+  await execFileAsync("systemctl", ["--user", "stop", "pisignage-schedule.timer", "pisignage-schedule.service"], {
+    timeout: 45_000
+  });
   await execFileAsync("systemctl", ["--user", "stop", "pisignage-vlc.service"], {
     timeout: 45_000
   });
@@ -863,18 +866,26 @@ async function showDesktop(): Promise<string> {
   if (state === "active" || state === "activating") {
     throw new Error(`Could not show the desktop because VLC playback is still ${state}.`);
   }
-  return `Desktop is ready for remote administration. Playback is paused. VLC service state: ${state}.`;
+  const scheduleState = await userServiceState("pisignage-schedule.timer");
+  return `Desktop is ready for remote administration. Playback and schedule control are paused. VLC service state: ${state}. Schedule timer state: ${scheduleState}.`;
 }
 
 async function resumePlaybackService(): Promise<string> {
   await execFileAsync("systemctl", ["--user", "restart", "pisignage-vlc.service"], {
     timeout: 45_000
   });
+  await execFileAsync("systemctl", ["--user", "start", "pisignage-schedule.timer"], {
+    timeout: 20_000
+  });
   const state = await userServiceState("pisignage-vlc.service");
   if (state !== "active") {
     throw new Error(`Playback resume was requested, but VLC service state is ${state}.`);
   }
-  return "Playback resumed. VLC service state: active.";
+  const scheduleState = await userServiceState("pisignage-schedule.timer");
+  if (scheduleState !== "active") {
+    throw new Error(`Playback resumed, but schedule timer state is ${scheduleState}.`);
+  }
+  return "Playback resumed. VLC service state: active. Schedule control is active.";
 }
 
 async function openScheduledScreen(root: string): Promise<string> {
