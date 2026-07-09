@@ -118,7 +118,7 @@ type DeviceCommand = {
   requestedAt: string;
   status: "pending" | "running";
   statusUrl?: string;
-  type: "collect-diagnostics" | "mute-audio" | "open-screen" | "reboot-device" | "reset-device" | "restart-playback" | "run-recovery" | "screen-snapshot" | "unmute-audio";
+  type: "collect-diagnostics" | "mute-audio" | "open-screen" | "reboot-device" | "reset-device" | "restart-playback" | "resume-playback" | "run-recovery" | "screen-snapshot" | "show-desktop" | "unmute-audio";
 };
 
 type ScheduleStatus = {
@@ -836,14 +836,45 @@ async function requestCommandReboot(): Promise<string> {
   return "Reboot requested. The Pi should check in again after it restarts.";
 }
 
+async function userServiceState(serviceName: string): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync("systemctl", ["--user", "is-active", serviceName], {
+      timeout: 20_000
+    });
+    return stdout.trim() || "unknown";
+  } catch {
+    return "inactive";
+  }
+}
+
 async function restartPlaybackService(): Promise<string> {
   await execFileAsync("systemctl", ["--user", "restart", "pisignage-vlc.service"], {
     timeout: 45_000
   });
-  const { stdout } = await execFileAsync("systemctl", ["--user", "is-active", "pisignage-vlc.service"], {
-    timeout: 20_000
+  const state = await userServiceState("pisignage-vlc.service");
+  return `VLC playback restarted. Service state: ${state}.`;
+}
+
+async function showDesktop(): Promise<string> {
+  await execFileAsync("systemctl", ["--user", "stop", "pisignage-vlc.service"], {
+    timeout: 45_000
   });
-  return `VLC playback restarted. Service state: ${stdout.trim() || "unknown"}.`;
+  const state = await userServiceState("pisignage-vlc.service");
+  if (state === "active" || state === "activating") {
+    throw new Error(`Could not show the desktop because VLC playback is still ${state}.`);
+  }
+  return `Desktop is ready for remote administration. Playback is paused. VLC service state: ${state}.`;
+}
+
+async function resumePlaybackService(): Promise<string> {
+  await execFileAsync("systemctl", ["--user", "restart", "pisignage-vlc.service"], {
+    timeout: 45_000
+  });
+  const state = await userServiceState("pisignage-vlc.service");
+  if (state !== "active") {
+    throw new Error(`Playback resume was requested, but VLC service state is ${state}.`);
+  }
+  return "Playback resumed. VLC service state: active.";
 }
 
 async function openScheduledScreen(root: string): Promise<string> {
@@ -1045,6 +1076,12 @@ function actionRunningMessage(type: DeviceCommand["type"]): string {
   if (type === "restart-playback") {
     return "Restart playback is running on the Pi.";
   }
+  if (type === "show-desktop") {
+    return "Show desktop is running on the Pi.";
+  }
+  if (type === "resume-playback") {
+    return "Resume playback is running on the Pi.";
+  }
   if (type === "open-screen") {
     return "Open store is running on the Pi.";
   }
@@ -1093,6 +1130,10 @@ async function runActionCommand(root: string, cacheDirectory: string, command: D
         ? await unmuteVlcAudio()
         : command.type === "restart-playback"
         ? await restartPlaybackService()
+        : command.type === "show-desktop"
+        ? await showDesktop()
+        : command.type === "resume-playback"
+        ? await resumePlaybackService()
         : command.type === "open-screen"
         ? await openScheduledScreen(root)
         : command.type === "reboot-device"
@@ -1332,6 +1373,8 @@ async function fetchCloudPlaylist(cacheDirectory: string): Promise<{
 
     if (
       body.command.type === "restart-playback" ||
+      body.command.type === "show-desktop" ||
+      body.command.type === "resume-playback" ||
       body.command.type === "mute-audio" ||
       body.command.type === "unmute-audio" ||
       body.command.type === "open-screen" ||

@@ -22,8 +22,10 @@ function actionType(value: unknown): DeviceActionType | null {
     value === "open-screen" ||
     value === "reboot-device" ||
     value === "restart-playback" ||
+    value === "resume-playback" ||
     value === "run-recovery" ||
     value === "screen-snapshot" ||
+    value === "show-desktop" ||
     value === "unmute-audio"
     ? value
     : null;

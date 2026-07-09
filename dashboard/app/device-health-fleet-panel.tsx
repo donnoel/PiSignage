@@ -28,7 +28,7 @@ type DeviceRecord = {
   actionStartedAt?: string | null;
   actionStatus?: "failed" | "pending" | "running" | "succeeded" | null;
   actionStatusMessage?: string | null;
-  actionType?: "mute-audio" | "open-screen" | "reboot-device" | "restart-playback" | "run-recovery" | "screen-snapshot" | "unmute-audio" | null;
+  actionType?: "mute-audio" | "open-screen" | "reboot-device" | "restart-playback" | "resume-playback" | "run-recovery" | "screen-snapshot" | "show-desktop" | "unmute-audio" | null;
   actionUpdatedAt?: string | null;
   diagnosticsFinishedAt?: string | null;
   diagnosticsRequestedAt?: string | null;
@@ -676,6 +676,12 @@ function actionName(type: DeviceRecord["actionType"]): string {
   if (type === "restart-playback") {
     return "Restart playback";
   }
+  if (type === "show-desktop") {
+    return "Show desktop";
+  }
+  if (type === "resume-playback") {
+    return "Resume playback";
+  }
   if (type === "run-recovery") {
     return "Recovery check";
   }
@@ -703,6 +709,30 @@ function summarizedActionDetail(device: DeviceRecord, fallback: string): string 
     }
     if (device.actionStatus === "succeeded") {
       return "Playback restart completed and VLC reported active.";
+    }
+  }
+
+  if (device.actionType === "show-desktop") {
+    if (device.actionStatus === "pending") {
+      return "Show desktop is queued. The Pi will pause signage on its next cloud check-in.";
+    }
+    if (device.actionStatus === "running") {
+      return "Pausing signage so the desktop can be administered remotely.";
+    }
+    if (device.actionStatus === "succeeded") {
+      return "Desktop is ready for remote administration. Use Resume playback when you are finished.";
+    }
+  }
+
+  if (device.actionType === "resume-playback") {
+    if (device.actionStatus === "pending") {
+      return "Resume playback is queued. The Pi will run it on its next cloud check-in.";
+    }
+    if (device.actionStatus === "running") {
+      return "Restarting signage playback on the Pi.";
+    }
+    if (device.actionStatus === "succeeded") {
+      return "Playback resumed and VLC reported active.";
     }
   }
 
@@ -982,7 +1012,7 @@ export function DeviceHealthFleetPanel({
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [publishFeedbackByDeviceId, setPublishFeedbackByDeviceId] = useState<Record<string, PublishFeedback>>({});
-  const [busyAction, setBusyAction] = useState<"assign" | "diagnostics" | "inventory" | "mute" | "open" | "publish" | "reboot" | "recover" | "reset" | "restart" | "unmute" | null>(null);
+  const [busyAction, setBusyAction] = useState<"assign" | "diagnostics" | "inventory" | "mute" | "open" | "publish" | "reboot" | "recover" | "reset" | "restart" | "resume" | "showDesktop" | "unmute" | null>(null);
   const [busyDeviceId, setBusyDeviceId] = useState<string | null>(null);
   const [rebootWatch, setRebootWatch] = useState<{
     baselineStatusUpdatedAt: string | null;
@@ -1582,11 +1612,13 @@ export function DeviceHealthFleetPanel({
     }
   }
 
-  async function runAction(action: "diagnostics" | "mute" | "open" | "publish" | "reboot" | "recover" | "reset" | "restart" | "unmute", row: RowState) {
+  async function runAction(action: "diagnostics" | "mute" | "open" | "publish" | "reboot" | "recover" | "reset" | "restart" | "resume" | "showDesktop" | "unmute", row: RowState) {
     const remoteRecoveryAction = action === "mute" ||
       action === "unmute" ||
       action === "open" ||
       action === "restart" ||
+      action === "resume" ||
+      action === "showDesktop" ||
       action === "recover" ||
       action === "reboot";
     if (
@@ -1624,6 +1656,10 @@ export function DeviceHealthFleetPanel({
       setMessage("Open store is available from the AWS dashboard after the device-agent is installed.");
       return;
     }
+    if ((action === "showDesktop" || action === "resume") && dashboardMode !== "cloud") {
+      setMessage("Remote desktop controls are available from the AWS dashboard after the device-agent is installed.");
+      return;
+    }
     if (
       action === "reset" &&
       !window.confirm(
@@ -1631,6 +1667,15 @@ export function DeviceHealthFleetPanel({
       )
     ) {
       return;
+    }
+
+    const remoteDesktopUrl = remoteDesktopUrlFor(row);
+    if (action === "showDesktop") {
+      if (!remoteDesktopUrl) {
+        setMessage("Beam does not have a current desktop address for this Pi yet.");
+        return;
+      }
+      window.open(remoteDesktopUrl, "_blank", "noopener,noreferrer");
     }
 
     setBusyAction(action);
@@ -1655,6 +1700,10 @@ export function DeviceHealthFleetPanel({
           ? `Queueing audio unmute for ${targetName}...`
         : action === "open"
           ? `Queueing open store for ${targetName}...`
+        : action === "showDesktop"
+          ? `Opening desktop and pausing signage for ${targetName}...`
+        : action === "resume"
+          ? `Queueing resume playback for ${targetName}...`
         : action === "restart"
           ? `Restarting playback for ${targetName}...`
           : action === "reboot"
@@ -1684,6 +1733,10 @@ export function DeviceHealthFleetPanel({
                     ? "unmute-audio"
                     : action === "open"
                     ? "open-screen"
+                    : action === "showDesktop"
+                    ? "show-desktop"
+                    : action === "resume"
+                    ? "resume-playback"
                     : action === "restart"
                     ? "restart-playback"
                     : action === "reboot"
@@ -2202,12 +2255,14 @@ export function DeviceHealthFleetPanel({
                           </a>
                         ) : null}
                         {selectedRemoteDesktopUrl ? (
-                          <a
-                            href={selectedRemoteDesktopUrl}
-                            className="inline-flex min-h-9 items-center rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
+                          <button
+                            type="button"
+                            disabled={dashboardMode !== "cloud" || !selectedRow.isLive || isBusy || selectedRow.actionActive || selectedRow.resetActive || selectedRow.diagnosticsActive}
+                            onClick={() => void runAction("showDesktop", selectedRow)}
+                            className="min-h-9 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            Remote desktop
-                          </a>
+                            {busyAction === "showDesktop" ? "Opening..." : "Show desktop"}
+                          </button>
                         ) : null}
                       </div>
                       <p className="mt-3 break-words text-sm text-zinc-600">
@@ -2278,10 +2333,10 @@ export function DeviceHealthFleetPanel({
                         <button
                           type="button"
                           disabled={!selectedRow.isLive || isBusy || selectedRow.actionActive || selectedRow.resetActive || selectedRow.diagnosticsActive}
-                          onClick={() => void runAction("restart", selectedRow)}
+                          onClick={() => void runAction("resume", selectedRow)}
                           className="min-h-9 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          {busyAction === "restart" ? "Queueing..." : "Restart playback"}
+                          {busyAction === "resume" ? "Queueing..." : "Resume playback"}
                         </button>
                         <button
                           type="button"

@@ -1,6 +1,6 @@
 # PI Golden Master Baseline
 
-Last updated: 2026-07-08 17:50 PDT
+Last updated: 2026-07-08 18:12 PDT
 
 ## Baseline Rule
 
@@ -55,7 +55,7 @@ Important packaging note: `device-agent/dist/index.js` is an ignored build artif
 
 - Repo: `/Users/donnoel/Development/PiSignage`
 - Branch: `main`
-- HEAD before this baseline update: `cb06f41 Move heartbeat check-ins to dedicated device API`
+- HEAD before this baseline update: `afc1c09 Use browser remote desktop bridge`
 - Dashboard URL: `https://8yyptjawdv.us-west-2.awsapprunner.com`
 - Device heartbeat API URL: `https://yebxh6xyvm2nkgq3i2uw2oixda0izozg.lambda-url.us-west-2.on.aws/`
 
@@ -74,7 +74,9 @@ Recent changes incorporated into this baseline:
   - C5 runs system WayVNC on port `5900`
   - C5 runs `pisignage-remote-desktop.service`, which serves noVNC with `websockify` and bridges to `127.0.0.1:5900`
   - C5 currently uses `enable_auth=false` in `/etc/wayvnc/config` because noVNC must connect to WayVNC without the Apple Screen Sharing PAM/VeNCrypt path
-  - the Beam Remote desktop button is browser-based so it works from both macOS and Windows clients on the same trusted network
+  - the Beam `Show desktop` button opens the browser desktop view and queues a Pi action to pause managed VLC signage playback for remote administration
+  - the Beam `Resume playback` button queues a Pi action to restart managed VLC signage playback after remote administration
+  - the browser desktop path works from both macOS and Windows clients on the same trusted network
   - until Tailscale ACLs are in place, this prototype should only be enabled on trusted local networks
   - C1-C4 rollout should happen after C5 manual proof confirms the operator flow
 - Remote screen snapshot command prototype:
@@ -368,10 +370,10 @@ efbe213d6bc3b7d38351592ff0312d7f2320f7f3919b491b6221a4b5a6cfab8c  pisignage-remo
 Compiled device agent:
 
 ```text
-6c206f1b457fd0eaa19127d6e2be1451201f05554c9679e8d7ab62bac4355f35  device-agent/dist/index.js
+407875638de3c235b8ccd397c0b0d2521ec6be7ee01daa7e0d30d5c6d38a1df4  device-agent/dist/index.js
 ```
 
-This hash supersedes the 2026-07-07 baseline hash and includes the current command-plane behavior deployed to C5, including schedule-aware heartbeat reporting, the remote Open store action, the remote screen snapshot prototype, deterministic Wi-Fi-first heartbeat address selection, verified `wlopm` display power control for schedule close/open, and 30-second cloud heartbeat check-ins through the dedicated device heartbeat API.
+This hash supersedes the 2026-07-08 17:50 baseline hash and includes the current command-plane behavior deployed to C5, including schedule-aware heartbeat reporting, the remote Open store action, the remote screen snapshot prototype, remote Show desktop and Resume playback actions, deterministic Wi-Fi-first heartbeat address selection, verified `wlopm` display power control for schedule close/open, and 30-second cloud heartbeat check-ins through the dedicated device heartbeat API.
 
 ## Required Baseline Update Workflow
 

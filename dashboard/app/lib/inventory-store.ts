@@ -291,8 +291,10 @@ function actionTypeOrNull(value: AttributeValue | undefined): DeviceActionType |
     type === "open-screen" ||
     type === "reboot-device" ||
     type === "restart-playback" ||
+    type === "resume-playback" ||
     type === "run-recovery" ||
     type === "screen-snapshot" ||
+    type === "show-desktop" ||
     type === "unmute-audio"
     ? type
     : null;
@@ -1045,6 +1047,12 @@ function actionLabel(type: DeviceActionType): string {
   }
   if (type === "restart-playback") {
     return "Restart playback";
+  }
+  if (type === "show-desktop") {
+    return "Show desktop";
+  }
+  if (type === "resume-playback") {
+    return "Resume playback";
   }
   if (type === "run-recovery") {
     return "Full recovery";
