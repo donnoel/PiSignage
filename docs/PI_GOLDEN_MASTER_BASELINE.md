@@ -1,6 +1,6 @@
 # PI Golden Master Baseline
 
-Last updated: 2026-07-08 18:51 PDT
+Last updated: 2026-07-09 07:08 PDT
 
 ## Baseline Rule
 
@@ -55,7 +55,7 @@ Important packaging note: `device-agent/dist/index.js` is an ignored build artif
 
 - Repo: `/Users/donnoel/Development/PiSignage`
 - Branch: `main`
-- HEAD before this baseline update: `30370cc Keep remote desktop admin mode stable`
+- HEAD before this baseline update: `f4c816a Restore desktop shell for remote admin`
 - Dashboard URL: `https://8yyptjawdv.us-west-2.awsapprunner.com`
 - Device heartbeat API URL: `https://yebxh6xyvm2nkgq3i2uw2oixda0izozg.lambda-url.us-west-2.on.aws/`
 
@@ -65,7 +65,14 @@ Recent changes incorporated into this baseline:
   - device check-ins use the Lambda Function URL, not the dashboard/App Runner service
   - dashboard heartbeat reads use DynamoDB directly
   - routine heartbeat cadence is `30s` plus up to `5s` jitter
+  - devices with Tailscale installed report `tailscaleIpAddress` in the heartbeat so Beam can prefer the tailnet address for remote SSH/noVNC controls while retaining the local LAN IP as fallback evidence
   - legacy App Runner heartbeat route remains only as migration compatibility for older devices until reprovisioned
+- Tailscale C5 proof:
+  - C5 is joined to the test tailnet as `beam-c5`
+  - C5 tailnet IPv4 address at capture: `100.66.60.59`
+  - C5 tailnet DNS name at capture: `beam-c5.tail2e97b2.ts.net.`
+  - Tailscale was started with `--accept-dns=false` so it does not take over Pi DNS behavior
+  - production rollout must replace the temporary test tailnet with the production Beam tailnet, tags, ACLs, and account ownership
 - Remote diagnostics command plane
 - Remote recovery command plane
 - Remote audio mute/unmute command support
@@ -133,6 +140,7 @@ Recent changes incorporated into this baseline:
 - VLC: `VLC version 3.0.23 Vetinari (3.0.23-2-0-g79128878dd)`
 - Chromium: `Chromium 148.0.7778.167 built on Debian GNU/Linux 13 (trixie)`
 - Remote desktop packages: `novnc` `1:1.6.0-2`, `websockify` `0.12.0+dfsg1-4+b1`
+- Remote access package: `tailscale` `1.98.8`
 
 ## Boot And Display Baseline
 
@@ -174,6 +182,7 @@ Physical note: during the 2026-07-04 recovery, the monitor only returned to a cl
 | `pisignage-schedule.service` | static | transient | start | One-shot schedule enforcement |
 | `wayvnc.service` | enabled | active | running | System WayVNC remote desktop backend on port `5900`; C5 config uses `enable_auth=false` for noVNC compatibility |
 | `pisignage-remote-desktop.service` | enabled | active | running | Browser remote desktop bridge; serves noVNC on port `6080` and proxies to `127.0.0.1:5900` |
+| `tailscaled.service` | enabled | active | running | Tailscale tunnel for remote administration across networks; C5 currently enrolled in the temporary test tailnet |
 | `pisignage-player.service` | disabled | inactive | dead | Browser player fallback/experimental |
 | `pisignage-kiosk.service` | disabled | inactive | dead | Browser kiosk fallback/experimental |
 
@@ -371,10 +380,10 @@ efbe213d6bc3b7d38351592ff0312d7f2320f7f3919b491b6221a4b5a6cfab8c  pisignage-remo
 Compiled device agent:
 
 ```text
-fedb6632e7946f0d3422b598359029a9fe480a595a9d8409810f58745a269312  device-agent/dist/index.js
+23ec875561fb0b8a2788a042458c0986d95d3b0d259477e17ed3bed338fe5765  device-agent/dist/index.js
 ```
 
-This hash supersedes the 2026-07-08 18:30 baseline hash and includes the current command-plane behavior deployed to C5, including schedule-aware heartbeat reporting, the remote Open store action, the remote screen snapshot prototype, remote Show desktop and Resume playback actions that pause and restore schedule control, Show desktop desktop-panel restoration for noVNC administration, deterministic Wi-Fi-first heartbeat address selection, verified `wlopm` display power control for schedule close/open, and 30-second cloud heartbeat check-ins through the dedicated device heartbeat API.
+This hash supersedes the 2026-07-08 18:51 baseline hash and includes the current command-plane behavior deployed to C5, including schedule-aware heartbeat reporting, the remote Open store action, the remote screen snapshot prototype, remote Show desktop and Resume playback actions that pause and restore schedule control, Show desktop desktop-panel restoration for noVNC administration, deterministic Wi-Fi-first heartbeat address selection, Tailscale tailnet address reporting, verified `wlopm` display power control for schedule close/open, and 30-second cloud heartbeat check-ins through the dedicated device heartbeat API.
 
 ## Required Baseline Update Workflow
 
@@ -394,6 +403,8 @@ ip -4 addr show scope global
 systemctl --user status pisignage-device-agent.service --no-pager
 systemctl --user status pisignage-vlc.service --no-pager
 systemctl --user status pisignage-schedule.timer --no-pager
+systemctl status tailscaled.service --no-pager
+tailscale ip -4
 wlr-randr
 cat ~/.local/state/pisignage/player-status.json
 cat ~/.local/state/pisignage/heartbeat.json
@@ -405,7 +416,7 @@ sha256sum /home/donnoel/PiSignage/device-agent/dist/index.js
 
 ## C1-Cx Rollout Note
 
-C1-C4 were refreshed from this PI golden master baseline at the studio on 2026-07-08.
+C1-C4 were refreshed from the then-current PI golden master baseline at the studio on 2026-07-08. They still need the 2026-07-09 Tailscale enrollment and compiled device-agent heartbeat update when each device is ready to join the production tailnet.
 
 Rollout payload:
 

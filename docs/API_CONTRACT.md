@@ -134,7 +134,8 @@ Request:
   "scheduleDetail": "Schedule window is active.",
   "scheduleDisplayAction": "on",
   "scheduleDisplayControlOk": true,
-  "scheduleOverrideExpiresAt": null
+  "scheduleOverrideExpiresAt": null,
+  "tailscaleIpAddress": "100.66.60.59"
 }
 ```
 
@@ -183,8 +184,10 @@ Response:
     "currentPlaylistId": "playlist-local-demo",
     "currentAssetId": "asset-welcome",
     "diskFreeBytes": 1234567890,
+    "localIpAddress": "192.168.100.27",
     "networkOnline": false,
-    "receivedAt": "2026-05-20T20:17:33.100Z"
+    "receivedAt": "2026-05-20T20:17:33.100Z",
+    "tailscaleIpAddress": "100.66.60.59"
   }
 }
 ```

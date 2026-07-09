@@ -43,6 +43,7 @@ type Heartbeat = {
   scheduleDisplayControlOk: boolean | null;
   scheduleOverrideExpiresAt: string | null;
   scheduleState: string | null;
+  tailscaleIpAddress: string | null;
 };
 
 type PlayerStatus = {
@@ -286,6 +287,19 @@ function localIpAddress(): string | null {
   }
 
   return null;
+}
+
+async function tailscaleIpAddress(): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync("tailscale", ["ip", "-4"], { timeout: 2_000 });
+    const address = stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => /^100\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(line));
+    return address ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function normalizedCloudScheduleStore(input: CloudScheduleStore): CloudScheduleStore {
@@ -1673,6 +1687,7 @@ async function runHeartbeatOnce(): Promise<void> {
   const playerStatus = await readPlayerStatus();
   const scheduleStatus = await readScheduleStatus();
   const currentAssetId = playerStatus?.currentAssetId ?? null;
+  const remoteAccessIpAddress = await tailscaleIpAddress();
 
   const heartbeat: Heartbeat = {
     deviceId,
@@ -1690,7 +1705,8 @@ async function runHeartbeatOnce(): Promise<void> {
     scheduleDisplayAction: scheduleStatus?.displayAction ?? null,
     scheduleDisplayControlOk: typeof scheduleStatus?.displayControlOk === "boolean" ? scheduleStatus.displayControlOk : null,
     scheduleOverrideExpiresAt: scheduleStatus?.overrideExpiresAt ?? null,
-    scheduleState: scheduleStatus?.state ?? null
+    scheduleState: scheduleStatus?.state ?? null,
+    tailscaleIpAddress: remoteAccessIpAddress
   };
 
   await writeJsonAtomic(heartbeatPath, heartbeat);

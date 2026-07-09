@@ -249,7 +249,7 @@ export default async function ScreenPlayerPage({ params }: ScreenPlayerPageProps
   const hasPlayableCurrentAsset = Boolean(currentAsset?.assetUrlEndpoint);
   const displayPlaylistLabel = playlistLabel(heartbeat, matchedRelease, playlistForMetadata);
   const screenName = screen?.name ?? device.name;
-  const hostLabel = (heartbeat?.localIpAddress ?? device.host.trim()) || "No host";
+  const hostLabel = (heartbeat?.tailscaleIpAddress ?? heartbeat?.localIpAddress ?? device.host.trim()) || "No host";
   let detail = `Beam found ${screenName}, but it has not received a live Pi report for this screen yet.`;
   if (heartbeat) {
     detail = reportedAssetId

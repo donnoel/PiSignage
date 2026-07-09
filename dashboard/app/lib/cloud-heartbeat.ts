@@ -19,6 +19,7 @@ export type CloudHeartbeat = {
   scheduleDisplayControlOk: boolean | null;
   scheduleOverrideExpiresAt: string | null;
   scheduleState: string | null;
+  tailscaleIpAddress: string | null;
   timestamp: string | null;
 };
 
@@ -75,6 +76,7 @@ function heartbeatFromDynamoItem(item: Record<string, AttributeValue>): CloudHea
     scheduleDisplayControlOk: item.scheduleDisplayControlOk?.NULL ? null : item.scheduleDisplayControlOk?.BOOL ?? null,
     scheduleOverrideExpiresAt: item.scheduleOverrideExpiresAt?.S ?? null,
     scheduleState: item.scheduleState?.S ?? null,
+    tailscaleIpAddress: item.tailscaleIpAddress?.S ?? null,
     timestamp: item.timestamp?.S ?? null
   };
 }

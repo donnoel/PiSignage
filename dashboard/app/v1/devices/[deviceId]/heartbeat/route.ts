@@ -29,6 +29,7 @@ type HeartbeatBody = {
   scheduleDisplayControlOk?: unknown;
   scheduleOverrideExpiresAt?: unknown;
   scheduleState?: unknown;
+  tailscaleIpAddress?: unknown;
   timestamp?: unknown;
 };
 
@@ -125,6 +126,9 @@ function validateHeartbeat(body: HeartbeatBody, pathDeviceId: string): string | 
   if (!nullableString(body.scheduleState)) {
     return "Heartbeat scheduleState must be a string or null.";
   }
+  if (!nullableString(body.tailscaleIpAddress)) {
+    return "Heartbeat tailscaleIpAddress must be a string or null.";
+  }
 
   return null;
 }
@@ -152,6 +156,7 @@ function heartbeatFromItem(item: Record<string, { BOOL?: boolean; N?: string; NU
     scheduleDisplayControlOk: item.scheduleDisplayControlOk?.BOOL ?? null,
     scheduleOverrideExpiresAt: item.scheduleOverrideExpiresAt?.S ?? null,
     scheduleState: item.scheduleState?.S ?? null,
+    tailscaleIpAddress: item.tailscaleIpAddress?.S ?? null,
     timestamp: item.timestamp?.S ?? null
   };
 }
@@ -232,6 +237,7 @@ export async function POST(request: Request, context: RouteContext) {
       scheduleDisplayControlOk: body.scheduleDisplayControlOk === null || body.scheduleDisplayControlOk === undefined ? { NULL: true } : { BOOL: Boolean(body.scheduleDisplayControlOk) },
       scheduleOverrideExpiresAt: body.scheduleOverrideExpiresAt === null || body.scheduleOverrideExpiresAt === undefined ? { NULL: true } : { S: String(body.scheduleOverrideExpiresAt) },
       scheduleState: body.scheduleState === null || body.scheduleState === undefined ? { NULL: true } : { S: String(body.scheduleState) },
+      tailscaleIpAddress: body.tailscaleIpAddress === null || body.tailscaleIpAddress === undefined ? { NULL: true } : { S: String(body.tailscaleIpAddress) },
       timestamp: { S: stringOrNull(body.timestamp) ?? receivedAt }
     },
     TableName: tableName

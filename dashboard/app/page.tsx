@@ -900,7 +900,7 @@ function cloudDeviceStatus(device: DeviceRecord, cloudHeartbeat: CloudHeartbeatS
 
   return {
     ageLabel: formatStatusAge(timestamp),
-    host: heartbeat.localIpAddress ?? device.host,
+    host: heartbeat.tailscaleIpAddress ?? heartbeat.localIpAddress ?? device.host,
     playbackHealthy,
     playbackLabel: scheduledClosed
       ? "Closed"

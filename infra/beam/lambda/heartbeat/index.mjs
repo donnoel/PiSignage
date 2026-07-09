@@ -104,6 +104,7 @@ function heartbeatFromItem(item) {
     scheduleDisplayControlOk: booleanOrNull(item.scheduleDisplayControlOk),
     scheduleOverrideExpiresAt: stringOrNullAttribute(item.scheduleOverrideExpiresAt),
     scheduleState: stringOrNullAttribute(item.scheduleState),
+    tailscaleIpAddress: stringOrNullAttribute(item.tailscaleIpAddress),
     receivedAt: stringOrNullAttribute(item.receivedAt)
   };
 }
@@ -203,6 +204,9 @@ function validateHeartbeat(body, pathDeviceId) {
   }
   if (!nullableString(body.scheduleState)) {
     return "Heartbeat scheduleState must be a string or null.";
+  }
+  if (!nullableString(body.tailscaleIpAddress)) {
+    return "Heartbeat tailscaleIpAddress must be a string or null.";
   }
 
   return null;
@@ -346,6 +350,7 @@ export async function handler(event, context) {
     scheduleDisplayControlOk: body.scheduleDisplayControlOk === null || body.scheduleDisplayControlOk === undefined ? { NULL: true } : { BOOL: body.scheduleDisplayControlOk },
     scheduleOverrideExpiresAt: body.scheduleOverrideExpiresAt === null || body.scheduleOverrideExpiresAt === undefined ? { NULL: true } : { S: body.scheduleOverrideExpiresAt },
     scheduleState: body.scheduleState === null || body.scheduleState === undefined ? { NULL: true } : { S: body.scheduleState },
+    tailscaleIpAddress: body.tailscaleIpAddress === null || body.tailscaleIpAddress === undefined ? { NULL: true } : { S: body.tailscaleIpAddress },
     receivedAt: { S: receivedAt }
   };
 
