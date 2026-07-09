@@ -1,6 +1,6 @@
 # PI Golden Master Baseline
 
-Last updated: 2026-07-08 18:30 PDT
+Last updated: 2026-07-08 18:51 PDT
 
 ## Baseline Rule
 
@@ -55,7 +55,7 @@ Important packaging note: `device-agent/dist/index.js` is an ignored build artif
 
 - Repo: `/Users/donnoel/Development/PiSignage`
 - Branch: `main`
-- HEAD before this baseline update: `d20ad78 Add remote desktop admin mode actions`
+- HEAD before this baseline update: `30370cc Keep remote desktop admin mode stable`
 - Dashboard URL: `https://8yyptjawdv.us-west-2.awsapprunner.com`
 - Device heartbeat API URL: `https://yebxh6xyvm2nkgq3i2uw2oixda0izozg.lambda-url.us-west-2.on.aws/`
 
@@ -75,6 +75,7 @@ Recent changes incorporated into this baseline:
   - C5 runs `pisignage-remote-desktop.service`, which serves noVNC with `websockify` and bridges to `127.0.0.1:5900`
   - C5 currently uses `enable_auth=false` in `/etc/wayvnc/config` because noVNC must connect to WayVNC without the Apple Screen Sharing PAM/VeNCrypt path
   - the Beam `Show desktop` button opens the browser desktop view and queues a Pi action to pause managed VLC signage playback and the schedule timer for remote administration
+  - `Show desktop` also restores the Raspberry Pi desktop shell by ensuring `pcmanfm --desktop` and `wf-panel-pi` are running, so noVNC shows the admin panel instead of a blank black desktop
   - the Beam `Resume playback` button queues a Pi action to restart managed VLC signage playback and restore schedule control after remote administration
   - the browser desktop path works from both macOS and Windows clients on the same trusted network
   - until Tailscale ACLs are in place, this prototype should only be enabled on trusted local networks
@@ -370,10 +371,10 @@ efbe213d6bc3b7d38351592ff0312d7f2320f7f3919b491b6221a4b5a6cfab8c  pisignage-remo
 Compiled device agent:
 
 ```text
-17180a3999b4cdf417cdf7df17e9bc13ade917864c4e9867ba8983743ca2334c  device-agent/dist/index.js
+fedb6632e7946f0d3422b598359029a9fe480a595a9d8409810f58745a269312  device-agent/dist/index.js
 ```
 
-This hash supersedes the 2026-07-08 18:12 baseline hash and includes the current command-plane behavior deployed to C5, including schedule-aware heartbeat reporting, the remote Open store action, the remote screen snapshot prototype, remote Show desktop and Resume playback actions that pause and restore schedule control, deterministic Wi-Fi-first heartbeat address selection, verified `wlopm` display power control for schedule close/open, and 30-second cloud heartbeat check-ins through the dedicated device heartbeat API.
+This hash supersedes the 2026-07-08 18:30 baseline hash and includes the current command-plane behavior deployed to C5, including schedule-aware heartbeat reporting, the remote Open store action, the remote screen snapshot prototype, remote Show desktop and Resume playback actions that pause and restore schedule control, Show desktop desktop-panel restoration for noVNC administration, deterministic Wi-Fi-first heartbeat address selection, verified `wlopm` display power control for schedule close/open, and 30-second cloud heartbeat check-ins through the dedicated device heartbeat API.
 
 ## Required Baseline Update Workflow
 

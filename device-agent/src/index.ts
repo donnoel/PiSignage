@@ -855,6 +855,24 @@ async function restartPlaybackService(): Promise<string> {
   return `VLC playback restarted. Service state: ${state}.`;
 }
 
+async function showDesktopShell(): Promise<void> {
+  const command = [
+    "export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}",
+    "export WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0}",
+    "export DISPLAY=${DISPLAY:-:0}",
+    "export XDG_CURRENT_DESKTOP=${XDG_CURRENT_DESKTOP:-labwc:wlroots}",
+    "if ! pgrep -f '/usr/bin/pcmanfm --desktop|pcmanfm --desktop' >/dev/null 2>&1; then",
+    "  nohup /usr/bin/pcmanfm-pi >/tmp/pisignage-pcmanfm.log 2>&1 &",
+    "fi",
+    "if ! pgrep -f '/usr/bin/lwrespawn /usr/bin/wf-panel-pi|/usr/bin/wf-panel-pi' >/dev/null 2>&1; then",
+    "  nohup /usr/bin/lwrespawn /usr/bin/wf-panel-pi >/tmp/pisignage-wf-panel.log 2>&1 &",
+    "fi"
+  ].join("\n");
+  await execFileAsync("/bin/sh", ["-lc", command], {
+    timeout: 20_000
+  });
+}
+
 async function showDesktop(): Promise<string> {
   await execFileAsync("systemctl", ["--user", "stop", "pisignage-schedule.timer", "pisignage-schedule.service"], {
     timeout: 45_000
@@ -866,8 +884,9 @@ async function showDesktop(): Promise<string> {
   if (state === "active" || state === "activating") {
     throw new Error(`Could not show the desktop because VLC playback is still ${state}.`);
   }
+  await showDesktopShell();
   const scheduleState = await userServiceState("pisignage-schedule.timer");
-  return `Desktop is ready for remote administration. Playback and schedule control are paused. VLC service state: ${state}. Schedule timer state: ${scheduleState}.`;
+  return `Desktop is ready for remote administration. Playback and schedule control are paused. VLC service state: ${state}. Schedule timer state: ${scheduleState}. Desktop panel is visible.`;
 }
 
 async function resumePlaybackService(): Promise<string> {
