@@ -264,7 +264,7 @@ function runDisplayCommand(command, args) {
   return false;
 }
 
-function wlrOutputEnabled() {
+function wlrOutputState() {
   if (!commandExists("/usr/bin/wlr-randr")) {
     return null;
   }
@@ -279,20 +279,85 @@ function wlrOutputEnabled() {
   }
 
   let inTargetOutput = false;
+  let targetReported = false;
+  let targetEnabled = null;
+  let noopEnabled = false;
+  let inNoopOutput = false;
   for (const line of result.stdout.split(/\r?\n/)) {
     if (line.trim() === "") {
       continue;
     }
     if (!line.startsWith(" ")) {
       inTargetOutput = line.startsWith(`${displayOutput} `);
+      inNoopOutput = line.startsWith("NOOP-");
+      if (inTargetOutput) {
+        targetReported = true;
+      }
       continue;
     }
     if (inTargetOutput && line.trim().startsWith("Enabled:")) {
-      return line.includes("yes");
+      targetEnabled = line.includes("yes");
+    }
+    if (inNoopOutput && line.trim().startsWith("Enabled:") && line.includes("yes")) {
+      noopEnabled = true;
     }
   }
 
-  log(`display verification failed: ${displayOutput} was not reported by wlr-randr`);
+  if (!targetReported) {
+    log(`display verification failed: ${displayOutput} was not reported by wlr-randr`);
+  }
+
+  return {
+    noopEnabled,
+    targetEnabled: targetEnabled ?? false,
+    targetReported
+  };
+}
+
+function wlrOutputEnabled() {
+  const state = wlrOutputState();
+  return state ? state.targetEnabled : state;
+}
+
+function labwcPids() {
+  const result = spawnSync("pgrep", ["-x", "labwc"], {
+    encoding: "utf8"
+  });
+  if (result.status !== 0) {
+    return [];
+  }
+
+  return result.stdout
+    .split(/\s+/)
+    .map((pid) => pid.trim())
+    .filter(Boolean);
+}
+
+function restartUserDisplaySession() {
+  if (dryRun) {
+    log("dry run: pkill -TERM -x labwc");
+    return true;
+  }
+
+  const previousPids = new Set(labwcPids());
+  const result = spawnSync("pkill", ["-TERM", "-x", "labwc"], {
+    encoding: "utf8"
+  });
+  if (result.status !== 0 && result.status !== 1) {
+    const message = result.stderr.trim() || result.stdout.trim() || "pkill labwc failed";
+    log(`display session restart failed: ${message}`);
+    return false;
+  }
+
+  for (let attempt = 0; attempt < 15; attempt += 1) {
+    const currentPids = labwcPids();
+    if (currentPids.some((pid) => !previousPids.has(pid))) {
+      return true;
+    }
+    spawnSync("sleep", ["1"]);
+  }
+
+  log("display session restart failed: labwc did not return");
   return false;
 }
 
@@ -361,6 +426,7 @@ function ensureWlrOutputOn() {
 function setDisplayPower(power) {
   const enabled = power === "on";
   const attempts = [];
+  let retriedDisplaySession = false;
 
   if (commandExists("/usr/bin/wlopm")) {
     attempts.push({
@@ -398,12 +464,27 @@ function setDisplayPower(power) {
     });
   }
 
-  for (const attempt of attempts) {
+  for (let index = 0; index < attempts.length; index += 1) {
+    const attempt = attempts[index];
     const args = enabled ? attempt.onArgs : attempt.offArgs;
     if (args.length === 0) {
       continue;
     }
-    if (runDisplayCommand(attempt.command, args)) {
+    if (!runDisplayCommand(attempt.command, args)) {
+      if (enabled) {
+        const state = wlrOutputState();
+        if (!retriedDisplaySession && state?.targetReported && state.noopEnabled) {
+          log(`${attempt.label} could not enable ${displayOutput} while headless output is active; restarting user display session`);
+          retriedDisplaySession = true;
+          if (restartUserDisplaySession()) {
+            index = -1;
+          }
+        }
+      }
+      continue;
+    }
+
+    {
       if (dryRun) {
         return {
           ok: true,
@@ -433,12 +514,27 @@ function setDisplayPower(power) {
 
       if (enabled) {
         if (attempt.label !== "wlr-randr" && !ensureWlrOutputOn()) {
+          const state = wlrOutputState();
+          if (!retriedDisplaySession && state?.targetReported && state.noopEnabled) {
+            log(`${attempt.label} could not re-enable ${displayOutput}; restarting user display session from headless output`);
+            retriedDisplaySession = true;
+            if (restartUserDisplaySession()) {
+              index = -1;
+            }
+          }
           continue;
         }
 
-        const outputEnabled = wlrOutputEnabled();
-        if (outputEnabled === false) {
+        const outputState = wlrOutputState();
+        if (outputState?.targetEnabled === false) {
           log(`${attempt.label} returned success, but ${displayOutput} is still disabled`);
+          if (!retriedDisplaySession && outputState.targetReported && outputState.noopEnabled) {
+            log(`${displayOutput} is disabled while headless output is active; restarting user display session`);
+            retriedDisplaySession = true;
+            if (restartUserDisplaySession()) {
+              index = -1;
+            }
+          }
           continue;
         }
       }

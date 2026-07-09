@@ -891,8 +891,84 @@ function runCommand(command, args) {
   });
 }
 
+function commandExists(command) {
+  return existsSync(command);
+}
+
+async function captureDisplayState() {
+  if (!commandExists("/usr/bin/wlr-randr")) {
+    return null;
+  }
+
+  const result = await captureCommand("/usr/bin/wlr-randr", []);
+  if (!result.ok) {
+    log(`display verification failed: ${result.stderr.trim() || result.stdout.trim() || "wlr-randr failed"}`);
+    return null;
+  }
+
+  let inTargetOutput = false;
+  let inNoopOutput = false;
+  let targetReported = false;
+  let targetEnabled = null;
+  let noopEnabled = false;
+  for (const line of result.stdout.split(/\r?\n/)) {
+    if (line.trim() === "") {
+      continue;
+    }
+    if (!line.startsWith(" ")) {
+      inTargetOutput = line.startsWith(`${displayOutput} `);
+      inNoopOutput = line.startsWith("NOOP-");
+      if (inTargetOutput) {
+        targetReported = true;
+      }
+      continue;
+    }
+    if (inTargetOutput && line.trim().startsWith("Enabled:")) {
+      targetEnabled = line.includes("yes");
+    }
+    if (inNoopOutput && line.trim().startsWith("Enabled:") && line.includes("yes")) {
+      noopEnabled = true;
+    }
+  }
+
+  return {
+    noopEnabled,
+    targetEnabled: targetEnabled ?? false,
+    targetReported
+  };
+}
+
+async function labwcPids() {
+  const result = await captureCommand("pgrep", ["-x", "labwc"], 2_000);
+  if (!result.ok) {
+    return [];
+  }
+
+  return result.stdout
+    .split(/\s+/)
+    .map((pid) => pid.trim())
+    .filter(Boolean);
+}
+
+async function restartUserDisplaySession() {
+  log("restarting user display session to recover HDMI output");
+  const previousPids = new Set(await labwcPids());
+  await captureCommand("pkill", ["-TERM", "-x", "labwc"], 5_000);
+  for (let attempt = 0; attempt < 15; attempt += 1) {
+    const currentPids = await labwcPids();
+    if (currentPids.some((pid) => !previousPids.has(pid))) {
+      return true;
+    }
+    await sleep(1_000);
+  }
+
+  log("display session restart failed: labwc did not return");
+  return false;
+}
+
 async function configureDisplay() {
   let outputPowerOk = true;
+  let retriedDisplaySession = false;
   try {
     await access("/usr/bin/wlopm", fsConstants.X_OK);
     await runCommand("/usr/bin/wlopm", ["--on", displayOutput]);
@@ -901,6 +977,10 @@ async function configureDisplay() {
     if (error?.code !== "ENOENT") {
       outputPowerOk = false;
       log(`display power check failed: ${error instanceof Error ? error.message : String(error)}`);
+      const state = await captureDisplayState();
+      if (state?.targetReported && state.noopEnabled) {
+        retriedDisplaySession = await restartUserDisplaySession();
+      }
     }
   }
 
@@ -917,6 +997,18 @@ async function configureDisplay() {
     return outputPowerOk;
   } catch (error) {
     log(`display mode check failed: ${error instanceof Error ? error.message : String(error)}`);
+    const state = await captureDisplayState();
+    if (!retriedDisplaySession && state?.targetReported && state.noopEnabled) {
+      if (await restartUserDisplaySession()) {
+        try {
+          await runCommand("/usr/bin/wlr-randr", ["--output", displayOutput, "--on", "--mode", displayMode]);
+          log(`display set to ${displayOutput} ${displayMode} after display session restart`);
+          return outputPowerOk;
+        } catch (retryError) {
+          log(`display mode retry failed: ${retryError instanceof Error ? retryError.message : String(retryError)}`);
+        }
+      }
+    }
     return false;
   }
 }

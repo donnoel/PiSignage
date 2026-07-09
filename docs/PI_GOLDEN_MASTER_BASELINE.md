@@ -1,6 +1,6 @@
 # PI Golden Master Baseline
 
-Last updated: 2026-07-09 09:59 PDT
+Last updated: 2026-07-09 11:15 PDT
 
 ## Baseline Rule
 
@@ -141,6 +141,10 @@ Recent changes incorporated into this baseline:
 - Chromium: `Chromium 148.0.7778.167 built on Debian GNU/Linux 13 (trixie)`
 - Remote desktop packages: `novnc` `1:1.6.0-2`, `websockify` `0.12.0+dfsg1-4+b1`
 - Remote access package: `tailscale` `1.98.8`
+- Schedule/display recovery hardening:
+  - schedule open and VLC startup detect the `NOOP-1` headless-output state seen after scheduled close/open recovery
+  - when `HDMI-A-1` is reported but disabled while `NOOP-1` is active, the appliance restarts the user display session and retries the configured HDMI output/mode
+  - the appliance target remains `HDMI-A-1` at `1920x1080@60.000000`; do not blindly accept a display's preferred mode as healthy playback
 
 ## Boot And Display Baseline
 
@@ -171,6 +175,8 @@ Display state at capture:
 - Wayland display: `wayland-0`
 
 Physical note: during the 2026-07-04 recovery, the monitor only returned to a clean ONN/1080p handshake after the cable was moved back to the Pi port that Linux reports as `HDMI-A-1`. Leave C5 on that port unless deliberately testing display behavior. The appliance display target remains fullscreen `1920x1080@60.000000`; do not accept a lower display mode as healthy playback. If 1080p is missing after a display event, recover the HDMI/compositor mode before considering the Pi healthy.
+
+Fleet display note: C1-C3 and C5 are ONN displays in the current pilot. C4 is a Philips TV that advertises 4K preferred modes and may require explicit return to the configured `1920x1080@60.000000` appliance target after HDMI/display wake events.
 
 ## Managed Service State
 
@@ -355,14 +361,14 @@ Managed Pi scripts:
 ```text
 75104faff5c772e90230edc1a9a560549f131ab63e2bb048309958aa70c30ba1  pisignage-call-home-now.sh
 60f2e66f5afc2337cf4743229feabbe41cf3cb0fdfeae2dbdfc13c37431e4564  pisignage-configure-wifi.sh
-eda895b17ca672f1d9842fb67c6d23b25a52663da3d9636672051cc01627e8e0  pisignage-enforce-schedule.mjs
+a6ca922f646b0f2542e75edf419873d8e6059084b32229eb6c80f62a355599ef  pisignage-enforce-schedule.mjs
 c577963b8233b225a663319fb95c0411015cf85c5a1635dc2e5e76801cd92a08  pisignage-hide-desktop.sh
 25b034a1b9d6257c818e539f1724b761656a82ef6dadef701f6a6234fa0fabaa  pisignage-install-runtime.sh
 a5c9bce76ffee95e7924af4dd9f7cb74fde1aaff0090d4fd9a8466cf32c24e9d  pisignage-provision-device.sh
 ad74d347117c34bcaa46e530a313446fe4ef5efc6dd6395ede0b881594e7c7eb  pisignage-reset-device.sh
 bc01cf6dc91e857da42d753361113c7cf979c6f9486e391ba86e38c64b6e71f0  pisignage-serve-player.mjs
 5ad55c8d2fb4a027693113f8c9bd2ebd92e83b1619e54468f8e997030d7a52b0  pisignage-start-display.sh
-ef486f92112e6919e59c523f1f8fa939ca6baa3ac6b29def775e0b30b983100d  pisignage-vlc-playlist.mjs
+f251573e687f88f4f956de61b044b2e376368d01424c71a2f5d539495e139d6c  pisignage-vlc-playlist.mjs
 ```
 
 Managed user services:
@@ -383,7 +389,7 @@ Compiled device agent:
 060be30456ba304e94821d26bcffd797b0ea4d89a184d20d0b144c1e93ffc4e5  device-agent/dist/index.js
 ```
 
-This hash supersedes the 2026-07-09 07:08 baseline hash and includes the current command-plane behavior deployed to C5, including schedule-aware heartbeat reporting, the remote Open store action, the remote screen snapshot prototype, remote Show desktop and Resume playback actions that pause and restore schedule control, Show desktop desktop-panel restoration and verification for noVNC administration, deterministic Wi-Fi-first heartbeat address selection, Tailscale tailnet address reporting, verified `wlopm` display power control for schedule close/open, and 30-second cloud heartbeat check-ins through the dedicated device heartbeat API.
+This hash supersedes the 2026-07-09 07:08 baseline hash and includes the current command-plane behavior deployed to C5, including schedule-aware heartbeat reporting, the remote Open store action, the remote screen snapshot prototype, remote Show desktop and Resume playback actions that pause and restore schedule control, Show desktop desktop-panel restoration and verification for noVNC administration, deterministic Wi-Fi-first heartbeat address selection, Tailscale tailnet address reporting, verified `wlopm` display power control for schedule close/open, automatic HDMI/headless-output display session recovery, and 30-second cloud heartbeat check-ins through the dedicated device heartbeat API.
 
 ## Required Baseline Update Workflow
 
