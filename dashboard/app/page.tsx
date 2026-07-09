@@ -892,7 +892,6 @@ function cloudDeviceStatus(device: DeviceRecord, cloudHeartbeat: CloudHeartbeatS
   const state = heartbeat.playbackState ?? "unknown";
   const scheduleState = heartbeat.scheduleState ?? null;
   const scheduledClosed = fresh && scheduleState === "off";
-  const scheduleOverrideOpen = fresh && scheduleState === "override-open";
   const deploymentReady =
     state === "ready-for-publishing" ||
     heartbeat.currentPlaylistId === "playlist-ready-for-publishing";
@@ -905,7 +904,7 @@ function cloudDeviceStatus(device: DeviceRecord, cloudHeartbeat: CloudHeartbeatS
     playbackLabel: scheduledClosed
       ? "Closed"
       : playbackHealthy
-        ? scheduleOverrideOpen ? "Open override" : "Playing"
+        ? "Playing"
         : deploymentReady && fresh ? "Ready for deployment" : fresh ? "Checking playback" : "Waiting for update",
     playerStatus: {
       currentAssetId: heartbeat.currentAssetId,
@@ -1342,7 +1341,6 @@ function fleetCommandRows({
       const rowPlaybackHealthy = deviceStatus?.playbackHealthy ?? false;
       const rowPlaybackLabel = deviceStatus?.playbackLabel ?? "Unknown";
       const scheduledClosed = deviceStatus?.scheduleState === "off";
-      const scheduleOverrideOpen = deviceStatus?.scheduleState === "override-open";
       const livePlaybackStale = deviceStatus?.stale ?? false;
       const reportedPlaylist = reportedPlaylistId ? playlistsById.get(reportedPlaylistId) ?? null : null;
       const playbackStatusIsPlaying = deviceStatus?.playerStatus?.state === "playing";
@@ -1395,7 +1393,7 @@ function fleetCommandRows({
         syncLabel = "Review";
       }
 
-      const playback = isLive ? (!reachable ? "No live report" : scheduledClosed ? "Closed" : rowPlaybackHealthy ? (scheduleOverrideOpen ? "Open override" : "Playing") : rowPlaybackLabel) : "Unknown";
+      const playback = isLive ? (!reachable ? "No live report" : scheduledClosed ? "Closed" : rowPlaybackHealthy ? "Playing" : rowPlaybackLabel) : "Unknown";
       const needsAttention =
         !hostConfigured ||
         syncTone === "warn" ||

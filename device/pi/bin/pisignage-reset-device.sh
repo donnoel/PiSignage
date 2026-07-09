@@ -373,6 +373,21 @@ if command -v websockify >/dev/null 2>&1 && [[ -f /usr/share/novnc/vnc.html ]]; 
 else
   print_step "browser remote desktop bridge not enabled; install novnc and websockify first"
 fi
+print_step "checking remote access system services"
+if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+  if command -v tailscale >/dev/null 2>&1; then
+    apply_or_print sudo systemctl enable --now tailscaled.service
+  else
+    print_step "tailscale not installed; run pisignage-install-runtime.sh --enable-remote-access true"
+  fi
+  if command -v wayvnc >/dev/null 2>&1; then
+    apply_or_print sudo systemctl enable --now wayvnc.service
+  else
+    print_step "wayvnc not installed; run pisignage-install-runtime.sh --enable-remote-access true"
+  fi
+else
+  print_step "sudo is not available without a password; leaving remote access system services unchanged"
+fi
 if [[ -f "${repo_root}/device-agent/dist/index.js" ]]; then
   if [[ "$agent_safe" == "true" ]]; then
     apply_or_print systemctl --user enable pisignage-device-agent.service
@@ -395,6 +410,8 @@ if [[ "$mode" == "apply" ]]; then
   vlc_state="$(systemctl --user is-active pisignage-vlc.service 2>/dev/null || true)"
   agent_state="$(systemctl --user is-active pisignage-device-agent.service 2>/dev/null || true)"
   timer_state="$(systemctl --user is-active pisignage-schedule.timer 2>/dev/null || true)"
+  tailscale_state="$(systemctl is-active tailscaled.service 2>/dev/null || true)"
+  wayvnc_state="$(systemctl is-active wayvnc.service 2>/dev/null || true)"
   echo "reset-complete"
   echo "reset_source=${source_mode}"
   if [[ "$source_mode" == "golden-master" ]]; then
@@ -409,6 +426,8 @@ if [[ "$mode" == "apply" ]]; then
   echo "vlc_service=${vlc_state}"
   echo "device_agent_service=${agent_state:-unknown}"
   echo "schedule_timer=${timer_state:-unknown}"
+  echo "tailscaled_service=${tailscale_state:-unknown}"
+  echo "wayvnc_service=${wayvnc_state:-unknown}"
 else
   echo "Dry run only; no files changed."
 fi

@@ -1062,7 +1062,6 @@ export function DeviceHealthFleetPanel({
         const rowPlaybackHealthy = status?.playbackHealthy ?? false;
         const rowPlaybackLabel = status?.playbackLabel ?? "unknown";
         const scheduledClosed = status?.scheduleState === "off";
-        const scheduleOverrideOpen = status?.scheduleState === "override-open";
         const deploymentReady = rowPlaybackLabel === "Ready for deployment";
         const rowStale = status?.stale ?? false;
         const reportedPlaylistId = status?.playerStatus?.playlistId ?? null;
@@ -1128,10 +1127,8 @@ export function DeviceHealthFleetPanel({
           playbackDetail = status?.scheduleDetail ?? "This screen is intentionally off outside scheduled hours.";
           playbackTone = "muted";
         } else if (isLive && rowPlaybackHealthy) {
-          playbackLabel = scheduleOverrideOpen ? "Open override" : "Playing";
-          playbackDetail = scheduleOverrideOpen
-            ? status?.scheduleDetail ?? "This screen was opened manually outside scheduled hours."
-            : "Beam has a fresh report that this screen is playing.";
+          playbackLabel = "Playing";
+          playbackDetail = "Beam has a fresh report that this screen is playing.";
           playbackTone = "good";
         } else if (isLive) {
           playbackLabel = plainPlaybackLabel(rowPlaybackLabel);

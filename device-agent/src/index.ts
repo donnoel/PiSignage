@@ -545,6 +545,34 @@ async function downloadCloudAsset(cacheDirectory: string, asset: PlaylistAsset):
   };
 }
 
+async function pruneCachedAssets(cacheDirectory: string, playlist: Playlist): Promise<{ prunedBytes: number; prunedFiles: number }> {
+  const assetsDirectory = path.join(cacheDirectory, "assets");
+  const expectedFileNames = new Set(playlist.assets.map((asset) => assetFileName(asset)));
+  let prunedBytes = 0;
+  let prunedFiles = 0;
+
+  let entries: Array<import("node:fs").Dirent>;
+  try {
+    entries = await fs.readdir(assetsDirectory, { withFileTypes: true });
+  } catch {
+    return { prunedBytes, prunedFiles };
+  }
+
+  for (const entry of entries) {
+    if (!entry.isFile() || expectedFileNames.has(entry.name)) {
+      continue;
+    }
+
+    const filePath = path.join(assetsDirectory, entry.name);
+    const stat = await fs.stat(filePath).catch(() => null);
+    await fs.rm(filePath, { force: true });
+    prunedBytes += stat?.size ?? 0;
+    prunedFiles += 1;
+  }
+
+  return { prunedBytes, prunedFiles };
+}
+
 async function signedAssetUrl(asset: PlaylistAsset): Promise<AssetUrlResponse> {
   if (!asset.assetUrlEndpoint) {
     throw new Error(`Release asset ${asset.assetId} did not include an asset URL endpoint.`);
@@ -1500,6 +1528,7 @@ async function fetchCloudPlaylist(cacheDirectory: string): Promise<{
       ...parsePlaylist(JSON.stringify(manifest.playlist), body.release.manifestUrl),
       assets: syncedAssets
     };
+    const pruned = await pruneCachedAssets(cacheDirectory, cachedPlaylist);
     await cachePlaylist(cacheDirectory, cachedPlaylist);
     await writeCurrentReleaseState(cacheDirectory, {
       manifestChecksum: manifest.manifestChecksum,
@@ -1516,6 +1545,8 @@ async function fetchCloudPlaylist(cacheDirectory: string): Promise<{
     log("info", "cloud.release.synced", {
       downloadedBytes: stats.downloadedBytes,
       manifestChecksum: manifest.manifestChecksum,
+      prunedBytes: pruned.prunedBytes,
+      prunedFiles: pruned.prunedFiles,
       releaseId: manifest.releaseId,
       skippedBytes: stats.skippedBytes
     });
@@ -1543,6 +1574,7 @@ async function fetchCloudPlaylist(cacheDirectory: string): Promise<{
     ...playlist,
     assets
   };
+  await pruneCachedAssets(cacheDirectory, cachedPlaylist);
   await cachePlaylist(cacheDirectory, cachedPlaylist);
 
   return {

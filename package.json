@@ -20,6 +20,7 @@
     "test:schedule": "node scripts/schedule-evaluation-smoke.mjs",
     "test:workspace-auth": "node scripts/workspace-auth-smoke.mjs",
     "test:cloud-inventory": "node scripts/cloud-inventory-assignment-smoke.mjs",
+    "test:device-agent-cache": "npm --workspace device-agent run build && node scripts/device-agent-cache-sync-smoke.mjs",
     "test:release-state": "node scripts/release-state-smoke.mjs",
     "test:dashboard-css": "node scripts/dashboard-css-smoke.mjs",
     "test:bad-upload": "node scripts/bad-media-upload-smoke.mjs",
@@ -27,7 +28,7 @@
     "test:vlc-boundary-handoff": "node scripts/vlc-boundary-handoff-smoke.mjs",
     "test:vlc-continuous-handoff": "node scripts/vlc-continuous-handoff-smoke.mjs",
     "test:vlc-continuous-exit": "node scripts/vlc-continuous-exit-backoff-smoke.mjs",
-    "test:release-hardening": "npm run typecheck && npm run test:cloud-inventory && npm run test:release-state && npm run test:schedule && npm run test:vlc-boundary-handoff && npm run test:vlc-continuous-handoff && npm run test:vlc-continuous-exit && npm run simulate:failures",
+    "test:release-hardening": "npm run typecheck && npm run test:cloud-inventory && npm run test:device-agent-cache && npm run test:release-state && npm run test:schedule && npm run test:vlc-boundary-handoff && npm run test:vlc-continuous-handoff && npm run test:vlc-continuous-exit && npm run simulate:failures",
     "drill:pi": "node scripts/pi-failure-drills.mjs",
     "generate:still-presets": "node scripts/generate-still-video-presets.mjs"
   },

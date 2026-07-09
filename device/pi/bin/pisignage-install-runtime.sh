@@ -19,6 +19,12 @@ Options:
                                Enable the field playback stack. Default: vlc.
   --enable-device-agent auto|true|false
                                Enable agent when dist exists, force enable, or disable. Default: auto.
+  --enable-remote-access auto|true|false
+                               Install/enable Tailscale and browser remote desktop prerequisites. Default: auto.
+  --tailscale-hostname NAME    Tailnet hostname. Default: beam-<local hostname>.
+  --tailscale-auth-key-env NAME
+                               Env var containing a Tailscale auth key for noninteractive enrollment.
+                               Default: PISIGNAGE_TAILSCALE_AUTHKEY.
   --node-bin PATH              Node binary for services. Default: /usr/bin/node.
   --dry-run                    Show planned work without changing files. Default.
   --apply                      Install files and update user services.
@@ -42,6 +48,9 @@ display_resolution="1920x1080@60.000000"
 screen_id="screen-primary"
 field_player="vlc"
 enable_device_agent="auto"
+enable_remote_access="auto"
+tailscale_hostname=""
+tailscale_auth_key_env="PISIGNAGE_TAILSCALE_AUTHKEY"
 node_bin="/usr/bin/node"
 mode="dry-run"
 
@@ -71,6 +80,18 @@ while [[ $# -gt 0 ]]; do
       enable_device_agent="${2:-}"
       shift 2
       ;;
+    --enable-remote-access)
+      enable_remote_access="${2:-}"
+      shift 2
+      ;;
+    --tailscale-hostname)
+      tailscale_hostname="${2:-}"
+      shift 2
+      ;;
+    --tailscale-auth-key-env)
+      tailscale_auth_key_env="${2:-}"
+      shift 2
+      ;;
     --node-bin)
       node_bin="${2:-}"
       shift 2
@@ -97,6 +118,8 @@ done
   die "--field-player must be vlc, browser, or none"
 [[ "$enable_device_agent" == "auto" || "$enable_device_agent" == "true" || "$enable_device_agent" == "false" ]] ||
   die "--enable-device-agent must be auto, true, or false"
+[[ "$enable_remote_access" == "auto" || "$enable_remote_access" == "true" || "$enable_remote_access" == "false" ]] ||
+  die "--enable-remote-access must be auto, true, or false"
 [[ -n "$repo_root" ]] || die "--repo-root cannot be empty"
 repo_root="$(cd -- "$repo_root" && pwd)"
 [[ -f "${repo_root}/sample-content/playlist.local.json" ]] ||
@@ -115,6 +138,12 @@ validate_no_whitespace "--display-output" "$display_output"
 validate_no_whitespace "--display-resolution" "$display_resolution"
 validate_no_whitespace "--screen-id" "$screen_id"
 validate_no_whitespace "--node-bin" "$node_bin"
+if [[ -z "$tailscale_hostname" ]]; then
+  local_hostname="$(hostname -s 2>/dev/null || hostname)"
+  tailscale_hostname="beam-${local_hostname,,}"
+fi
+validate_no_whitespace "--tailscale-hostname" "$tailscale_hostname"
+validate_no_whitespace "--tailscale-auth-key-env" "$tailscale_auth_key_env"
 
 uid="$(id -u)"
 home_dir="${HOME:?HOME is required}"
@@ -158,6 +187,31 @@ apply_or_print() {
   fi
 }
 
+sudo_apply_or_print() {
+  if [[ "$mode" == "apply" ]]; then
+    sudo "$@"
+  else
+    printf 'dry-run: sudo'
+    printf ' %q' "$@"
+    printf '\n'
+  fi
+}
+
+write_root_text_file() {
+  local target="$1"
+  local file_mode="$2"
+  local body="$3"
+  if [[ "$mode" == "apply" ]]; then
+    local tmp_path
+    tmp_path="$(mktemp)"
+    printf '%s\n' "$body" > "$tmp_path"
+    sudo install -m "$file_mode" "$tmp_path" "$target"
+    rm -f "$tmp_path"
+  else
+    echo "dry-run: sudo write ${target} (${file_mode})"
+  fi
+}
+
 write_text_file() {
   local target="$1"
   local file_mode="$2"
@@ -172,6 +226,105 @@ write_text_file() {
   else
     echo "dry-run: write ${target} (${file_mode})"
   fi
+}
+
+install_tailscale_apt_source() {
+  local codename
+  codename="$(. /etc/os-release && printf '%s' "${VERSION_CODENAME:-}")"
+  [[ -n "$codename" ]] || die "could not detect Debian codename for Tailscale apt source"
+
+  if [[ "$mode" == "apply" && ! -x /usr/bin/curl ]]; then
+    sudo_apply_or_print apt-get update
+    sudo_apply_or_print env DEBIAN_FRONTEND=noninteractive apt-get install -y curl ca-certificates
+  fi
+
+  if [[ "$mode" == "apply" ]]; then
+    curl -fsSL "https://pkgs.tailscale.com/stable/debian/${codename}.noarmor.gpg" |
+      sudo tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null
+    curl -fsSL "https://pkgs.tailscale.com/stable/debian/${codename}.tailscale-keyring.list" |
+      sudo tee /etc/apt/sources.list.d/tailscale.list >/dev/null
+  else
+    echo "dry-run: install Tailscale apt source for Debian ${codename}"
+  fi
+}
+
+install_remote_access_packages() {
+  [[ "$enable_remote_access" != "false" ]] || return
+
+  print_step "installing remote access packages"
+  local missing_packages=()
+  for package in tailscale novnc websockify wayvnc; do
+    if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q "install ok installed"; then
+      missing_packages+=("$package")
+    fi
+  done
+
+  if [[ ${#missing_packages[@]} -eq 0 ]]; then
+    print_step "remote access packages already installed"
+    return
+  fi
+
+  if [[ " ${missing_packages[*]} " == *" tailscale "* ]] && [[ ! -f /etc/apt/sources.list.d/tailscale.list ]]; then
+    install_tailscale_apt_source
+  fi
+
+  sudo_apply_or_print apt-get update
+  sudo_apply_or_print env DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing_packages[@]}"
+}
+
+configure_wayvnc() {
+  [[ "$enable_remote_access" != "false" ]] || return
+
+  if ! command -v wayvnc >/dev/null 2>&1 && [[ "$mode" == "apply" ]]; then
+    print_step "WayVNC unavailable; remote desktop backend not configured"
+    return
+  fi
+
+  print_step "configuring WayVNC for browser remote desktop"
+  write_root_text_file /etc/wayvnc/config 644 "$(cat <<'WAYVNC'
+use_relative_paths=true
+address=::
+enable_auth=false
+enable_pam=true
+private_key_file=tls_key.pem
+certificate_file=tls_cert.pem
+rsa_private_key_file=rsa_key.pem
+WAYVNC
+)"
+  sudo_apply_or_print systemctl enable --now wayvnc.service
+  sudo_apply_or_print systemctl restart wayvnc.service
+}
+
+configure_tailscale() {
+  [[ "$enable_remote_access" != "false" ]] || return
+
+  if ! command -v tailscale >/dev/null 2>&1 && [[ "$mode" == "apply" ]]; then
+    print_step "Tailscale unavailable; tailnet enrollment not configured"
+    return
+  fi
+
+  print_step "configuring Tailscale"
+  sudo_apply_or_print systemctl enable --now tailscaled.service
+
+  if [[ "$mode" != "apply" ]]; then
+    echo "dry-run: enroll Tailscale as ${tailscale_hostname} with --accept-dns=false when not already logged in"
+    return
+  fi
+
+  if tailscale ip -4 >/dev/null 2>&1; then
+    print_step "Tailscale already enrolled as $(tailscale ip -4)"
+    return
+  fi
+
+  local auth_key="${!tailscale_auth_key_env:-}"
+  if [[ -n "$auth_key" ]]; then
+    print_step "enrolling Tailscale with auth key from ${tailscale_auth_key_env}"
+    sudo tailscale up --auth-key="$auth_key" --hostname="$tailscale_hostname" --accept-dns=false
+    return
+  fi
+
+  print_step "Tailscale needs interactive approval; visit the login URL printed below"
+  timeout 30s sudo tailscale up --hostname="$tailscale_hostname" --accept-dns=false || true
 }
 
 install_managed_scripts() {
@@ -391,6 +544,9 @@ print_summary() {
 }
 
 print_summary
+install_remote_access_packages
+configure_wayvnc
+configure_tailscale
 install_managed_scripts
 install_user_services
 enable_services

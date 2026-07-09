@@ -571,9 +571,15 @@ async function enforce() {
   const schedules = Array.isArray(store.items) ? store.items : [];
   const assigned = schedules.filter((schedule) => Array.isArray(schedule.screenIds) && schedule.screenIds.includes(screenId));
   const active = assigned.find((schedule) => scheduleIsActive(schedule, now));
-  const override = openOverride && assigned.length > 0 && !active
-    ? await createOpenOverride(assigned)
-    : await activeOpenOverride();
+  let override = null;
+
+  if (active || assigned.length === 0) {
+    await removeOpenOverride();
+  } else if (openOverride) {
+    override = await createOpenOverride(assigned);
+  } else {
+    override = await activeOpenOverride();
+  }
 
   if (active || override) {
     const display = setDisplayPower("on");
@@ -582,17 +588,19 @@ async function enforce() {
       action: dryRun ? "would-start" : "start",
       activeScheduleId: active?.id ?? null,
       activeScheduleName: active?.name ?? null,
-      detail: override
+      detail: active
+        ? `Schedule window is active. ${display.detail}`
+        : override
         ? `Open store override is active until ${override.expiresAt}. ${display.detail}`
-        : `Schedule window is active. ${display.detail}`,
+        : `Screen is open. ${display.detail}`,
       displayAction: display.action,
       displayControlOk: display.ok,
       displayOutput,
       overrideExpiresAt: override?.expiresAt ?? null,
-      state: override ? "override-open" : "on"
+      state: active ? "on" : override ? "override-open" : "on"
     });
     log(
-      `${override ? "open override active" : "schedule active"} for ${screenId}; ${display.detail} ${
+      `${active ? "schedule active" : override ? "temporary open active" : "screen open"} for ${screenId}; ${display.detail} ${
         dryRun ? "would start" : "started"
       } ${vlcService}`
     );

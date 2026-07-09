@@ -295,6 +295,11 @@ current repo path, user runtime directory, display output, display mode, and
 screen ID. This avoids relying on hidden assumptions like a specific checkout
 path or hard-coded `/run/user/1000` value.
 
+The runtime installer also owns Beam remote administration prerequisites. A Pi
+built from the Golden Master should have the Tailscale service, WayVNC, and the
+browser remote desktop bridge installed and enabled as part of normal
+provisioning. Do not treat remote access as a manual C5-only step.
+
 Preview the work first:
 
 ```sh
@@ -308,7 +313,9 @@ device/pi/bin/pisignage-install-runtime.sh \
   --apply \
   --field-player vlc \
   --display-output HDMI-A-1 \
-  --display-resolution 1920x1080@60.000000
+  --display-resolution 1920x1080@60.000000 \
+  --enable-remote-access true \
+  --tailscale-hostname beam-c5
 ```
 
 If schedule enforcement needs a device-specific screen ID, pass it explicitly:
@@ -316,6 +323,26 @@ If schedule enforcement needs a device-specific screen ID, pass it explicitly:
 ```sh
 device/pi/bin/pisignage-install-runtime.sh --apply --screen-id screen-primary
 ```
+
+For production or fleet imaging, enroll Tailscale noninteractively with a
+pre-authorized auth key supplied outside git. The default environment variable
+is `PISIGNAGE_TAILSCALE_AUTHKEY`:
+
+```sh
+PISIGNAGE_TAILSCALE_AUTHKEY='tskey-auth-redacted' \
+  device/pi/bin/pisignage-install-runtime.sh \
+    --apply \
+    --field-player vlc \
+    --enable-remote-access true \
+    --tailscale-hostname beam-c5
+```
+
+Use the correct hostname for each appliance, for example `beam-c1`,
+`beam-c2`, and so on. Keep `--accept-dns=false` as managed by the installer so
+Tailscale does not take over Pi DNS behavior. The auth key must be temporary,
+rotated when needed, and kept out of committed files, images, logs, and docs.
+If no auth key is supplied and the Pi is not already enrolled, the installer
+prints a Tailscale login URL for one-time test approval.
 
 The installer does not create desktop autologin or a Wayland session. Validate
 those OS/session prerequisites during the C5 reboot and power-loss drill.

@@ -1,10 +1,12 @@
 # PI Golden Master Baseline
 
-Last updated: 2026-07-09 11:15 PDT
+Last updated: 2026-07-09 13:57 PDT
 
 ## Baseline Rule
 
-C5 is the Beam prototype appliance and the source of truth for the current PI golden master baseline.
+The PI Golden Master is the Beam appliance source of truth. C5 is the current
+prototype evidence source for this baseline, but the target state is C1-C5 all
+matching the Golden Master except documented identity and network fields.
 
 Every Pi-touching change deployed to C5 must update this document before the work is considered complete. That includes changes to device-agent behavior, managed Pi scripts, systemd services or drop-ins, VLC/display/playback behavior, schedule enforcement, command-plane actions, heartbeat/current-video reporting, recovery, reset, cache, playlist, and published media behavior.
 
@@ -61,13 +63,21 @@ Important packaging note: `device-agent/dist/index.js` is an ignored build artif
 
 Recent changes incorporated into this baseline:
 
+- Golden Master remote administration automation:
+  - `device/pi/bin/pisignage-install-runtime.sh` installs and enables Tailscale, WayVNC, noVNC, and websockify when remote access is enabled
+  - remote access is part of the appliance baseline, not a C5-only manual addition
+  - the installer supports noninteractive Tailscale enrollment with an auth key supplied outside git through `PISIGNAGE_TAILSCALE_AUTHKEY`
+  - the installer uses a per-device tailnet hostname such as `beam-c1`, `beam-c2`, or `beam-c5`
+  - Tailscale is started with `--accept-dns=false` so it does not take over Pi DNS behavior
+  - `device/pi/bin/pisignage-reset-device.sh` now preserves and re-enables the remote access services during reset when those packages are present
+
 - Dedicated device heartbeat API:
   - device check-ins use the Lambda Function URL, not the dashboard/App Runner service
   - dashboard heartbeat reads use DynamoDB directly
   - routine heartbeat cadence is `30s` plus up to `5s` jitter
   - devices with Tailscale installed report `tailscaleIpAddress` in the heartbeat so Beam can prefer the tailnet address for remote SSH/noVNC controls while retaining the local LAN IP as fallback evidence
   - legacy App Runner heartbeat route remains only as migration compatibility for older devices until reprovisioned
-- Tailscale C5 proof:
+- Tailscale proof:
   - C5 is joined to the test tailnet as `beam-c5`
   - C5 tailnet IPv4 address at capture: `100.66.60.59`
   - C5 tailnet DNS name at capture: `beam-c5.tail2e97b2.ts.net.`
@@ -85,8 +95,8 @@ Recent changes incorporated into this baseline:
   - `Show desktop` also restores the Raspberry Pi desktop shell by ensuring `pcmanfm --desktop` and `wf-panel-pi` are running, and now waits for both processes before reporting success, so noVNC shows the admin panel instead of a blank black desktop
   - the Beam `Resume playback` button queues a Pi action to restart managed VLC signage playback and restore schedule control after remote administration
   - the browser desktop path works from both macOS and Windows clients on the same trusted network
-  - until Tailscale ACLs are in place, this prototype should only be enabled on trusted local networks
-  - C1-C4 rollout should happen after C5 manual proof confirms the operator flow
+  - until Tailscale ACLs are in place, this prototype should only be used on trusted local networks or over the test tailnet
+  - C1-C5 should all carry the same remote access package and service baseline
 - Remote screen snapshot command prototype:
   - captures the Pi display output with `grim`
   - compresses a small JPEG preview with `ffmpeg`
@@ -112,6 +122,11 @@ Recent changes incorporated into this baseline:
   - device-agent heartbeat prefers `wlan0`, then `eth0`, then any other non-internal IPv4 address
   - Wi-Fi setup applies route metric `50` after successful Wi-Fi configuration so Wi-Fi is preferred when Ethernet and Wi-Fi are both active
 - Cloud media upload/prep hardening and S3 upload path
+- Strict playlist cache parity:
+  - the active device-agent media cache is a mirror of the currently published playlist
+  - matching cached assets are skipped by size/checksum, so adding one playlist item downloads only that new or changed file
+  - after a successful release sync, stale cache files not referenced by the current playlist are pruned
+  - routine check-ins still fetch only tiny release/heartbeat metadata and do not return media URLs unless an asset is missing or changed
 - C5 emergency recovery cleanup after failed HDMI rescue:
   - removed stray `donnoel` line from `/boot/firmware/cmdline.txt`
   - removed temporary firmware HDMI hardening from `/boot/firmware/config.txt`
@@ -188,7 +203,7 @@ Fleet display note: C1-C3 and C5 are ONN displays in the current pilot. C4 is a 
 | `pisignage-schedule.service` | static | transient | start | One-shot schedule enforcement |
 | `wayvnc.service` | enabled | active | running | System WayVNC remote desktop backend on port `5900`; C5 config uses `enable_auth=false` for noVNC compatibility |
 | `pisignage-remote-desktop.service` | enabled | active | running | Browser remote desktop bridge; serves noVNC on port `6080` and proxies to `127.0.0.1:5900` |
-| `tailscaled.service` | enabled | active | running | Tailscale tunnel for remote administration across networks; C5 currently enrolled in the temporary test tailnet |
+| `tailscaled.service` | enabled | active | running | Tailscale tunnel for remote administration across networks; appliance must be enrolled with its own per-device tailnet identity |
 | `pisignage-player.service` | disabled | inactive | dead | Browser player fallback/experimental |
 | `pisignage-kiosk.service` | disabled | inactive | dead | Browser kiosk fallback/experimental |
 
@@ -316,10 +331,10 @@ Natural schedule validation on 2026-07-08:
 - `wlopm` reported `HDMI-A-1 on`
 - `pisignage-vlc.service`, `pisignage-schedule.timer`, and `pisignage-device-agent.service` were active after the natural open
 
-Controlled open-store override validation on 2026-07-06:
+Controlled Open store validation on 2026-07-06:
 
-- forced after-hours open override created local state `override-open`
-- override detail reported: `Open store override is active until 2026-07-08T00:00:00.000Z. vcgencmd set HDMI-A-1 on.`
+- forced after-hours Open store created temporary local state `override-open`
+- temporary-open detail reported: `Open store override is active until 2026-07-08T00:00:00.000Z. vcgencmd set HDMI-A-1 on.`
 - display action remained `display-on`
 - display control ok remained `true`
 - override was cleared immediately after validation
@@ -335,12 +350,15 @@ Playlist cache directory:
 /home/donnoel/.local/cache/pisignage/device-agent/playlists
 ```
 
-Playlist hashes:
+Playlist content:
 
 ```text
-85516347f03a2f7e7a0628982b39cc13e82ee030c526e0ef1ad176161e7929eb  current.json
-85516347f03a2f7e7a0628982b39cc13e82ee030c526e0ef1ad176161e7929eb  playlist-community-vision.json
+playlist-community-vision@32
+29 assets
+19831a243ae3a3af78fd1edfa6fa37a31ce7e4d049f385f86258bbf263bcd67f  normalized playlist content fingerprint
 ```
+
+Raw playlist JSON file hashes can differ across appliances because device-local runtime metadata or serialization order is not a Golden Master contract. The normalized playlist identity, version, ordered asset identity, duration, checksum, and size are the parity surface.
 
 Asset cache directory:
 
@@ -353,6 +371,9 @@ Cached asset facts:
 - cached files: `29`
 - active playlist asset count: `29`
 - cache size: `286M`
+- active media fingerprint: `4afa76fdf340146f0ae18bb7151e9ea5989b8dbccfa45afe81c7a53b1f7a342d`
+- cache parity contract: the asset cache must contain only files referenced by the currently published playlist
+- sync behavior: matching cached files are skipped by size/checksum; missing or changed files are downloaded individually; unreferenced files are pruned after successful sync
 
 ## Managed File Hashes
 
@@ -361,11 +382,11 @@ Managed Pi scripts:
 ```text
 75104faff5c772e90230edc1a9a560549f131ab63e2bb048309958aa70c30ba1  pisignage-call-home-now.sh
 60f2e66f5afc2337cf4743229feabbe41cf3cb0fdfeae2dbdfc13c37431e4564  pisignage-configure-wifi.sh
-a6ca922f646b0f2542e75edf419873d8e6059084b32229eb6c80f62a355599ef  pisignage-enforce-schedule.mjs
+4ded2a4242566bb4a7383c51fd2cb01eeab680c217cb3bf6c6da200ec63b33af  pisignage-enforce-schedule.mjs
 c577963b8233b225a663319fb95c0411015cf85c5a1635dc2e5e76801cd92a08  pisignage-hide-desktop.sh
-25b034a1b9d6257c818e539f1724b761656a82ef6dadef701f6a6234fa0fabaa  pisignage-install-runtime.sh
+687ee167727965ae68bfac6e1461fa0d54d3a79e62fb85b9d09e0bf46bab583e  pisignage-install-runtime.sh
 a5c9bce76ffee95e7924af4dd9f7cb74fde1aaff0090d4fd9a8466cf32c24e9d  pisignage-provision-device.sh
-ad74d347117c34bcaa46e530a313446fe4ef5efc6dd6395ede0b881594e7c7eb  pisignage-reset-device.sh
+6e5757eebb2f1fc1b61a7570b5a9bb1e9a6fb1c33c352af2040d3031388cb082  pisignage-reset-device.sh
 bc01cf6dc91e857da42d753361113c7cf979c6f9486e391ba86e38c64b6e71f0  pisignage-serve-player.mjs
 5ad55c8d2fb4a027693113f8c9bd2ebd92e83b1619e54468f8e997030d7a52b0  pisignage-start-display.sh
 f251573e687f88f4f956de61b044b2e376368d01424c71a2f5d539495e139d6c  pisignage-vlc-playlist.mjs
@@ -386,10 +407,10 @@ efbe213d6bc3b7d38351592ff0312d7f2320f7f3919b491b6221a4b5a6cfab8c  pisignage-remo
 Compiled device agent:
 
 ```text
-060be30456ba304e94821d26bcffd797b0ea4d89a184d20d0b144c1e93ffc4e5  device-agent/dist/index.js
+fa5e3fd9f0ad364b3c47c36aab13b713263156cf45a3afc2a8d3e4cd7afa84b9  device-agent/dist/index.js
 ```
 
-This hash supersedes the 2026-07-09 07:08 baseline hash and includes the current command-plane behavior deployed to C5, including schedule-aware heartbeat reporting, the remote Open store action, the remote screen snapshot prototype, remote Show desktop and Resume playback actions that pause and restore schedule control, Show desktop desktop-panel restoration and verification for noVNC administration, deterministic Wi-Fi-first heartbeat address selection, Tailscale tailnet address reporting, verified `wlopm` display power control for schedule close/open, automatic HDMI/headless-output display session recovery, and 30-second cloud heartbeat check-ins through the dedicated device heartbeat API.
+These hashes supersede the 2026-07-09 12:20 baseline hashes and include the current command-plane behavior deployed to C1-C5, including schedule-aware heartbeat reporting, the remote Open store action, the remote screen snapshot prototype, remote Show desktop and Resume playback actions that pause and restore schedule control, Show desktop desktop-panel restoration and verification for noVNC administration, deterministic Wi-Fi-first heartbeat address selection, Tailscale tailnet address reporting, verified `wlopm` display power control for schedule close/open, automatic HDMI/headless-output display session recovery, 30-second cloud heartbeat check-ins through the dedicated device heartbeat API, Golden Master-managed remote access installation/enrollment support, and strict device-agent cache parity that prunes stale unreferenced media after successful release sync.
 
 ## Required Baseline Update Workflow
 
@@ -422,7 +443,25 @@ sha256sum /home/donnoel/PiSignage/device-agent/dist/index.js
 
 ## C1-Cx Rollout Note
 
-C1-C4 were refreshed from the then-current PI golden master baseline at the studio on 2026-07-08. They still need the 2026-07-09 Tailscale enrollment and compiled device-agent heartbeat update when each device is ready to join the production tailnet.
+C1-C4 were refreshed from the then-current PI golden master baseline at the studio on 2026-07-08. On 2026-07-09, C1-C4 were updated in place with the Golden Master remote access package and service baseline:
+
+- `tailscale` installed and `tailscaled.service` enabled/active
+- `wayvnc` installed and `wayvnc.service` enabled/active
+- `novnc` and `websockify` installed for the browser desktop bridge
+- `pisignage-remote-desktop.service` enabled/active
+- refreshed managed runtime install and reset scripts in both the repo checkout and `~/.local/bin`
+
+Tailnet enrollment for C1-C4 was completed in the temporary test tailnet on 2026-07-09. Production provisioning must use a pre-authorized Tailscale auth key supplied outside git so a Golden Master image can enroll each Pi automatically with its own hostname.
+
+After test-tailnet approval on 2026-07-09, C1-C5 tailnet identities were:
+
+| Pi | Tailnet hostname | Tailnet IPv4 |
+| --- | --- | --- |
+| C1 | `beam-c1` | `100.108.135.20` |
+| C2 | `beam-c2` | `100.95.194.15` |
+| C3 | `beam-c3` | `100.86.155.95` |
+| C4 | `beam-c4` | `100.85.111.13` |
+| C5 | `beam-c5` | `100.66.60.59` |
 
 Rollout payload:
 
@@ -432,16 +471,16 @@ Rollout payload:
 
 The rollout preserved each Pi's identity and network fields, then refreshed the Beam-managed scripts, generated user services, first-run playlist/media, and compiled device-agent runtime. The private device-agent env on C1-C4 was also corrected to use the dedicated device heartbeat API URL while preserving each device's API key value. Stale `audio.conf` VLC drop-ins that forced audio off were removed from C2-C4 so the only remaining VLC drop-in on C1-C4 is the expected cloud cache override.
 
-Validated C1-C4 after rollout:
+Validated C1-C4 after rollout and remote access package refresh:
 
-| Pi | IP | Device ID | Dedicated heartbeat API | Agent hash | VLC drop-ins | Cache | Cloud heartbeat |
+| Pi | IP | Device ID | Dedicated heartbeat API | Agent hash | Remote access services | Managed script hashes | Cloud heartbeat |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| C1 | `192.168.1.131` | `device-c1-aws-pilot` | configured | `6c206f1b457fd0eaa19127d6e2be1451201f05554c9679e8d7ab62bac4355f35` | `10-cloud-cache.conf` | 29 assets | playing, playlist `playlist-community-vision` v32 |
-| C2 | `192.168.1.64` | `device-c2-aws-pilot` | configured | `6c206f1b457fd0eaa19127d6e2be1451201f05554c9679e8d7ab62bac4355f35` | `10-cloud-cache.conf` | 29 assets | playing, playlist `playlist-community-vision` v32 |
-| C3 | `192.168.1.169` | `device-c3-aws-pilot` | configured | `6c206f1b457fd0eaa19127d6e2be1451201f05554c9679e8d7ab62bac4355f35` | `10-cloud-cache.conf` | 29 assets | playing, playlist `playlist-community-vision` v32 |
-| C4 | `192.168.1.177` | `device-c4-aws-pilot` | configured | `6c206f1b457fd0eaa19127d6e2be1451201f05554c9679e8d7ab62bac4355f35` | `10-cloud-cache.conf` | 29 assets | playing, playlist `playlist-community-vision` v32 |
+| C1 | `192.168.1.131` | `device-c1-aws-pilot` | configured | `6c206f1b457fd0eaa19127d6e2be1451201f05554c9679e8d7ab62bac4355f35` | `tailscaled`, `wayvnc`, `pisignage-remote-desktop` active | install `687ee167727965ae68bfac6e1461fa0d54d3a79e62fb85b9d09e0bf46bab583e`; reset `6e5757eebb2f1fc1b61a7570b5a9bb1e9a6fb1c33c352af2040d3031388cb082` | playing, playlist `playlist-community-vision` v32 |
+| C2 | `192.168.1.64` | `device-c2-aws-pilot` | configured | `6c206f1b457fd0eaa19127d6e2be1451201f05554c9679e8d7ab62bac4355f35` | `tailscaled`, `wayvnc`, `pisignage-remote-desktop` active | install `687ee167727965ae68bfac6e1461fa0d54d3a79e62fb85b9d09e0bf46bab583e`; reset `6e5757eebb2f1fc1b61a7570b5a9bb1e9a6fb1c33c352af2040d3031388cb082` | playing, playlist `playlist-community-vision` v32 |
+| C3 | `192.168.1.169` | `device-c3-aws-pilot` | configured | `6c206f1b457fd0eaa19127d6e2be1451201f05554c9679e8d7ab62bac4355f35` | `tailscaled`, `wayvnc`, `pisignage-remote-desktop` active | install `687ee167727965ae68bfac6e1461fa0d54d3a79e62fb85b9d09e0bf46bab583e`; reset `6e5757eebb2f1fc1b61a7570b5a9bb1e9a6fb1c33c352af2040d3031388cb082` | playing, playlist `playlist-community-vision` v32 |
+| C4 | `192.168.1.177` | `device-c4-aws-pilot` | configured | `6c206f1b457fd0eaa19127d6e2be1451201f05554c9679e8d7ab62bac4355f35` | `tailscaled`, `wayvnc`, `pisignage-remote-desktop` active | install `687ee167727965ae68bfac6e1461fa0d54d3a79e62fb85b9d09e0bf46bab583e`; reset `6e5757eebb2f1fc1b61a7570b5a9bb1e9a6fb1c33c352af2040d3031388cb082` | playing, playlist `playlist-community-vision` v32 |
 
-On all four Pis, `pisignage-device-agent.service`, `pisignage-vlc.service`, and `pisignage-schedule.timer` were enabled and active. `pisignage-player.service` and `pisignage-kiosk.service` were disabled and inactive. Forced call-home completed through the dedicated device heartbeat API on all four devices.
+On all four Pis, `pisignage-device-agent.service`, `pisignage-vlc.service`, `pisignage-schedule.timer`, `pisignage-remote-desktop.service`, `tailscaled.service`, and `wayvnc.service` were active after the remote access package refresh. `pisignage-player.service` and `pisignage-kiosk.service` remain disabled and inactive. Forced call-home completed through the dedicated device heartbeat API on all four devices before this remote access refresh.
 
 The same rule applies to every future C1-Cx appliance.
 
