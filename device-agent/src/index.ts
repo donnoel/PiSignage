@@ -869,6 +869,26 @@ async function restartPlaybackService(): Promise<string> {
   return `VLC playback restarted. Service state: ${state}.`;
 }
 
+async function processIsRunning(pattern: string): Promise<boolean> {
+  try {
+    await execFileAsync("pgrep", ["-f", pattern], { timeout: 5_000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForProcess(pattern: string, label: string): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    if (await processIsRunning(pattern)) {
+      return;
+    }
+    await sleep(500);
+  }
+
+  throw new Error(`${label} did not start for remote desktop.`);
+}
+
 async function showDesktopShell(): Promise<void> {
   const command = [
     "export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}",
@@ -885,6 +905,8 @@ async function showDesktopShell(): Promise<void> {
   await execFileAsync("/bin/sh", ["-lc", command], {
     timeout: 20_000
   });
+  await waitForProcess("pcmanfm --desktop", "Desktop file manager");
+  await waitForProcess("wf-panel-pi", "Desktop panel");
 }
 
 async function showDesktop(): Promise<string> {
