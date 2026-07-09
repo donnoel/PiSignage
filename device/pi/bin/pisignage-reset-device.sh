@@ -123,6 +123,7 @@ managed_unit_sources=(
   "device/pi/systemd/user/pisignage-device-agent.service"
   "device/pi/systemd/user/pisignage-kiosk.service"
   "device/pi/systemd/user/pisignage-player.service"
+  "device/pi/systemd/user/pisignage-remote-desktop.service"
   "device/pi/systemd/user/pisignage-schedule.service"
   "device/pi/systemd/user/pisignage-schedule.timer"
   "device/pi/systemd/user/pisignage-vlc.service"
@@ -272,7 +273,7 @@ else
 fi
 
 print_step "stopping managed services"
-for unit in pisignage-schedule.timer pisignage-schedule.service pisignage-kiosk.service pisignage-player.service pisignage-vlc.service pisignage-device-agent.service; do
+for unit in pisignage-schedule.timer pisignage-schedule.service pisignage-kiosk.service pisignage-player.service pisignage-vlc.service pisignage-remote-desktop.service pisignage-device-agent.service; do
   if [[ "$defer_field_player_restart" == "true" && ( "$unit" == "pisignage-vlc.service" || "$unit" == "pisignage-player.service" || "$unit" == "pisignage-kiosk.service" ) ]]; then
     print_step "leaving ${unit} running until reboot"
     continue
@@ -367,6 +368,11 @@ else
   apply_or_print systemctl --user enable --now pisignage-vlc.service
 fi
 apply_or_print systemctl --user enable --now pisignage-schedule.timer
+if command -v websockify >/dev/null 2>&1 && [[ -f /usr/share/novnc/vnc.html ]]; then
+  apply_or_print systemctl --user enable --now pisignage-remote-desktop.service
+else
+  print_step "browser remote desktop bridge not enabled; install novnc and websockify first"
+fi
 if [[ -f "${repo_root}/device-agent/dist/index.js" ]]; then
   if [[ "$agent_safe" == "true" ]]; then
     apply_or_print systemctl --user enable pisignage-device-agent.service

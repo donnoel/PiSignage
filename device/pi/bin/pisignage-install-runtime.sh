@@ -306,6 +306,23 @@ WantedBy=default.target
 SERVICE
 )"
 
+remote_desktop_service="$(cat <<'SERVICE'
+[Unit]
+Description=PiSignage Browser Remote Desktop
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/websockify --web=/usr/share/novnc 0.0.0.0:6080 127.0.0.1:5900
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+SERVICE
+)"
+
 install_user_services() {
   print_step "writing generated user services into ${systemd_user_dir}"
   write_text_file "${systemd_user_dir}/pisignage-device-agent.service" 644 "$device_agent_service"
@@ -314,6 +331,7 @@ install_user_services() {
   write_text_file "${systemd_user_dir}/pisignage-schedule.service" 644 "$schedule_service"
   write_text_file "${systemd_user_dir}/pisignage-schedule.timer" 644 "$schedule_timer"
   write_text_file "${systemd_user_dir}/pisignage-vlc.service" 644 "$vlc_service"
+  write_text_file "${systemd_user_dir}/pisignage-remote-desktop.service" 644 "$remote_desktop_service"
 }
 
 enable_services() {
@@ -339,6 +357,13 @@ enable_services() {
   esac
 
   apply_or_print systemctl --user enable --now pisignage-schedule.timer
+
+  if command -v websockify >/dev/null 2>&1 && [[ -f /usr/share/novnc/vnc.html ]]; then
+    print_step "enabling browser remote desktop bridge"
+    apply_or_print systemctl --user enable --now pisignage-remote-desktop.service
+  else
+    print_step "browser remote desktop bridge not enabled; install novnc and websockify first"
+  fi
 
   if [[ "$enable_device_agent" == "true" ]] || [[ "$enable_device_agent" == "auto" && -f "$device_agent_dist" ]]; then
     print_step "enabling device agent"
@@ -372,7 +397,7 @@ enable_services
 
 if [[ "$mode" == "apply" ]]; then
   print_step "service state"
-  systemctl --user --no-pager --plain status pisignage-vlc.service pisignage-device-agent.service pisignage-schedule.timer || true
+  systemctl --user --no-pager --plain status pisignage-vlc.service pisignage-device-agent.service pisignage-schedule.timer pisignage-remote-desktop.service || true
 else
   echo "Dry run only; rerun with --apply to install files and update services."
 fi

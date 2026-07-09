@@ -400,7 +400,7 @@ function sshUrlFor(row: RowState): string | null {
 
 function remoteDesktopUrlFor(row: RowState): string | null {
   const host = operationalHostFor(row);
-  return host ? `vnc://${host}:5900` : null;
+  return host ? `http://${host}:6080/vnc.html?host=${encodeURIComponent(host)}&port=6080&autoconnect=true&resize=scale` : null;
 }
 
 function compactPlaybackLabel(label: string): string {

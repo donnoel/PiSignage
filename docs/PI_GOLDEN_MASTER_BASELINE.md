@@ -1,6 +1,6 @@
 # PI Golden Master Baseline
 
-Last updated: 2026-07-08 17:38 PDT
+Last updated: 2026-07-08 17:50 PDT
 
 ## Baseline Rule
 
@@ -70,9 +70,11 @@ Recent changes incorporated into this baseline:
 - Remote recovery command plane
 - Remote audio mute/unmute command support
 - Remote desktop prototype on C5:
-  - dashboard opens the Pi through the operator's local VNC client
+  - dashboard opens a browser-based noVNC page served from the Pi on port `6080`
   - C5 runs system WayVNC on port `5900`
-  - C5 currently uses `enable_auth=false` in `/etc/wayvnc/config` because Apple Screen Sharing does not support WayVNC's PAM/VeNCrypt handshake
+  - C5 runs `pisignage-remote-desktop.service`, which serves noVNC with `websockify` and bridges to `127.0.0.1:5900`
+  - C5 currently uses `enable_auth=false` in `/etc/wayvnc/config` because noVNC must connect to WayVNC without the Apple Screen Sharing PAM/VeNCrypt path
+  - the Beam Remote desktop button is browser-based so it works from both macOS and Windows clients on the same trusted network
   - until Tailscale ACLs are in place, this prototype should only be enabled on trusted local networks
   - C1-C4 rollout should happen after C5 manual proof confirms the operator flow
 - Remote screen snapshot command prototype:
@@ -127,6 +129,7 @@ Recent changes incorporated into this baseline:
 - Node: `v20.19.2`
 - VLC: `VLC version 3.0.23 Vetinari (3.0.23-2-0-g79128878dd)`
 - Chromium: `Chromium 148.0.7778.167 built on Debian GNU/Linux 13 (trixie)`
+- Remote desktop packages: `novnc` `1:1.6.0-2`, `websockify` `0.12.0+dfsg1-4+b1`
 
 ## Boot And Display Baseline
 
@@ -166,7 +169,8 @@ Physical note: during the 2026-07-04 recovery, the monitor only returned to a cl
 | `pisignage-vlc.service` | enabled | active | running | VLC playback path |
 | `pisignage-schedule.timer` | enabled | active | running | Runs schedule enforcement every minute |
 | `pisignage-schedule.service` | static | transient | start | One-shot schedule enforcement |
-| `wayvnc.service` | enabled | active | running | System WayVNC remote desktop prototype on port `5900`; C5 config uses `enable_auth=false` for Apple Screen Sharing compatibility |
+| `wayvnc.service` | enabled | active | running | System WayVNC remote desktop backend on port `5900`; C5 config uses `enable_auth=false` for noVNC compatibility |
+| `pisignage-remote-desktop.service` | enabled | active | running | Browser remote desktop bridge; serves noVNC on port `6080` and proxies to `127.0.0.1:5900` |
 | `pisignage-player.service` | disabled | inactive | dead | Browser player fallback/experimental |
 | `pisignage-kiosk.service` | disabled | inactive | dead | Browser kiosk fallback/experimental |
 
@@ -341,9 +345,9 @@ Managed Pi scripts:
 60f2e66f5afc2337cf4743229feabbe41cf3cb0fdfeae2dbdfc13c37431e4564  pisignage-configure-wifi.sh
 eda895b17ca672f1d9842fb67c6d23b25a52663da3d9636672051cc01627e8e0  pisignage-enforce-schedule.mjs
 c577963b8233b225a663319fb95c0411015cf85c5a1635dc2e5e76801cd92a08  pisignage-hide-desktop.sh
-051ea589233efa1c66782b5dc7928aa153827bd3e75fd9776736c6518f93bb99  pisignage-install-runtime.sh
+25b034a1b9d6257c818e539f1724b761656a82ef6dadef701f6a6234fa0fabaa  pisignage-install-runtime.sh
 a5c9bce76ffee95e7924af4dd9f7cb74fde1aaff0090d4fd9a8466cf32c24e9d  pisignage-provision-device.sh
-e9173990a980d64690f542d4c9d5bfab8e7b376f32cc6ee667569cd4d4254784  pisignage-reset-device.sh
+ad74d347117c34bcaa46e530a313446fe4ef5efc6dd6395ede0b881594e7c7eb  pisignage-reset-device.sh
 bc01cf6dc91e857da42d753361113c7cf979c6f9486e391ba86e38c64b6e71f0  pisignage-serve-player.mjs
 5ad55c8d2fb4a027693113f8c9bd2ebd92e83b1619e54468f8e997030d7a52b0  pisignage-start-display.sh
 ef486f92112e6919e59c523f1f8fa939ca6baa3ac6b29def775e0b30b983100d  pisignage-vlc-playlist.mjs
@@ -358,6 +362,7 @@ a79d98fd2a9f3dabf6314b413e9501c620862cf2253452ce198a754b6637a42e  pisignage-sche
 596b5adad2708f97b21c2cb38fb6798e54dd4b5e95163bfd10ea38c235b27c74  pisignage-schedule.timer
 323beab51690837cc6fde5cc58277dbb5b272d167ae991953beb85e0b1741761  pisignage-player.service
 7308c0a0cac88246a8e041d21a1c74e7bf88ef8a6500201237b78ee2efe7491f  pisignage-kiosk.service
+efbe213d6bc3b7d38351592ff0312d7f2320f7f3919b491b6221a4b5a6cfab8c  pisignage-remote-desktop.service
 ```
 
 Compiled device agent:
