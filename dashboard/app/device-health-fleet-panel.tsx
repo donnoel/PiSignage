@@ -908,6 +908,27 @@ function diagnosticsReportFromResult(value: string | null): DiagnosticsReport | 
   }
 }
 
+function formatPacificTimestamp(value: string | null | undefined): string {
+  if (!value) {
+    return "recently";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "recently";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    month: "short",
+    timeZone: "America/Los_Angeles",
+    timeZoneName: "shortGeneric",
+    year: "numeric"
+  }).format(date);
+}
+
 function friendlyDiagnosticDetail(probe: DiagnosticsProbe): string {
   try {
     const parsed = parseDiagnosticDetail(probe.detail);
@@ -2273,7 +2294,7 @@ export function DeviceHealthFleetPanel({
                           {selectedDiagnosticsReport?.probes ? (
                             <div className="mt-3 grid gap-2">
                               <p className="text-xs text-zinc-500">
-                                Captured {selectedDiagnosticsReport.capturedAt ?? "recently"}
+                                Captured {formatPacificTimestamp(selectedDiagnosticsReport.capturedAt)}
                                 {selectedDiagnosticsReport.hostname ? ` from ${selectedDiagnosticsReport.hostname}` : ""}
                                 {selectedDiagnosticsReport.localIpAddress ? ` at ${selectedDiagnosticsReport.localIpAddress}` : ""}.
                               </p>
