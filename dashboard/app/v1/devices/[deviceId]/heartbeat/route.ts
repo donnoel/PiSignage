@@ -38,7 +38,7 @@ export const dynamic = "force-dynamic";
 
 const defaultAccountId = "beam-dev";
 const dynamoDb = new DynamoDBClient({});
-const nextHeartbeatInSeconds = 30;
+const nextHeartbeatInSeconds = 10;
 
 function heartbeatsTableName(): string | null {
   return process.env.BEAM_HEARTBEATS_TABLE_NAME?.trim() || null;

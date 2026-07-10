@@ -9,8 +9,8 @@ WorkingDirectory=/home/donnoel/PiSignage
 Environment=PISIGNAGE_PLAYLIST_PATH=/home/donnoel/PiSignage/sample-content/playlist.local.json
 Environment=PISIGNAGE_CACHE_DIR=%h/.local/cache/pisignage/device-agent
 Environment=PISIGNAGE_HEARTBEAT_PATH=%h/.local/state/pisignage/heartbeat.json
-Environment=PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS=30
-Environment=PISIGNAGE_HEARTBEAT_JITTER_SECONDS=5
+Environment=PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS=10
+Environment=PISIGNAGE_HEARTBEAT_JITTER_SECONDS=2
 Environment=DISPLAY=:0
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus

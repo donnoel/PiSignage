@@ -74,7 +74,7 @@ Recent changes incorporated into this baseline:
 - Dedicated device heartbeat API:
   - device check-ins use the Lambda Function URL, not the dashboard/App Runner service
   - dashboard heartbeat reads use DynamoDB directly
-  - routine heartbeat cadence is `30s` plus up to `5s` jitter
+  - routine heartbeat cadence is `10s` plus up to `2s` jitter
   - devices with Tailscale installed report `tailscaleIpAddress` in the heartbeat so Beam can prefer the tailnet address for remote SSH/noVNC controls while retaining the local LAN IP as fallback evidence
   - legacy App Runner heartbeat route remains only as migration compatibility for older devices until reprovisioned
 - Tailscale proof:
@@ -284,8 +284,8 @@ Heartbeat facts at capture:
 - playlist version: `32`
 - playback state: `playing`
 - network online: `true`
-- heartbeat interval: `30s`
-- heartbeat jitter: `5s`
+- heartbeat interval: `10s`
+- heartbeat jitter: `2s`
 - current-video heartbeat field present:
   - `currentAssetId`
 - schedule heartbeat fields present:
@@ -400,8 +400,8 @@ Managed Pi scripts:
 60f2e66f5afc2337cf4743229feabbe41cf3cb0fdfeae2dbdfc13c37431e4564  pisignage-configure-wifi.sh
 60450768a4112232cb1f594b49d17d50f1907c2f13057cbed753cf99b48ced31  pisignage-enforce-schedule.mjs
 c577963b8233b225a663319fb95c0411015cf85c5a1635dc2e5e76801cd92a08  pisignage-hide-desktop.sh
-dbc71d0eff8d95880e72c870f2f0db1e766bdde1e0170cc236ecd9a624be1200  pisignage-install-runtime.sh
-a5c9bce76ffee95e7924af4dd9f7cb74fde1aaff0090d4fd9a8466cf32c24e9d  pisignage-provision-device.sh
+3fc11238a4202f9c40f2570b108e829df130a6ccac68730059c9ab17722143e3  pisignage-install-runtime.sh
+87cf85f1e12fad9034cd693ba2d20dc9f538fd2f31a61f9c21e68b156e9bda87  pisignage-provision-device.sh
 6e5757eebb2f1fc1b61a7570b5a9bb1e9a6fb1c33c352af2040d3031388cb082  pisignage-reset-device.sh
 bc01cf6dc91e857da42d753361113c7cf979c6f9486e391ba86e38c64b6e71f0  pisignage-serve-player.mjs
 5ad55c8d2fb4a027693113f8c9bd2ebd92e83b1619e54468f8e997030d7a52b0  pisignage-start-display.sh
@@ -411,7 +411,7 @@ f251573e687f88f4f956de61b044b2e376368d01424c71a2f5d539495e139d6c  pisignage-vlc-
 Managed user services:
 
 ```text
-2e8aaa558b8409fd55f9bdfdd0a19550868bed03628316688a5b65037f967116  pisignage-device-agent.service
+a8e42eec9b0df56b175d9c490e55601c75d3aceb8462be0d2304cfa460a8dd28  pisignage-device-agent.service
 6ff1d651e227fd2a7ffd8e68a21de407da90a75cbce87a8670c5bae879ed784b  pisignage-vlc.service
 a79d98fd2a9f3dabf6314b413e9501c620862cf2253452ce198a754b6637a42e  pisignage-schedule.service
 596b5adad2708f97b21c2cb38fb6798e54dd4b5e95163bfd10ea38c235b27c74  pisignage-schedule.timer
@@ -423,10 +423,10 @@ efbe213d6bc3b7d38351592ff0312d7f2320f7f3919b491b6221a4b5a6cfab8c  pisignage-remo
 Compiled device agent:
 
 ```text
-6694b4f3e4bc79db01bc24556d47de9b07596e175fe4ce97dab4b6ccf709cbb2  device-agent/dist/index.js
+7d19e3255bf10b3bfcd04a592dfdffbd54573362295f0af888b9e8cacad6f07b  device-agent/dist/index.js
 ```
 
-These hashes supersede the 2026-07-09 13:57 baseline hashes and include the current command-plane behavior deployed to C1-C5, including schedule-aware heartbeat reporting, the remote Open store action, the remote screen snapshot prototype, remote Show desktop and Resume playback actions that pause and restore schedule control, Restart playback recovery that restores schedule control, Show desktop desktop-panel restoration and verification for noVNC administration, automatic playback resume if desktop-panel restoration fails, deterministic Wi-Fi-first heartbeat address selection, Tailscale tailnet address reporting, verified `wlopm` display power control for schedule close/open, no-schedule playback enforcement that actively powers on display and starts VLC, automatic HDMI/headless-output display session recovery, 30-second cloud heartbeat check-ins through the dedicated device heartbeat API, Golden Master-managed remote access installation/enrollment support, and strict device-agent cache parity that prunes stale unreferenced media after successful release sync.
+These hashes supersede the 2026-07-09 13:57 baseline hashes and include the current command-plane behavior deployed to C1-C5, including schedule-aware heartbeat reporting, the remote Open store action, the remote screen snapshot prototype, remote Show desktop and Resume playback actions that pause and restore schedule control, Restart playback recovery that restores schedule control, Show desktop desktop-panel restoration and verification for noVNC administration, automatic playback resume if desktop-panel restoration fails, deterministic Wi-Fi-first heartbeat address selection, Tailscale tailnet address reporting, verified `wlopm` display power control for schedule close/open, no-schedule playback enforcement that actively powers on display and starts VLC, automatic HDMI/headless-output display session recovery, 10-second cloud heartbeat check-ins with up to 2 seconds of jitter through the dedicated device heartbeat API, Golden Master-managed remote access installation/enrollment support, and strict device-agent cache parity that prunes stale unreferenced media after successful release sync.
 
 ## Required Baseline Update Workflow
 

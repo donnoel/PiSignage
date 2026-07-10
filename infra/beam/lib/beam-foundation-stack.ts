@@ -159,7 +159,7 @@ export class BeamFoundationStack extends Stack {
         DEVICES_TABLE_NAME: devicesTable.tableName,
         DEVICE_API_KEY: deviceApiSecret.secretValue.unsafeUnwrap(),
         HEARTBEATS_TABLE_NAME: heartbeatsTable.tableName,
-        NEXT_HEARTBEAT_IN_SECONDS: "30"
+        NEXT_HEARTBEAT_IN_SECONDS: "10"
       },
       functionName: `${heartbeatFunctionName}-v2`,
       handler: "index.handler",

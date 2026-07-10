@@ -145,7 +145,7 @@ Response:
 {
   "accepted": true,
   "serverTime": "2026-05-20T20:17:33.100Z",
-  "nextHeartbeatInSeconds": 30
+  "nextHeartbeatInSeconds": 10
 }
 ```
 

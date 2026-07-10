@@ -264,6 +264,15 @@ function autoRefreshEnabledForView(view: DashboardView): boolean {
   return view === "dashboard" || view === "screens";
 }
 
+function deviceHasActiveRemoteCommand(device: DeviceRecord): boolean {
+  return device.resetStatus === "pending" ||
+    device.resetStatus === "running" ||
+    device.actionStatus === "pending" ||
+    device.actionStatus === "running" ||
+    device.diagnosticsStatus === "pending" ||
+    device.diagnosticsStatus === "running";
+}
+
 async function readJsonFile<TValue>(filePath: string): Promise<TValue | null> {
   try {
     return JSON.parse(await fs.readFile(filePath, "utf8")) as TValue;
@@ -1770,6 +1779,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     playlistStore,
     publishStatus
   });
+  const activeRemoteCommand = inventory.devices.items.some(deviceHasActiveRemoteCommand);
+  const autoRefreshIntervalMs = activeRemoteCommand ? 3_000 : 10_000;
   const onlineDeviceCount = fleetRows.filter((row) => row.healthLabel === "Online").length;
   const offlineDeviceCount = fleetRows.filter((row) => row.healthLabel === "Offline").length;
   const notReportingDeviceCount = fleetRows.filter((row) => row.healthLabel === "Not reporting").length;
@@ -1899,7 +1910,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   }));
   return (
     <main className="beam-shell min-h-screen [overflow-x:clip] text-zinc-950">
-      <DashboardAutoRefresh enabled={autoRefreshEnabledForView(selectedView)} />
+      <DashboardAutoRefresh enabled={autoRefreshEnabledForView(selectedView)} intervalMs={autoRefreshIntervalMs} />
       <div className="min-h-screen">
         <aside className="beam-topbar border-b px-5 py-5 text-slate-950">
           <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">

@@ -6,7 +6,7 @@ const devicesTableName = process.env.DEVICES_TABLE_NAME;
 const deviceApiKey = process.env.DEVICE_API_KEY?.trim() ?? "";
 const heartbeatTableName = process.env.HEARTBEATS_TABLE_NAME;
 const defaultAccountId = process.env.DEFAULT_ACCOUNT_ID ?? "beam-dev";
-const nextHeartbeatInSeconds = Number.parseInt(process.env.NEXT_HEARTBEAT_IN_SECONDS ?? "30", 10);
+const nextHeartbeatInSeconds = Number.parseInt(process.env.NEXT_HEARTBEAT_IN_SECONDS ?? "10", 10);
 
 function jsonResponse(statusCode, body) {
   return {

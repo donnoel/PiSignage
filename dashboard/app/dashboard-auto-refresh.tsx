@@ -20,7 +20,7 @@ function isEditingFormField(element: Element | null): boolean {
   return Boolean(element.closest("input, textarea, select"));
 }
 
-export function DashboardAutoRefresh({ enabled = true, intervalMs = 30_000 }: DashboardAutoRefreshProps) {
+export function DashboardAutoRefresh({ enabled = true, intervalMs = 10_000 }: DashboardAutoRefreshProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const pendingRef = useRef(false);

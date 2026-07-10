@@ -140,7 +140,7 @@ validate_no_whitespace "--screen-id" "$screen_id"
 validate_no_whitespace "--node-bin" "$node_bin"
 if [[ -z "$tailscale_hostname" ]]; then
   local_hostname="$(hostname -s 2>/dev/null || hostname)"
-  tailscale_hostname="beam-${local_hostname,,}"
+  tailscale_hostname="beam-$(printf "%s" "$local_hostname" | tr "[:upper:]" "[:lower:]")"
 fi
 validate_no_whitespace "--tailscale-hostname" "$tailscale_hostname"
 validate_no_whitespace "--tailscale-auth-key-env" "$tailscale_auth_key_env"
@@ -254,7 +254,9 @@ install_tailscale_apt_source() {
 }
 
 install_remote_access_packages() {
-  [[ "$enable_remote_access" != "false" ]] || return
+  if [[ "$enable_remote_access" == "false" ]]; then
+    return 0
+  fi
 
   print_step "installing remote access packages"
   local missing_packages=()
@@ -278,7 +280,9 @@ install_remote_access_packages() {
 }
 
 configure_wayvnc() {
-  [[ "$enable_remote_access" != "false" ]] || return
+  if [[ "$enable_remote_access" == "false" ]]; then
+    return 0
+  fi
 
   if ! command -v wayvnc >/dev/null 2>&1 && [[ "$mode" == "apply" ]]; then
     print_step "WayVNC unavailable; remote desktop backend not configured"
@@ -301,7 +305,9 @@ WAYVNC
 }
 
 configure_tailscale() {
-  [[ "$enable_remote_access" != "false" ]] || return
+  if [[ "$enable_remote_access" == "false" ]]; then
+    return 0
+  fi
 
   if ! command -v tailscale >/dev/null 2>&1 && [[ "$mode" == "apply" ]]; then
     print_step "Tailscale unavailable; tailnet enrollment not configured"
@@ -365,8 +371,8 @@ WorkingDirectory=${repo_root}
 Environment=PISIGNAGE_PLAYLIST_PATH=${repo_root}/sample-content/playlist.local.json
 Environment=PISIGNAGE_CACHE_DIR=%h/.local/cache/pisignage/device-agent
 Environment=PISIGNAGE_HEARTBEAT_PATH=%h/.local/state/pisignage/heartbeat.json
-Environment=PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS=30
-Environment=PISIGNAGE_HEARTBEAT_JITTER_SECONDS=5
+Environment=PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS=10
+Environment=PISIGNAGE_HEARTBEAT_JITTER_SECONDS=2
 Environment=DISPLAY=:0
 Environment=XDG_RUNTIME_DIR=${runtime_dir}
 Environment=DBUS_SESSION_BUS_ADDRESS=${dbus_address}

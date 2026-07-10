@@ -1707,18 +1707,18 @@ async function postCloudHeartbeat(config: CloudHeartbeatConfig, heartbeat: Heart
 }
 
 function heartbeatIntervalMs(): number {
-  const seconds = Number.parseInt(process.env.PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS ?? "30", 10);
+  const seconds = Number.parseInt(process.env.PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS ?? "10", 10);
   if (!Number.isFinite(seconds) || seconds < 5) {
-    return 30_000;
+    return 10_000;
   }
 
   return seconds * 1_000;
 }
 
 function heartbeatJitterMs(): number {
-  const seconds = Number.parseInt(process.env.PISIGNAGE_HEARTBEAT_JITTER_SECONDS ?? "5", 10);
+  const seconds = Number.parseInt(process.env.PISIGNAGE_HEARTBEAT_JITTER_SECONDS ?? "2", 10);
   if (!Number.isFinite(seconds) || seconds < 0) {
-    return 5_000;
+    return 2_000;
   }
 
   return seconds * 1_000;

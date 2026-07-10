@@ -75,7 +75,7 @@ The agent can run once or continuously:
 
 ```sh
 npm run agent:heartbeat
-PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS=30 PISIGNAGE_HEARTBEAT_JITTER_SECONDS=5 npm run agent:loop
+PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS=10 PISIGNAGE_HEARTBEAT_JITTER_SECONDS=2 npm run agent:loop
 ```
 
 On a Pi, keep cloud settings in an ignored local env file loaded by the user
