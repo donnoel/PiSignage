@@ -12,10 +12,12 @@ Beam is now a local-first operations console moving through production-minded ha
 - Library
 - Playlists
 - Screens
-- Screen Health / Devices
-- Activity
-- Troubleshooting
-- Settings
+- Scheduling
+
+Screens is the single exposed operations surface for screen health, device status,
+diagnostics, recovery, and deployment controls. Layouts remains implemented for
+future work but is intentionally hidden from top-level navigation during the
+current production-readiness pass.
 
 Map/location UI is deferred. Near-term screen organization should use clear tables, detail panels, and status summaries instead of a map. The current UI still has overlapping Screen Health and Screens surfaces; collapsing them is the next cleanup opportunity.
 
@@ -61,7 +63,8 @@ Acceptance:
 
 - `docs/PRODUCT_REQUIREMENTS.md` defines the product direction.
 - `docs/PHASES.md` reflects the new roadmap.
-- Dashboard sections are locked in direction as: What's Playing, Library, Playlists, Screens, Devices/Screen Health, Activity, Troubleshooting, Settings.
+- Dashboard sections are locked in direction as: What's Playing, Library, Playlists, Screens, and Scheduling for the current operator surface.
+- Layouts stays deferred and unexposed until layout rendering returns to active scope.
 - Map/location UI is marked removed/deferred.
 - Current sprint, five-system soak, AWS buildout, and production gates are explicit.
 
@@ -234,13 +237,13 @@ Validation:
 - `npm --workspace dashboard run typecheck`
 - Focused smoke that performs one upload/edit/publish/recovery action and confirms an activity entry.
 
-## Phase 9: Troubleshooting And Recovery
+## Phase 9: Screen Diagnostics And Recovery
 
 Goal: give operators one clear place to diagnose and recover a screen.
 
 Acceptance:
 
-- Troubleshooting view shows player status, service state, display mode, publish status, temperature, throttle state, uptime, boot ID, and last errors.
+- Screens shows player status, service state, display mode, publish status, temperature, throttle state, uptime, boot ID, and last errors through its selected-screen diagnostics and recovery controls.
 - One-click recovery runs a safe sequence: probe status, restart VLC, reload playlist, restart player service.
 - Reboot requires explicit approval and is not the default first action.
 - SSH guidance and a copyable SSH command are available.

@@ -92,8 +92,8 @@ Record each scenario as pass, fail, or deferred.
 12. Confirm C5 TV playback after publish.
 13. Refresh the dashboard repeatedly and confirm no duplicate publish, upload, or recovery action occurs.
 14. Open dashboard in a second tab and repeat status refresh/publish visibility checks.
-15. Review Screen Health and Screens views for the same C5 state.
-16. Run troubleshooting read-only refresh for C5.
+15. Review the Screens view for the C5 state.
+16. Run Remote diagnostics from the selected C5 row on Screens.
 17. Run recovery only after explicit operator approval.
 18. Confirm Activity shows meaningful evidence for any action that should be auditable.
 19. Confirm AWS transfer ledger is explainable for any manual publish media movement.

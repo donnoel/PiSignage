@@ -51,26 +51,15 @@ function requireOk(label, result) {
   }
 }
 
-function summarizeDiagnostics(items) {
-  if (!Array.isArray(items) || items.length === 0) {
-    console.log("Diagnostics: no items returned.");
-    return;
-  }
-
-  for (const item of items) {
-    console.log(`${item.status.toUpperCase()}: ${item.label} - ${String(item.detail).split("\n")[0]}`);
-  }
-}
-
-function printC5WirelessChecklist(pi) {
+function printC5WirelessChecklist() {
   console.log("\nC5 Ethernet/Wi-Fi validation gates:");
-  console.log(`- Target: ${pi?.host ?? "not configured"}; prefer C5.local on the study network.`);
-  console.log("- Wired baseline: connect Ethernet, refresh Troubleshooting, publish assigned playlist, and confirm VLC playing on the TV.");
+  console.log("- Target: select C5 on Screens; prefer current call-home/Tailscale evidence over stale saved IPs.");
+  console.log("- Wired baseline: connect Ethernet, refresh Screens, publish assigned playlist, and confirm VLC playing on the TV.");
   console.log("- Wi-Fi setup: run device/pi/bin/pisignage-configure-wifi.sh on C5 and enter the Wi-Fi secret only at the Pi/NetworkManager prompt.");
   console.log("- Wi-Fi-only: unplug Ethernet, wait for C5.local/SSH to recover, then rerun this drill and repeat publish/status checks.");
   console.log("- Wireless recovery: reboot C5 with Ethernet unplugged and confirm fullscreen VLC playback returns without dashboard action.");
   console.log("- Network loss: interrupt Wi-Fi after cached playback is visible, confirm playback continues, reconnect, then verify heartbeat/status recover.");
-  console.log("- Return-to-wired: reconnect Ethernet, rerun this drill, and confirm the Network diagnostic names the active transport.");
+  console.log("- Return-to-wired: reconnect Ethernet, refresh Screens, and run Remote diagnostics from the selected screen.");
   console.log("- Reset safety: run pisignage-reset-device.sh --dry-run only unless an operator explicitly approves --apply.");
 }
 
@@ -105,17 +94,8 @@ async function runPlayerAction(action) {
 }
 
 console.log(`Dashboard: ${dashboardUrl.origin}`);
-const troubleshooting = await fetchJson("/api/local-troubleshooting");
-requireOk("Troubleshooting diagnostics", troubleshooting);
-
-const pi = troubleshooting.body.pi;
-if (pi?.configured) {
-  console.log(`Pi SSH: ${pi.reachable ? "reachable" : "configured but unreachable"} (${pi.host ?? "unknown host"})`);
-} else {
-  console.log("Pi SSH: not configured.");
-}
-summarizeDiagnostics(pi?.diagnostics);
-printC5WirelessChecklist(pi);
+console.log("Remote diagnostics: use the selected screen on Screens. This drill does not preserve the removed local SSH diagnostics route.");
+printC5WirelessChecklist();
 
 const recovery = await fetchJson("/api/local-player/actions");
 requireOk("Recovery history", recovery);

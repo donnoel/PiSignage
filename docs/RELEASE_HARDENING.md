@@ -16,7 +16,8 @@ Beam release hardening must prove real local behavior. Automated checks can catc
   - Confirms the upload is rejected and playlist/media state is unchanged.
 - `npm run drill:pi`
   - Requires the dashboard running.
-  - Reads troubleshooting diagnostics and recovery history.
+  - Reads local recovery history.
+  - Use the selected screen on Screens for remote Pi diagnostics.
   - Checks publish freshness without touching the live Pi player.
   - Use `npm run drill:pi -- --service-restart` only when it is safe to restart VLC on the Pi.
   - Use `npm run drill:pi -- --recover` only when it is safe to run the one-click recovery workflow.

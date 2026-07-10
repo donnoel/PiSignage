@@ -39,7 +39,6 @@ import { ScreenFocusSelect } from "./screen-focus-select";
 import { ScreenSnapshotButton } from "./screen-snapshot-button";
 import { ThemeCycleButton } from "./theme-cycle-button";
 import { beamThemeCookieName, normalizeBeamThemeId } from "./theme";
-import { TroubleshootingPanel } from "./troubleshooting-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -189,8 +188,7 @@ type DashboardView =
   | "layouts"
   | "playlist"
   | "screens"
-  | "scheduling"
-  | "troubleshooting";
+  | "scheduling";
 
 type PlaylistWorkflowStepId = "playlist" | "media" | "screens" | "publish";
 
@@ -210,8 +208,6 @@ const navigationItems: Array<{ label: string; view: DashboardView }> = [
   { label: "Library", view: "media-store" },
   { label: "Playlists", view: "playlist" },
   { label: "Screens", view: "screens" },
-  { label: "Diagnostics", view: "troubleshooting" },
-  { label: "Layouts", view: "layouts" },
   { label: "Scheduling", view: "scheduling" }
 ];
 
@@ -244,18 +240,13 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
   scheduling: {
     eyebrow: "Hours",
     title: "Scheduling"
-  },
-  troubleshooting: {
-    eyebrow: "Support",
-    title: "Diagnostics",
-    description: "Live screen status, raw logs, and recovery history for deeper diagnostics."
   }
 };
 
 function dashboardViewFrom(value: string | string[] | undefined): DashboardView {
   const candidate = Array.isArray(value) ? value[0] : value;
-  if (candidate === "device-health") {
-    return "troubleshooting";
+  if (candidate === "device-health" || candidate === "diagnostics" || candidate === "troubleshooting") {
+    return "screens";
   }
 
   return navigationItems.some((item) => item.view === candidate) ? (candidate as DashboardView) : "dashboard";
@@ -267,7 +258,7 @@ function playlistWorkflowStepFrom(value: string | string[] | undefined): Playlis
 }
 
 function autoRefreshEnabledForView(view: DashboardView): boolean {
-  return view === "dashboard" || view === "screens" || view === "troubleshooting";
+  return view === "dashboard" || view === "screens";
 }
 
 async function readJsonFile<TValue>(filePath: string): Promise<TValue | null> {
@@ -1633,71 +1624,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     playlistReportingStatus?.playerStatus?.assetIds ??
       (playerStatus?.playlistId === playlist.playlistId ? playerStatus.assetIds ?? [] : [])
   );
-  const troubleshootingScreens = inventory.screens.items
-    .map((screen) => {
-      const linkedDevice =
-        linkedDeviceForScreen(screen);
-      const assignedPlaylist = screen.playlistId
-        ? playlistStore.items.find((item) => item.playlistId === screen.playlistId)
-        : null;
-      const status = linkedDevice ? deviceStatuses[linkedDevice.id] ?? null : null;
-      const reportedPlaylistId = status?.playerStatus?.playlistId ?? null;
-      const reportsAssignedPlaylist = Boolean(
-        assignedPlaylist?.playlistId && reportedPlaylistId === assignedPlaylist.playlistId
-      );
-      const liveSync = assignedPlaylist
-        ? reportsAssignedPlaylist
-          ? syncState(assignedPlaylist.version, status?.playerStatus?.playlistVersion, status?.reachable ?? false)
-          : status
-            ? {
-                detail: `${screen.name} has not reported ${assignedPlaylist.name} yet.`,
-                label: "Waiting",
-                tone: "muted" as const
-              }
-            : {
-                detail: `${screen.name} has not checked in with playlist evidence yet.`,
-                label: "No check-in",
-                tone: "muted" as const
-              }
-        : {
-            detail: "No playlist is assigned to this screen.",
-            label: "Unassigned",
-            tone: "muted" as const
-          };
-
-      return {
-        assignedPlaylistVersion: assignedPlaylist?.version ?? null,
-        deviceHost: linkedDevice?.host ?? null,
-        deviceId: linkedDevice?.id ?? null,
-        deviceName: linkedDevice?.name ?? null,
-        group: screen.group,
-        id: screen.id,
-        liveStatus: status
-          ? {
-              ageLabel: status.ageLabel,
-              playbackHealthy: status.playbackHealthy,
-              playbackLabel: status.playbackLabel,
-              playlistId: status.playerStatus?.playlistId ?? null,
-              playlistVersion: status.playerStatus?.playlistVersion ?? null,
-              reachable: status.reachable,
-              stale: status.stale,
-              state: status.playerStatus?.state ?? null,
-              timestampLabel: status.timestampLabel
-            }
-          : null,
-        location: screen.location,
-        name: screen.name,
-        playlistName: assignedPlaylist?.name ?? null,
-        syncDetail: liveSync.detail,
-        syncLabel: liveSync.label,
-        syncTone: liveSync.tone
-      };
-    })
-    .sort(
-      (left, right) =>
-        left.location.localeCompare(right.location, undefined, { sensitivity: "base" }) ||
-        left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
-    );
   function publishStatusForPlaylist(option: Playlist): PublishStatus | null {
     if (!publishStatus) {
       return null;
@@ -2279,15 +2205,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               }))}
               publishStatus={publishStatus}
             />
-          </section>
-
-          <section
-            id="troubleshooting"
-            aria-labelledby="troubleshooting-heading"
-            className={selectedView === "troubleshooting" ? "mt-6" : "hidden"}
-          >
-            <h2 id="troubleshooting-heading" className="sr-only">Diagnostics</h2>
-            <TroubleshootingPanel screens={troubleshootingScreens} />
           </section>
 
           <section

@@ -153,8 +153,8 @@ workspace sessions can return a structured `401`. A read-only
 future UI integration, and `GET /api/local-inventory` now derives its response
 context from that same active session path. Media library reads also return the
 active session workspace/user context, and playlist assignment reads use that
-same context path. Schedule, media folder, media detail, layout, player action,
-and troubleshooting reads now use the same path as well. Media folder activity
+same context path. Schedule, media folder, media detail, layout, and player action
+reads now use the same path as well. Media folder activity
 records and local media upload/update/delete activity now use the session user
 ID instead of the old hardcoded local actor. Playlist library, playlist item,
 playlist assignment, schedule add/update/remove/publish, and layout
