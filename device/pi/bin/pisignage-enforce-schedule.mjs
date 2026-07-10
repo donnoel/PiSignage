@@ -628,14 +628,23 @@ async function enforce() {
     return;
   }
 
+  const display = setDisplayPower("on");
+  runSystemctl("start");
   await writeStatus({
-    action: "none",
+    action: dryRun ? "would-start" : "start",
     activeScheduleId: null,
     activeScheduleName: null,
-    detail: "No schedule is assigned to this screen. Playback is not schedule-limited.",
+    detail: `No schedule is assigned to this screen. Playback is running. ${display.detail}`,
+    displayAction: display.action,
+    displayControlOk: display.ok,
+    displayOutput,
     state: "unassigned"
   });
-  log(`no schedule assigned to ${screenId}; leaving ${vlcService} unchanged`);
+  log(
+    `no schedule assigned to ${screenId}; ${display.detail} ${
+      dryRun ? "would start" : "started"
+    } ${vlcService}`
+  );
 }
 
 enforce().catch(async (error) => {

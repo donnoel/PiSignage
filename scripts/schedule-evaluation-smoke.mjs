@@ -54,25 +54,28 @@ function runCase(label, now, screenId, expectedState) {
   }
 }
 
-async function requireState(label, expectedState) {
+async function requireState(label, expectedState, expectedAction = null) {
   const status = JSON.parse(await readFile(statusPath, "utf8"));
   if (status.state !== expectedState) {
     throw new Error(`${label} expected ${expectedState}, got ${status.state}`);
+  }
+  if (expectedAction && status.action !== expectedAction) {
+    throw new Error(`${label} expected action ${expectedAction}, got ${status.action}`);
   }
   console.log(`${label}: ${status.state}`);
 }
 
 runCase("weekday active window", "2026-06-01T21:00:00.000Z", "screen-primary", "on");
-await requireState("weekday active window", "on");
+await requireState("weekday active window", "on", "would-start");
 
 runCase("weekday after hours", "2026-06-02T01:00:00.000Z", "screen-primary", "off");
-await requireState("weekday after hours", "off");
+await requireState("weekday after hours", "off", "would-stop");
 
 runCase("weekend closed", "2026-06-07T17:00:00.000Z", "screen-primary", "off");
-await requireState("weekend closed", "off");
+await requireState("weekend closed", "off", "would-stop");
 
 runCase("unassigned screen", "2026-06-01T21:00:00.000Z", "screen-secondary", "unassigned");
-await requireState("unassigned screen", "unassigned");
+await requireState("unassigned screen", "unassigned", "would-start");
 
 console.log("Schedule evaluation smoke checks passed.");
 console.log(`Temporary fixtures: ${tempRoot}`);
