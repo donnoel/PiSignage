@@ -71,6 +71,7 @@ type DeviceLiveStatus = {
     playlistId?: string;
     playlistVersion?: number;
     updatedAt?: string;
+    vlcAudioMode?: string;
   } | null;
   reachable: boolean;
   scheduleDetail: string | null;
@@ -117,6 +118,7 @@ type RowState = {
   lastSeenSortValue: number;
   lastStatusUpdatedAt: string | null;
   linkedScreen: ScreenRecord | null;
+  muted: boolean;
   needsAttention: boolean;
   playbackDetail: string;
   playbackTone: Tone;
@@ -389,10 +391,6 @@ function operationalHostFor(row: RowState): string | null {
   return savedHost && savedHost !== "Not configured" ? savedHost : null;
 }
 
-function liveReportUrlFor(row: RowState): string {
-  return `/screen-player/${encodeURIComponent(row.device.id)}`;
-}
-
 function sshUrlFor(row: RowState): string | null {
   const host = operationalHostFor(row);
   return host ? `ssh://${host}` : null;
@@ -427,6 +425,36 @@ function audioToggleActionFor(row: RowState): AudioToggleAction {
   }
 
   return "mute";
+}
+
+function audioMutedFor(row: RowState): boolean {
+  const reportedAudioMode = row.device.actionStatus === "pending" || row.device.actionStatus === "running"
+    ? null
+    : row.muted;
+
+  if (reportedAudioMode !== null) {
+    return reportedAudioMode;
+  }
+
+  if (
+    row.device.actionType === "unmute-audio" &&
+    (row.device.actionStatus === "pending" || row.device.actionStatus === "running")
+  ) {
+    return true;
+  }
+
+  if (
+    row.device.actionType === "mute-audio" &&
+    (row.device.actionStatus === "pending" || row.device.actionStatus === "running")
+  ) {
+    return false;
+  }
+
+  return row.muted;
+}
+
+function audioToggleIconFor(row: RowState): "mute" | "unmute" {
+  return audioMutedFor(row) ? "mute" : "unmute";
 }
 
 function audioToggleLabel(row: RowState): string {
@@ -1244,6 +1272,11 @@ export function DeviceHealthFleetPanel({
         const resetState = resetStateFor(device);
         const actionState = actionStateFor(device);
         const diagnosticsState = diagnosticsStateFor(device);
+        const muted =
+          status?.playerStatus?.vlcAudioMode === "off" ||
+          (status?.playerStatus?.vlcAudioMode !== "on" &&
+            device.actionType === "mute-audio" &&
+            device.actionStatus === "succeeded");
 
         return {
           device,
@@ -1277,6 +1310,7 @@ export function DeviceHealthFleetPanel({
           lastSeenSortValue: Date.parse(status?.playerStatus?.updatedAt ?? "") || 0,
           lastStatusUpdatedAt: status?.playerStatus?.updatedAt ?? null,
           linkedScreen,
+          muted,
           needsAttention,
           playbackDetail,
           playbackLabel,
@@ -1384,7 +1418,6 @@ export function DeviceHealthFleetPanel({
     null;
   const selectedPublishFeedback = selectedRow ? publishFeedbackByDeviceId[selectedRow.device.id] ?? null : null;
   const selectedSyncState = selectedRow ? displayedSyncState(selectedRow, selectedPublishFeedback) : null;
-  const selectedLiveReportUrl = selectedRow ? liveReportUrlFor(selectedRow) : null;
   const selectedRemoteDesktopUrl = selectedRow ? remoteDesktopUrlFor(selectedRow) : null;
   const selectedSshUrl = selectedRow ? sshUrlFor(selectedRow) : null;
   const selectedDiagnosticsReport = selectedRow ? diagnosticsReportFromResult(selectedRow.diagnosticsResult) : null;
@@ -2127,6 +2160,7 @@ export function DeviceHealthFleetPanel({
                         ) : null}
                         {(() => {
                           const audioAction = audioToggleActionFor(row);
+                          const audioIcon = audioToggleIconFor(row);
                           return (
                             <button
                               type="button"
@@ -2136,7 +2170,7 @@ export function DeviceHealthFleetPanel({
                               aria-label={audioToggleTitle(row)}
                               className={`inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white text-base font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${screenActionClass("neutral")}`}
                             >
-                              <ScreenActionIcon name={audioAction} />
+                              <ScreenActionIcon name={audioIcon} />
                             </button>
                           );
                         })()}
@@ -2242,14 +2276,22 @@ export function DeviceHealthFleetPanel({
                     <div className="min-w-0">
                       <h5 className="text-xs font-semibold uppercase text-zinc-500">Diagnostics</h5>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        {selectedLiveReportUrl ? (
+                        {selectedRemoteDesktopUrl ? (
+                          <button
+                            type="button"
+                            disabled={dashboardMode !== "cloud" || !selectedRow.isLive || isBusy || selectedRow.actionActive || selectedRow.resetActive || selectedRow.diagnosticsActive}
+                            onClick={() => void runAction("showDesktop", selectedRow)}
+                            className="min-h-9 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {busyAction === "showDesktop" ? "Opening..." : "Show desktop"}
+                          </button>
+                        ) : null}
+                        {selectedSshUrl ? (
                           <a
-                            href={selectedLiveReportUrl}
-                            target="_blank"
-                            rel="noreferrer"
+                            href={selectedSshUrl}
                             className="inline-flex min-h-9 items-center rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
                           >
-                            Current video
+                            Open SSH
                           </a>
                         ) : null}
                         <button
@@ -2262,26 +2304,8 @@ export function DeviceHealthFleetPanel({
                             ? "Queueing..."
                             : selectedRow.diagnosticsActive
                               ? selectedRow.diagnosticsLabel
-                              : "Remote diagnostics"}
+                              : "Run diagnostics"}
                         </button>
-                        {selectedSshUrl ? (
-                          <a
-                            href={selectedSshUrl}
-                            className="inline-flex min-h-9 items-center rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50"
-                          >
-                            Open SSH
-                          </a>
-                        ) : null}
-                        {selectedRemoteDesktopUrl ? (
-                          <button
-                            type="button"
-                            disabled={dashboardMode !== "cloud" || !selectedRow.isLive || isBusy || selectedRow.actionActive || selectedRow.resetActive || selectedRow.diagnosticsActive}
-                            onClick={() => void runAction("showDesktop", selectedRow)}
-                            className="min-h-9 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {busyAction === "showDesktop" ? "Opening..." : "Show desktop"}
-                          </button>
-                        ) : null}
                       </div>
                       <p className="mt-3 break-words text-sm text-zinc-600">
                         Remote diagnostics:{" "}
@@ -2325,29 +2349,6 @@ export function DeviceHealthFleetPanel({
                     <div className="min-w-0">
                       <h5 className="text-xs font-semibold uppercase text-zinc-500">Recovery</h5>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        {selectedRow.scheduleState === "off" ? (
-                          <button
-                            type="button"
-                            disabled={!selectedRow.isLive || isBusy || selectedRow.actionActive || selectedRow.resetActive || selectedRow.diagnosticsActive}
-                            onClick={() => void runAction("open", selectedRow)}
-                            className="min-h-9 rounded-md border border-emerald-200 bg-white px-3 py-1.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {busyAction === "open" ? "Queueing..." : "Open store"}
-                          </button>
-                        ) : null}
-                        {(() => {
-                          const audioAction = audioToggleActionFor(selectedRow);
-                          return (
-                            <button
-                              type="button"
-                              disabled={!selectedRow.isLive || isBusy || selectedRow.actionActive || selectedRow.resetActive || selectedRow.diagnosticsActive}
-                              onClick={() => void runAction(audioAction, selectedRow)}
-                              className="min-h-9 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {busyAction === audioAction ? "Queueing..." : audioToggleLabel(selectedRow)}
-                            </button>
-                          );
-                        })()}
                         <button
                           type="button"
                           disabled={!selectedRow.isLive || isBusy || selectedRow.actionActive || selectedRow.resetActive || selectedRow.diagnosticsActive}

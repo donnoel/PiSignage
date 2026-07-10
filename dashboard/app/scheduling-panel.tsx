@@ -12,7 +12,11 @@ type DayOption = {
 };
 
 type ScreenRecord = {
+  deviceActionActive: boolean;
+  deviceActionStatus: "failed" | "pending" | "running" | "succeeded" | null;
+  deviceActionType: "open-screen" | string | null;
   deviceHost: string | null;
+  deviceId: string | null;
   deviceName: string | null;
   group: string;
   id: string;
@@ -90,7 +94,7 @@ function formatCount(count: number, noun: string): string {
   return `${count} ${count === 1 ? noun : `${noun}s`}`;
 }
 
-export function SchedulingPanel() {
+export function SchedulingPanel({ dashboardMode }: { dashboardMode: "cloud" | "local" }) {
   const router = useRouter();
   const [data, setData] = useState<ScheduleResponse | null>(null);
   const [message, setMessage] = useState("Loading schedules...");
@@ -101,7 +105,8 @@ export function SchedulingPanel() {
   const [endTime, setEndTime] = useState("17:00");
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>(defaultDays);
   const [screenIds, setScreenIds] = useState<string[]>([]);
-  const [busyAction, setBusyAction] = useState<"clear" | "load" | "save" | null>(null);
+  const [busyAction, setBusyAction] = useState<"clear" | "load" | "open" | "save" | null>(null);
+  const [openingScreenId, setOpeningScreenId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const isBusy = Boolean(busyAction) || isPending;
 
@@ -309,6 +314,47 @@ export function SchedulingPanel() {
     }
   }
 
+  async function openStoreForScreen(screen: ScreenRecord) {
+    if (isBusy) {
+      return;
+    }
+
+    if (dashboardMode !== "cloud") {
+      setMessage("Open store is available from the AWS dashboard after the device-agent is installed.");
+      return;
+    }
+
+    if (!screen.deviceId) {
+      setMessage(`${screen.name} does not have a linked Pi yet.`);
+      return;
+    }
+
+    setBusyAction("open");
+    setOpeningScreenId(screen.id);
+    setMessage(`Opening ${screen.name} outside scheduled hours...`);
+    try {
+      const response = await fetch(`/api/cloud/devices/${encodeURIComponent(screen.deviceId)}/actions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ action: "open-screen" })
+      });
+      const result = (await response.json()) as { error?: string; message?: string };
+      if (!response.ok || result.error) {
+        throw new Error(result.error ?? "Open store failed.");
+      }
+      setMessage(result.message ?? `Open store queued for ${screen.name}.`);
+      await loadSchedules();
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Open store failed.");
+    } finally {
+      setOpeningScreenId(null);
+      setBusyAction(null);
+    }
+  }
+
   return (
     <div className="mt-6 space-y-4">
       <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
@@ -354,11 +400,14 @@ export function SchedulingPanel() {
                 const state = screenStateById.get(screen.id);
                 const schedule = state?.scheduleId ? scheduleById.get(state.scheduleId) : null;
                 const isSelected = screenIds.includes(screen.id);
+                const openStorePending =
+                  screen.deviceActionType === "open-screen" &&
+                  (screen.deviceActionStatus === "pending" || screen.deviceActionStatus === "running");
 
                 return (
                   <li
                     key={screen.id}
-                    className={`grid gap-3 px-5 py-3 text-sm lg:grid-cols-[minmax(0,1fr)_minmax(14rem,18rem)_12rem] lg:items-center ${
+                    className={`grid gap-3 px-5 py-3 text-sm lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)_12rem] lg:items-center ${
                       isSelected ? "bg-teal-50/60" : "bg-white"
                     }`}
                   >
@@ -369,6 +418,16 @@ export function SchedulingPanel() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <StatusPill label={stateLabel(state)} tone={state ? stateTone(state.state) : "muted"} />
+                        {state?.state === "off" ? (
+                          <button
+                            type="button"
+                            disabled={dashboardMode !== "cloud" || isBusy || !screen.deviceId || screen.deviceActionActive}
+                            onClick={() => void openStoreForScreen(screen)}
+                            className="min-h-9 rounded-md border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {openingScreenId === screen.id || openStorePending ? "Opening..." : "Open store"}
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 lg:justify-end">

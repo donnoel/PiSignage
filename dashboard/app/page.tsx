@@ -62,6 +62,7 @@ type PlayerStatus = {
   updatedAt?: string;
   displayOutput?: string;
   displayMode?: string;
+  vlcAudioMode?: string;
   playlistId?: string;
   playlistVersion?: number;
   assetCount?: number;
@@ -2237,7 +2238,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             className={selectedView === "scheduling" ? "" : "hidden"}
           >
             <h2 id="scheduling-heading" className="sr-only">Scheduling</h2>
-            <SchedulingPanel />
+            <SchedulingPanel dashboardMode={dashboardMode} />
           </section>
 
           <section

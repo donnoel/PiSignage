@@ -146,7 +146,11 @@ async function scheduleResponse(publish?: {
 
     return {
       ...screen,
+      deviceActionActive: linkedDevice?.actionStatus === "pending" || linkedDevice?.actionStatus === "running",
+      deviceActionStatus: linkedDevice?.actionStatus ?? null,
+      deviceActionType: linkedDevice?.actionType ?? null,
       deviceHost: linkedDevice?.host ?? null,
+      deviceId: linkedDevice?.id ?? null,
       deviceName: linkedDevice?.name ?? null
     };
   });
