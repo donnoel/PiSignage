@@ -6,7 +6,7 @@ The current repository provides a local-first product foundation plus an opt-in 
 
 ## What Exists Now
 
-- `dashboard/`: Next.js + TypeScript + Tailwind operations dashboard with What's Playing, Library, Playlists, Screens, Diagnostics, Layouts, and Scheduling views. Screens now combines inventory, health/status, publishing, diagnostics, and recovery controls.
+- `dashboard/`: Next.js + TypeScript + Tailwind operations dashboard with What's Playing, Library, Playlists, Screens, Diagnostics, and Scheduling views. Screens now combines inventory, health/status, publishing, diagnostics, and recovery controls.
 - `player/`: TypeScript browser playback fallback/experimental app for same-origin local playlist playback.
 - `device-agent/`: Node.js + TypeScript device agent that reads a local playlist or optional cloud playlist endpoint, writes heartbeat JSON with current-video evidence, caches the last known good playlist, and can post an optional dev cloud heartbeat.
 - `docs/`: architecture, phase plan, API contract, AWS alpha notes, security notes, and device setup.

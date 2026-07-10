@@ -1,9 +1,9 @@
 # Workspaces And Roles
 
 Beam must support multiple client workspaces without allowing one client to see
-or change another client's screens, media, playlists, schedules, layouts,
-activity, or device state. "Silo" is an acceptable product shorthand, but the
-code and data model should use `workspace`.
+or change another client's screens, media, playlists, schedules, activity, or
+device state. "Silo" is an acceptable product shorthand, but the code and data
+model should use `workspace`.
 
 This is a production boundary, not only a navigation feature. The UI may hide
 other workspaces, but every server-side read, write, publish, reset, and media
@@ -29,7 +29,6 @@ Workspace-owned records:
 - Devices
 - Media assets and folders
 - Playlists and playlist items
-- Layouts and rendered layout media
 - Schedules
 - Activity
 - Publish markers and recovery/reset state
@@ -54,8 +53,8 @@ Start with a small role set. Add more only when an actual workflow needs it.
 | Role | Scope | Permissions |
 | --- | --- | --- |
 | Platform Admin | Global | Create and manage workspaces, assign users, see all workspaces, support production incidents. |
-| Workspace Admin | One or more workspaces | Manage workspace users, screens, devices, media, playlists, layouts, schedules, settings, publish, and recovery. |
-| Content Manager | One or more workspaces | Upload and organize media, edit playlists/layouts, publish to assigned screens when allowed. |
+| Workspace Admin | One or more workspaces | Manage workspace users, screens, devices, media, playlists, schedules, settings, publish, and recovery. |
+| Content Manager | One or more workspaces | Upload and organize media, edit playlists, publish to assigned screens when allowed. |
 | Operator | One or more workspaces | View status, run approved publishes and safe recovery actions, review activity. |
 | Viewer | One or more workspaces | Read-only access to screens, playback status, media catalog, playlists, schedules, and activity. |
 | Device Agent | One device/workspace | Non-human identity; fetch only its assigned playlist and post only its own heartbeat/status/reset result. |
@@ -97,7 +96,7 @@ Blocked behavior:
 
 Existing dev cloud data currently behaves like a single workspace. Introduce a
 default workspace for migration, for example `workspace-beam-dev`, and attach
-existing Screens, Devices, Playlists, Assets, Layouts, Schedules, Activity, and
+existing Screens, Devices, Playlists, Assets, Schedules, Activity, and
 publish markers to it.
 
 Future DynamoDB rows should include `workspaceId` in every workspace-owned item.
@@ -153,12 +152,12 @@ workspace sessions can return a structured `401`. A read-only
 future UI integration, and `GET /api/local-inventory` now derives its response
 context from that same active session path. Media library reads also return the
 active session workspace/user context, and playlist assignment reads use that
-same context path. Schedule, media folder, media detail, layout, and player action
+same context path. Schedule, media folder, media detail, and player action
 reads now use the same path as well. Media folder activity
 records and local media upload/update/delete activity now use the session user
 ID instead of the old hardcoded local actor. Playlist library, playlist item,
-playlist assignment, schedule add/update/remove/publish, and layout
-create/update/delete/render activity now use the session user ID as well.
+playlist assignment, and schedule add/update/remove/publish activity now use the
+session user ID as well.
 Player restart, recovery step, recovery run, and reboot activity records also
 use the session user ID. Local media bulk-delete activity also uses the session
 user ID. This does not yet load real authenticated memberships from a login

@@ -14,7 +14,7 @@ This is being built and tested for real. Do not add placeholder implementation, 
 - Preserve real local behavior and honest validation evidence while hardening toward production.
 - Operate the five real Raspberry Pi signage systems as the pilot surface for playback, control, monitoring, recovery, and outage behavior.
 - Expand the AWS dev alpha only when it preserves local cached playback and manual publish.
-- Evolve production cloud use toward client workspaces, where users can belong to multiple workspaces and each workspace owns its screens, devices, media, playlists, schedules, layouts, settings, and activity.
+- Evolve production cloud use toward client workspaces, where users can belong to multiple workspaces and each workspace owns its screens, devices, media, playlists, schedules, settings, and activity.
 - Treat VLC as the default field playback path for appliance mode.
 - Keep each Pi able to continue playback from cached local media and playlist state during network outages.
 - Keep dashboard operations from dirtying tracked source files.
@@ -101,7 +101,7 @@ Production workspace direction:
 - Support multiple client workspaces after the local and AWS foundations are ready for scoped access control.
 - Allow a user to participate in multiple workspaces with a separate role per workspace.
 - Keep workspace isolation enforced by the server/API/data layer, not only by hidden UI controls.
-- Require screens, devices, media, playlists, layouts, schedules, settings, activity, publish markers, and recovery state to be owned by a workspace.
+- Require screens, devices, media, playlists, schedules, settings, activity, publish markers, and recovery state to be owned by a workspace.
 - Derive workspace access from authenticated user membership and active workspace, not from browser-supplied IDs alone.
 - Keep stable IDs authoritative; workspace and client names are editable labels.
 - See `docs/WORKSPACES_AND_ROLES.md` for the role model, access rules, and implementation sequence.
@@ -172,28 +172,6 @@ Acceptance:
 - Reorder, remove, upload, and publish operations update ignored local state.
 - A failed publish leaves the local playlist intact and clearly reports the failure.
 - Network loss does not stop already-cached playback.
-
-## Layouts And Overlays
-
-Layouts let an operator compose reusable signage frames from media, text, and simple graphic layers while preserving the Pi-safe playback path.
-
-Requirements:
-
-- Keep VLC appliance playback as the field default.
-- Store layout templates in ignored local state until a backend exists.
-- Start with a 1920x1080 canvas and simple layers: media, text, and rectangle shapes.
-- Support common first layouts: fullscreen media with text overlay, inset video with a border and call-to-action, and side-by-side regions.
-- Treat saved layout changes like playlist changes: save locally first and do not automatically publish.
-- For field-ready playback, render a layout to a playback-safe MP4 before it enters a Pi playlist.
-- Adding a rendered layout to a playlist must save locally and require the normal manual publish action before any screen changes.
-- Do not make live browser layout playback the default field path until it passes recovery and soak validation.
-
-Acceptance:
-
-- A saved layout template can be validated locally without touching the Pi.
-- A layout is not publishable until it has a ready rendered MP4 asset.
-- The Pi playlist continues to receive video assets, preserving cached playback and reboot recovery.
-- Rendered layout playlist additions use the same Pi-safe MP4 checks as ordinary Library items.
 
 ## Screens
 

@@ -30,7 +30,7 @@ The repository is in a local product re-baseline phase. Product requirements now
 
 Current implementation snapshot:
 
-- The dashboard currently exposes What's Playing, Library, Playlists, Screens, Diagnostics, Layouts, and Scheduling views.
+- The dashboard currently exposes What's Playing, Library, Playlists, Screens, Diagnostics, and Scheduling views.
 - Device inventory and activity evidence exist in local JSON and are surfaced through the current What's Playing, Screens, Diagnostics, Scheduling, and recovery workflows.
 - Screens carries inventory, status, publishing, diagnostics, recovery, reset, and deployment controls. Diagnostics carries deeper Pi evidence, logs, recovery history, and troubleshooting activity.
 
@@ -113,7 +113,7 @@ Near-term priority order:
 ## Dashboard Rules
 
 - Keep the dashboard operational and focused, not marketing-heavy.
-- Use these main sections: What's Playing, Library, Playlists, Screens, Diagnostics, Activity, Scheduling, Layouts, and Settings when those views are implemented.
+- Use these main sections: What's Playing, Library, Playlists, Screens, Diagnostics, Activity, Scheduling, and Settings when those views are implemented.
 - Use accessible status text for online/offline state.
 - Prefer dense tables and detail panels for screen inventory; map UI is deferred.
 - Keep cloud data behind explicit cloud-mode contracts and honest unavailable states when a workflow is not wired.

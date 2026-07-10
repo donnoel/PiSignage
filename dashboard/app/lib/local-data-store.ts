@@ -6,16 +6,13 @@ import {
   PutItemCommand
 } from "@aws-sdk/client-dynamodb";
 import type { AttributeValue } from "@aws-sdk/client-dynamodb";
-import { validateLayoutTemplate } from "./layout-contract";
 import { localStateDirectory, writeFileAtomic } from "./local-playlist";
-import type { LayoutStore, LayoutTemplate } from "./layout-contract";
 import {
   activeWorkspaceId,
   defaultWorkspaceId,
   filterWorkspaceItems,
   requireActiveWorkspacePermission,
-  withDefaultWorkspace,
-  workspaceIdOrDefault
+  withDefaultWorkspace
 } from "./workspace";
 
 export type MediaRecord = {
@@ -180,7 +177,7 @@ export type ActivityRecord = {
   action: string;
   actor: string;
   entityId: string;
-  entityType: "media" | "screen" | "device" | "playlist" | "layout" | "schedule" | "system";
+  entityType: "media" | "screen" | "device" | "playlist" | "schedule" | "system";
   id: string;
   message: string;
   result: "success" | "warning" | "error";
@@ -232,7 +229,6 @@ export type RecoveryStore = {
 type JsonStorePaths = {
   activity: string;
   devices: string;
-  layouts: string;
   mediaFolders: string;
   media: string;
   recovery: string;
@@ -357,7 +353,6 @@ function jsonStorePaths(): JsonStorePaths {
   return {
     activity: path.join(root, "activity.local.json"),
     devices: path.join(root, "devices.local.json"),
-    layouts: path.join(root, "layouts.local.json"),
     mediaFolders: path.join(root, "media-folders.local.json"),
     media: path.join(root, "media.local.json"),
     recovery: path.join(root, "recovery.local.json"),
@@ -409,14 +404,6 @@ function defaultScheduleStore(): ScheduleStore {
 }
 
 function defaultActivityStore(): ActivityStore {
-  return {
-    items: [],
-    updatedAt: isoNow(),
-    version: 1
-  };
-}
-
-function defaultLayoutStore(): LayoutStore {
   return {
     items: [],
     updatedAt: isoNow(),
@@ -484,7 +471,6 @@ export async function ensureLocalDataFoundation(): Promise<void> {
   await Promise.all([
     ensureJsonFile(paths.media, defaultMediaStore()),
     ensureJsonFile(paths.mediaFolders, defaultMediaFolderStore()),
-    ensureJsonFile(paths.layouts, defaultLayoutStore()),
     ensureJsonFile(paths.screens, defaultScreenStore()),
     ensureJsonFile(paths.devices, defaultDeviceStore()),
     ensureJsonFile(paths.schedules, defaultScheduleStore()),
@@ -529,49 +515,6 @@ export async function writeMediaFolderStore(value: MediaFolderStore): Promise<vo
     ...value,
     items: value.items.map(withDefaultWorkspace)
   });
-}
-
-function normalizeLayoutStore(store: LayoutStore): LayoutStore {
-  if (!Array.isArray(store.items)) {
-    throw new Error("Layout library is malformed.");
-  }
-
-  const items: LayoutTemplate[] = [];
-  const errors: string[] = [];
-
-  store.items.forEach((item, index) => {
-    const candidate = {
-      ...item,
-      workspaceId: workspaceIdOrDefault(item.workspaceId)
-    };
-    const result = validateLayoutTemplate(candidate);
-    if (result.ok) {
-      items.push(result.value);
-    } else {
-      errors.push(`Layout ${index + 1}: ${result.errors.join(" ")}`);
-    }
-  });
-
-  if (errors.length > 0) {
-    throw new Error(`Layout library is malformed. ${errors.join(" ")}`);
-  }
-
-  return {
-    items: filterWorkspaceItems(items),
-    updatedAt: typeof store.updatedAt === "string" ? store.updatedAt : isoNow(),
-    version: typeof store.version === "number" ? store.version : 1
-  };
-}
-
-export async function readLayoutStore(): Promise<LayoutStore> {
-  const paths = jsonStorePaths();
-  return normalizeLayoutStore(await readJsonOrDefaults(paths.layouts, defaultLayoutStore()));
-}
-
-export async function writeLayoutStore(value: LayoutStore): Promise<void> {
-  requireActiveWorkspacePermission("write");
-  const paths = jsonStorePaths();
-  await writeJsonStore(paths.layouts, normalizeLayoutStore(value));
 }
 
 export async function readScreenStore(): Promise<ScreenStore> {

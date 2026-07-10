@@ -23,7 +23,6 @@ import {
   workspaceMembershipFor,
   type WorkspaceRole
 } from "./lib/workspace";
-import { LayoutsPanel } from "./layouts-panel";
 import { MediaStorePanel } from "./media-store-panel";
 import { LocalPlaylistBuilder, LocalPlaylistScreenAssignment } from "./local-playlist-builder";
 import { LocalPlaylistCreateForm } from "./local-playlist-create-form";
@@ -188,7 +187,6 @@ const piProbeCache = new Map<string, PiProbeCacheEntry>();
 type DashboardView =
   | "dashboard"
   | "media-store"
-  | "layouts"
   | "playlist"
   | "screens"
   | "scheduling";
@@ -224,11 +222,6 @@ const viewCopy: Record<DashboardView, { eyebrow: string; title: string; descript
     eyebrow: "Assets",
     title: "Library",
     description: "Upload, find, and organize media for your screens."
-  },
-  layouts: {
-    eyebrow: "Compositions",
-    title: "Layouts",
-    description: "Compose local video layouts with text and regions before rendering."
   },
   playlist: {
     eyebrow: "Loops",
@@ -2249,21 +2242,6 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           >
             <h2 id="media-store-heading" className="sr-only">Library</h2>
             <MediaStorePanel mode={dashboardMode} />
-          </section>
-
-          <section
-            id="layouts"
-            aria-labelledby="layouts-heading"
-            className={selectedView === "layouts" ? "mt-6" : "hidden"}
-          >
-            <h2 id="layouts-heading" className="sr-only">Layouts</h2>
-            <LayoutsPanel
-              playlists={playlistStore.items.map((item) => ({
-                assetCount: item.assets.length,
-                name: item.name,
-                playlistId: item.playlistId
-              }))}
-            />
           </section>
 
           <section

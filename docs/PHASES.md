@@ -15,9 +15,7 @@ Beam is now a local-first operations console moving through production-minded ha
 - Scheduling
 
 Screens is the single exposed operations surface for screen health, device status,
-diagnostics, recovery, and deployment controls. Layouts remains implemented for
-future work but is intentionally hidden from top-level navigation during the
-current production-readiness pass.
+diagnostics, recovery, and deployment controls.
 
 Map/location UI is deferred. Near-term screen organization should use clear tables, detail panels, and status summaries instead of a map. The current UI still has overlapping Screen Health and Screens surfaces; collapsing them is the next cleanup opportunity.
 
@@ -64,7 +62,6 @@ Acceptance:
 - `docs/PRODUCT_REQUIREMENTS.md` defines the product direction.
 - `docs/PHASES.md` reflects the new roadmap.
 - Dashboard sections are locked in direction as: What's Playing, Library, Playlists, Screens, and Scheduling for the current operator surface.
-- Layouts stays deferred and unexposed until layout rendering returns to active scope.
 - Map/location UI is marked removed/deferred.
 - Current sprint, five-system soak, AWS buildout, and production gates are explicit.
 
@@ -171,36 +168,6 @@ Validation:
 - `npm --workspace dashboard run typecheck`
 - Reorder/remove/add smoke.
 - Publish failure smoke that proves local state remains intact and the failure is visible.
-
-## Phase 6A: Layouts And Overlays
-
-Goal: let operators create overlay and multi-region signage layouts while keeping the field playlist video-only until rendered output is proven.
-
-Five-step implementation plan:
-
-1. Define the local layout template contract and validation helpers while keeping Pi playlists video-only.
-2. Add a local layouts store/API so the dashboard can create, read, update, and delete saved templates without publishing.
-3. Build a compact dashboard layout editor/preview with MVP presets: fullscreen with overlay, inset video with text, and side-by-side regions.
-4. Add an `ffmpeg` render pipeline that turns a saved layout into a playback-safe MP4 Library item.
-5. Wire rendered layout assets into playlist editing and manual publish, then validate on the Pi path, including five-device parity checks when hardware is reachable.
-
-Acceptance:
-
-- Layout templates live in ignored local state and do not dirty tracked source files.
-- A layout can contain media, text, and rectangle layers on a 1920x1080 canvas.
-- Saved layout edits do not automatically publish.
-- A layout is not playlist-playable until it has a ready rendered MP4 asset.
-- Adding a rendered layout to a playlist saves locally and leaves screen publish manual.
-- VLC remains the field playback default; browser layout playback stays fallback/experimental until explicitly approved.
-
-Validation:
-
-- `npm --workspace dashboard run typecheck`
-- Local layouts API smoke once routes exist.
-- Dashboard editor responsive smoke once UI exists.
-- Render smoke with a short layout MP4 once `ffmpeg` rendering exists.
-- Rendered layout add-to-playlist smoke once playlist wiring exists.
-- Pi publish/playback/recovery smoke before calling rendered layouts field-ready.
 
 ## Phase 7: Devices
 
@@ -349,7 +316,7 @@ Acceptance:
 
 - AWS resources are created, updated, or destroyed only after approval.
 - Device identity, dashboard auth, media storage, playlist assignment, heartbeat/status, and publish/sync contracts are real.
-- Workspace ownership exists for cloud Screens, Devices, Media, Playlists, Layouts, Schedules, Activity, publish markers, and recovery state before multiple clients share one environment.
+- Workspace ownership exists for cloud Screens, Devices, Media, Playlists, Schedules, Activity, publish markers, and recovery state before multiple clients share one environment.
 - Users can belong to multiple workspaces, with access enforced from authenticated membership and active workspace.
 - Cross-workspace reads, writes, media URLs, publishes, and recovery actions are rejected server-side.
 - Private media uses least-privilege storage and delivery.
