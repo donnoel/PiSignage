@@ -57,7 +57,7 @@ Important packaging note: `device-agent/dist/index.js` is an ignored build artif
 
 - Repo: `/Users/donnoel/Development/PiSignage`
 - Branch: `main`
-- HEAD before this baseline update: `b24b95a Report Tailscale heartbeat address`
+- HEAD before this baseline update: `8d11388 Consolidate screen operations navigation`
 - Dashboard URL: `https://8yyptjawdv.us-west-2.awsapprunner.com`
 - Device heartbeat API URL: `https://yebxh6xyvm2nkgq3i2uw2oixda0izozg.lambda-url.us-west-2.on.aws/`
 
@@ -92,7 +92,8 @@ Recent changes incorporated into this baseline:
   - C5 runs `pisignage-remote-desktop.service`, which serves noVNC with `websockify` and bridges to `127.0.0.1:5900`
   - C5 currently uses `enable_auth=false` in `/etc/wayvnc/config` because noVNC must connect to WayVNC without the Apple Screen Sharing PAM/VeNCrypt path
   - the Beam `Show desktop` button opens the browser desktop view and queues a Pi action to pause managed VLC signage playback and the schedule timer for remote administration
-  - `Show desktop` also restores the Raspberry Pi desktop shell by ensuring `pcmanfm --desktop` and `wf-panel-pi` are running, and now waits for both processes before reporting success, so noVNC shows the admin panel instead of a blank black desktop
+  - `Show desktop` restores the Raspberry Pi desktop shell by ensuring `pcmanfm --desktop` is running, restarting `wf-panel-pi`, and waiting for both processes before reporting success, so noVNC shows the admin panel instead of a blank black desktop
+  - if `Show desktop` cannot restore the desktop panel, the device-agent reports the panel log tail and resumes VLC playback automatically rather than leaving the appliance on a black remote desktop
   - the Beam `Resume playback` button queues a Pi action to restart managed VLC signage playback and restore schedule control after remote administration
   - the Beam `Restart playback` recovery action also restores schedule control so remote administration cannot leave the schedule timer paused after playback recovery
   - the browser desktop path works from both macOS and Windows clients on the same trusted network
@@ -386,7 +387,7 @@ Managed Pi scripts:
 60f2e66f5afc2337cf4743229feabbe41cf3cb0fdfeae2dbdfc13c37431e4564  pisignage-configure-wifi.sh
 60450768a4112232cb1f594b49d17d50f1907c2f13057cbed753cf99b48ced31  pisignage-enforce-schedule.mjs
 c577963b8233b225a663319fb95c0411015cf85c5a1635dc2e5e76801cd92a08  pisignage-hide-desktop.sh
-687ee167727965ae68bfac6e1461fa0d54d3a79e62fb85b9d09e0bf46bab583e  pisignage-install-runtime.sh
+dbc71d0eff8d95880e72c870f2f0db1e766bdde1e0170cc236ecd9a624be1200  pisignage-install-runtime.sh
 a5c9bce76ffee95e7924af4dd9f7cb74fde1aaff0090d4fd9a8466cf32c24e9d  pisignage-provision-device.sh
 6e5757eebb2f1fc1b61a7570b5a9bb1e9a6fb1c33c352af2040d3031388cb082  pisignage-reset-device.sh
 bc01cf6dc91e857da42d753361113c7cf979c6f9486e391ba86e38c64b6e71f0  pisignage-serve-player.mjs
@@ -397,7 +398,7 @@ f251573e687f88f4f956de61b044b2e376368d01424c71a2f5d539495e139d6c  pisignage-vlc-
 Managed user services:
 
 ```text
-c09e0edfa8c32d348bd477aac9610ded953413faa00c607a17f03a30a6d74dd7  pisignage-device-agent.service
+2e8aaa558b8409fd55f9bdfdd0a19550868bed03628316688a5b65037f967116  pisignage-device-agent.service
 6ff1d651e227fd2a7ffd8e68a21de407da90a75cbce87a8670c5bae879ed784b  pisignage-vlc.service
 a79d98fd2a9f3dabf6314b413e9501c620862cf2253452ce198a754b6637a42e  pisignage-schedule.service
 596b5adad2708f97b21c2cb38fb6798e54dd4b5e95163bfd10ea38c235b27c74  pisignage-schedule.timer
@@ -409,10 +410,10 @@ efbe213d6bc3b7d38351592ff0312d7f2320f7f3919b491b6221a4b5a6cfab8c  pisignage-remo
 Compiled device agent:
 
 ```text
-2fe030c04fa9a5418ec519b617a86dd9980b71b391bc5cfa02a211cdc8f7eb74  device-agent/dist/index.js
+6694b4f3e4bc79db01bc24556d47de9b07596e175fe4ce97dab4b6ccf709cbb2  device-agent/dist/index.js
 ```
 
-These hashes supersede the 2026-07-09 13:57 baseline hashes and include the current command-plane behavior deployed to C1-C5, including schedule-aware heartbeat reporting, the remote Open store action, the remote screen snapshot prototype, remote Show desktop and Resume playback actions that pause and restore schedule control, Restart playback recovery that restores schedule control, Show desktop desktop-panel restoration and verification for noVNC administration, deterministic Wi-Fi-first heartbeat address selection, Tailscale tailnet address reporting, verified `wlopm` display power control for schedule close/open, no-schedule playback enforcement that actively powers on display and starts VLC, automatic HDMI/headless-output display session recovery, 30-second cloud heartbeat check-ins through the dedicated device heartbeat API, Golden Master-managed remote access installation/enrollment support, and strict device-agent cache parity that prunes stale unreferenced media after successful release sync.
+These hashes supersede the 2026-07-09 13:57 baseline hashes and include the current command-plane behavior deployed to C1-C5, including schedule-aware heartbeat reporting, the remote Open store action, the remote screen snapshot prototype, remote Show desktop and Resume playback actions that pause and restore schedule control, Restart playback recovery that restores schedule control, Show desktop desktop-panel restoration and verification for noVNC administration, automatic playback resume if desktop-panel restoration fails, deterministic Wi-Fi-first heartbeat address selection, Tailscale tailnet address reporting, verified `wlopm` display power control for schedule close/open, no-schedule playback enforcement that actively powers on display and starts VLC, automatic HDMI/headless-output display session recovery, 30-second cloud heartbeat check-ins through the dedicated device heartbeat API, Golden Master-managed remote access installation/enrollment support, and strict device-agent cache parity that prunes stale unreferenced media after successful release sync.
 
 ## Required Baseline Update Workflow
 
@@ -483,6 +484,18 @@ Validated C1-C4 after rollout and remote access package refresh:
 | C4 | `192.168.1.177` | `device-c4-aws-pilot` | configured | `6c206f1b457fd0eaa19127d6e2be1451201f05554c9679e8d7ab62bac4355f35` | `tailscaled`, `wayvnc`, `pisignage-remote-desktop` active | install `687ee167727965ae68bfac6e1461fa0d54d3a79e62fb85b9d09e0bf46bab583e`; reset `6e5757eebb2f1fc1b61a7570b5a9bb1e9a6fb1c33c352af2040d3031388cb082` | playing, playlist `playlist-community-vision` v32 |
 
 On all four Pis, `pisignage-device-agent.service`, `pisignage-vlc.service`, `pisignage-schedule.timer`, `pisignage-remote-desktop.service`, `tailscaled.service`, and `wayvnc.service` were active after the remote access package refresh. `pisignage-player.service` and `pisignage-kiosk.service` remain disabled and inactive. Forced call-home completed through the dedicated device heartbeat API on all four devices before this remote access refresh.
+
+2026-07-10 Show desktop stabilization rollout:
+
+| Pi | Tailnet IPv4 | Device-agent hash | Device-agent service hash | Runtime installer hash | Post-rollout service state |
+| --- | --- | --- | --- | --- | --- |
+| C1 | `100.108.135.20` | `6694b4f3e4bc79db01bc24556d47de9b07596e175fe4ce97dab4b6ccf709cbb2` | `2e8aaa558b8409fd55f9bdfdd0a19550868bed03628316688a5b65037f967116` | `dbc71d0eff8d95880e72c870f2f0db1e766bdde1e0170cc236ecd9a624be1200` | device-agent active; schedule timer active; VLC inactive because schedule closed |
+| C2 | `100.95.194.15` | `6694b4f3e4bc79db01bc24556d47de9b07596e175fe4ce97dab4b6ccf709cbb2` | `2e8aaa558b8409fd55f9bdfdd0a19550868bed03628316688a5b65037f967116` | `dbc71d0eff8d95880e72c870f2f0db1e766bdde1e0170cc236ecd9a624be1200` | device-agent active; schedule timer active; VLC inactive because schedule closed |
+| C3 | `100.86.155.95` | `6694b4f3e4bc79db01bc24556d47de9b07596e175fe4ce97dab4b6ccf709cbb2` | `2e8aaa558b8409fd55f9bdfdd0a19550868bed03628316688a5b65037f967116` | `dbc71d0eff8d95880e72c870f2f0db1e766bdde1e0170cc236ecd9a624be1200` | device-agent active; schedule timer active; VLC inactive because schedule closed |
+| C4 | `100.85.111.13` | `6694b4f3e4bc79db01bc24556d47de9b07596e175fe4ce97dab4b6ccf709cbb2` | `2e8aaa558b8409fd55f9bdfdd0a19550868bed03628316688a5b65037f967116` | `dbc71d0eff8d95880e72c870f2f0db1e766bdde1e0170cc236ecd9a624be1200` | device-agent active; schedule timer active; VLC inactive because schedule closed |
+| C5 | `100.66.60.59` | `6694b4f3e4bc79db01bc24556d47de9b07596e175fe4ce97dab4b6ccf709cbb2` | `2e8aaa558b8409fd55f9bdfdd0a19550868bed03628316688a5b65037f967116` | `dbc71d0eff8d95880e72c870f2f0db1e766bdde1e0170cc236ecd9a624be1200` | device-agent active; schedule timer active; VLC active after Resume playback |
+
+C5 live validation after the rollout: Show desktop succeeded in the browser noVNC session, then Resume playback returned VLC to `active/running`; local player status and heartbeat both reported `playing` on playlist `playlist-community-vision` v32.
 
 The same rule applies to every future C1-Cx appliance.
 

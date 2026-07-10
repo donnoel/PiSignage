@@ -908,35 +908,52 @@ async function processIsRunning(pattern: string): Promise<boolean> {
   }
 }
 
-async function waitForProcess(pattern: string, label: string): Promise<void> {
-  for (let attempt = 0; attempt < 10; attempt += 1) {
+async function shortFileTail(filePath: string): Promise<string | null> {
+  try {
+    const content = await fs.readFile(filePath, "utf8");
+    const lines = content
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    return lines.slice(-6).join(" ") || null;
+  } catch {
+    return null;
+  }
+}
+
+async function waitForProcess(pattern: string, label: string, logPath?: string): Promise<void> {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
     if (await processIsRunning(pattern)) {
       return;
     }
     await sleep(500);
   }
 
-  throw new Error(`${label} did not start for remote desktop.`);
+  const logTail = logPath ? await shortFileTail(logPath) : null;
+  throw new Error(`${label} did not start for remote desktop.${logTail ? ` Recent log: ${logTail}` : ""}`);
 }
 
 async function showDesktopShell(): Promise<void> {
   const command = [
     "export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}",
+    "export DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unix:path=${XDG_RUNTIME_DIR}/bus}",
     "export WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0}",
     "export DISPLAY=${DISPLAY:-:0}",
     "export XDG_CURRENT_DESKTOP=${XDG_CURRENT_DESKTOP:-labwc:wlroots}",
-    "if ! pgrep -f '/usr/bin/pcmanfm --desktop|pcmanfm --desktop' >/dev/null 2>&1; then",
+    "export XDG_SESSION_TYPE=${XDG_SESSION_TYPE:-wayland}",
+    "if ! pgrep -f '^pcmanfm --desktop$|^/usr/bin/pcmanfm --desktop$' >/dev/null 2>&1; then",
     "  nohup /usr/bin/pcmanfm-pi >/tmp/pisignage-pcmanfm.log 2>&1 &",
     "fi",
-    "if ! pgrep -f '/usr/bin/lwrespawn /usr/bin/wf-panel-pi|/usr/bin/wf-panel-pi' >/dev/null 2>&1; then",
-    "  nohup /usr/bin/lwrespawn /usr/bin/wf-panel-pi >/tmp/pisignage-wf-panel.log 2>&1 &",
-    "fi"
+    "pkill -f '^/bin/sh /usr/bin/lwrespawn /usr/bin/wf-panel-pi$' 2>/dev/null || true",
+    "pkill -x wf-panel-pi 2>/dev/null || true",
+    "rm -f /tmp/pisignage-wf-panel.log",
+    "nohup /usr/bin/lwrespawn /usr/bin/wf-panel-pi >/tmp/pisignage-wf-panel.log 2>&1 &"
   ].join("\n");
   await execFileAsync("/bin/sh", ["-lc", command], {
     timeout: 20_000
   });
-  await waitForProcess("pcmanfm --desktop", "Desktop file manager");
-  await waitForProcess("wf-panel-pi", "Desktop panel");
+  await waitForProcess("pcmanfm --desktop", "Desktop file manager", "/tmp/pisignage-pcmanfm.log");
+  await waitForProcess("wf-panel-pi", "Desktop panel", "/tmp/pisignage-wf-panel.log");
 }
 
 async function showDesktop(): Promise<string> {
@@ -950,7 +967,21 @@ async function showDesktop(): Promise<string> {
   if (state === "active" || state === "activating") {
     throw new Error(`Could not show the desktop because VLC playback is still ${state}.`);
   }
-  await showDesktopShell();
+  try {
+    await showDesktopShell();
+  } catch (error) {
+    const desktopMessage = error instanceof Error ? error.message : String(error);
+    try {
+      const resumeMessage = await resumePlaybackService();
+      throw new Error(`${desktopMessage} Playback was resumed automatically. ${resumeMessage}`);
+    } catch (resumeError) {
+      if (resumeError instanceof Error && resumeError.message.includes("Playback was resumed automatically")) {
+        throw resumeError;
+      }
+      const resumeMessage = resumeError instanceof Error ? resumeError.message : String(resumeError);
+      throw new Error(`${desktopMessage} Automatic playback resume also failed: ${resumeMessage}`);
+    }
+  }
   const scheduleState = await userServiceState("pisignage-schedule.timer");
   return `Desktop is ready for remote administration. Playback and schedule control are paused. VLC service state: ${state}. Schedule timer state: ${scheduleState}. Desktop panel is visible.`;
 }

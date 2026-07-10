@@ -349,6 +349,10 @@ Environment=PISIGNAGE_CACHE_DIR=%h/.local/cache/pisignage/device-agent
 Environment=PISIGNAGE_HEARTBEAT_PATH=%h/.local/state/pisignage/heartbeat.json
 Environment=PISIGNAGE_HEARTBEAT_INTERVAL_SECONDS=30
 Environment=PISIGNAGE_HEARTBEAT_JITTER_SECONDS=5
+Environment=DISPLAY=:0
+Environment=XDG_RUNTIME_DIR=${runtime_dir}
+Environment=DBUS_SESSION_BUS_ADDRESS=${dbus_address}
+Environment=WAYLAND_DISPLAY=wayland-0
 EnvironmentFile=-%h/.config/pisignage/device-agent.env
 ExecStart=${node_bin} ${device_agent_dist} --loop
 Restart=always
