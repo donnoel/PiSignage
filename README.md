@@ -125,7 +125,7 @@ PiSignage/
 
 The current focus is production-minded sprint hardening: real media uploads, reusable playlists, honest screen/device status, simple screen hours, local recovery evidence, and an AWS `dev` alpha that preserves manual publish and cached Pi playback. The five-Pi pilot is using VLC appliance playback with current-video reporting so the dashboard can show which asset each screen reports as live.
 
-The current Pi appliance baseline is documented in `docs/C5_GOLDEN_MODEL_SNAPSHOT_2026-07-03.md`. C1-C5 should remain identical to that managed baseline except for intentional identity, network, screen assignment, and location fields.
+The current Pi appliance baseline is documented in `docs/PI_GOLDEN_MASTER_BASELINE.md`. The Golden Master is the promoted repo commit, built artifacts, baseline evidence, and fleet validation record, not a one-off manual state on a single Pi. C1-C5 should remain identical to that managed baseline except for intentional identity, network, screen assignment, location, and secret fields.
 
 See `docs/PHASES.md` for the full phase plan.
 

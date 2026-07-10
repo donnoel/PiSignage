@@ -1,12 +1,15 @@
 # PI Golden Master Baseline
 
-Last updated: 2026-07-10 09:26 PDT
+Last updated: 2026-07-10 15:44 PDT
 
 ## Baseline Rule
 
-The PI Golden Master is the Beam appliance source of truth. C5 is the current
-prototype evidence source for this baseline, but the target state is C1-C5 all
-matching the Golden Master except documented identity and network fields.
+The PI Golden Master is the Beam appliance source of truth. It is not one
+physical Pi by itself. The source of truth is the repo commit, built artifacts,
+this versioned baseline, and the validation evidence recorded here. C5 is the
+current Golden Master candidate/prototype evidence source for this baseline, but
+the target state is C1-C5 all matching the promoted Golden Master except
+documented identity and network fields.
 
 Every Pi-touching change deployed to C5 must update this document before the work is considered complete. That includes changes to device-agent behavior, managed Pi scripts, systemd services or drop-ins, VLC/display/playback behavior, schedule enforcement, command-plane actions, heartbeat/current-video reporting, recovery, reset, cache, playlist, and published media behavior.
 
@@ -20,6 +23,50 @@ Every C1-Cx Beam Pi must be built, repaired, or updated from this PI golden mast
 - local API keys and secrets
 
 The previous historical snapshot is `docs/C5_GOLDEN_MODEL_SNAPSHOT_2026-07-03.md`. Use this file, not the historical snapshot, as the current PI golden master baseline.
+
+## Golden Master Operating Model
+
+Beam keeps the fleet boring, identical, and resilient by separating prototype
+work from promoted appliance state:
+
+1. Develop the change in the repo.
+2. Build any required artifacts, especially ignored runtime artifacts such as
+   `device-agent/dist/index.js`.
+3. Deploy the change to the Golden Master candidate Pi, currently C5, for real
+   playback, display, schedule, heartbeat, recovery, cache, and command-plane
+   validation.
+4. Promote the exact validated state by updating this baseline with the repo
+   commit, built-artifact hashes, managed script/service hashes, runtime/package
+   versions, playlist/release evidence, and live validation notes.
+5. Roll the promoted managed state to every C1-Cx appliance.
+6. Verify fleet parity over Tailscale and call-home evidence, not ad hoc local
+   network assumptions.
+7. Treat any unmanaged difference as drift until it is either removed or
+   explicitly documented as an allowed identity/configuration difference.
+
+The Golden Master candidate proves a release candidate under real appliance
+conditions. This document records what was promoted. The fleet receives the
+promoted state, not untracked shell history from the candidate Pi.
+
+No shell-only fixes are allowed to become part of the Golden Master. A manual
+field fix is either temporary runtime cleanup or it must be backported into repo
+scripts, service definitions, setup docs, or this baseline before the fleet can
+be called healthy.
+
+Allowed per-device differences stay intentionally narrow:
+
+- hostname
+- IP addresses, Tailscale address, and network route
+- Beam/cloud device ID
+- screen ID/name/assignment
+- location/group labels
+- local API keys and secrets
+
+Everything else in the Beam-managed appliance surface should match the promoted
+baseline: scripts, systemd units, package/runtime baselines, compiled
+device-agent runtime, playlist/release contract, published media set, cache
+behavior, command-plane behavior, heartbeat shape, playback state reporting, and
+service state.
 
 ## Reset For Deployment Contract
 
@@ -420,6 +467,20 @@ a79d98fd2a9f3dabf6314b413e9501c620862cf2253452ce198a754b6637a42e  pisignage-sche
 efbe213d6bc3b7d38351592ff0312d7f2320f7f3919b491b6221a4b5a6cfab8c  pisignage-remote-desktop.service
 ```
 
+Managed sudoers drop-ins:
+
+```text
+b04741c024603fddf13575e30abaaa43c48d340cfc499b090115ff2c1c3a0ca6  pisignage-display-recovery
+da9cabb6a1cfdb3b288ff657dc5a7319e8c4d57a51bda4c631c7636bfe2bc8ea  pisignage-reset-reboot
+```
+
+Managed appliance assets:
+
+```text
+50d0c8de376fb2760219ea9caf6c778ed421e66e731fdc5601bf6aebea124ff1  ad-dad-logo.png
+feac26778e52d042e4b8c3661321498439ee45fcb1000713dfee13cc4a17e9e6  ad-dad-logo.ppm
+```
+
 Compiled device agent:
 
 ```text
@@ -432,11 +493,37 @@ These hashes supersede the 2026-07-09 13:57 baseline hashes and include the curr
 
 Use this workflow for every future Pi-touching C5 prototype change:
 
-1. Make and validate the C5 change live.
-2. Confirm C5 playback/display/network/service state is healthy.
-3. Update this PI golden master baseline with the new evidence and hashes.
-4. Note which C1-Cx appliances still need the change when they are reachable.
-5. Do not call the Pi work complete until this file is current.
+1. Make the change in the repo and build any required runtime artifacts.
+2. Deploy and validate the change live on the Golden Master candidate Pi.
+3. Confirm playback, display, network, heartbeat, cache, command-plane, and
+   service state are healthy.
+4. Update this PI golden master baseline with the repo commit, evidence, and
+   hashes for the promoted state.
+5. Roll the promoted managed state to the rest of C1-Cx.
+6. Verify every reachable appliance against the promoted baseline by Tailscale
+   and call-home evidence.
+7. Note which C1-Cx appliances still need the change if any are temporarily
+   unreachable.
+8. Do not call the Pi work complete until this file is current and drift is
+   either resolved or explicitly documented.
+
+Repeatable release-candidate gate:
+
+```sh
+npm run check:rc-parity
+```
+
+The RC parity gate is read-only. It checks the repo release state, this baseline,
+managed Pi file hashes, compiled device-agent hash, dashboard inventory evidence,
+and C1-C5 live Tailscale SSH evidence when credentials are available. It must
+not restart services, publish playlists, sync media, install packages, mutate
+AWS, or change Pi state.
+
+Use repo-only mode when validating baseline edits before a commit:
+
+```sh
+npm run check:rc-parity -- --repo-only
+```
 
 Minimum live validation before updating this baseline:
 
