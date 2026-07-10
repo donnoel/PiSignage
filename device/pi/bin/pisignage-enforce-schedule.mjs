@@ -423,7 +423,7 @@ function ensureWlrOutputOn() {
   ]);
 }
 
-function setDisplayPower(power) {
+function setDisplayPower(power, options = { allowSessionRestart: true }) {
   const enabled = power === "on";
   const attempts = [];
   let retriedDisplaySession = false;
@@ -549,6 +549,19 @@ function setDisplayPower(power) {
     }
   }
 
+  if (enabled && options.allowSessionRestart) {
+    log(`display ${displayOutput} could not be turned on; restarting user display session before final retry`);
+    if (restartUserDisplaySession()) {
+      const retry = setDisplayPower(power, { allowSessionRestart: false });
+      if (retry.ok) {
+        return {
+          ...retry,
+          detail: `${retry.detail} Display session was restarted before the retry.`
+        };
+      }
+    }
+  }
+
   return {
     ok: false,
     action: enabled ? "display-on-failed" : "display-off-failed",
@@ -583,9 +596,10 @@ async function enforce() {
 
   if (active || override) {
     const display = setDisplayPower("on");
-    runSystemctl("start");
+    const playbackAction = display.ok || dryRun ? "start" : "restart";
+    runSystemctl(playbackAction);
     await writeStatus({
-      action: dryRun ? "would-start" : "start",
+      action: dryRun ? `would-${playbackAction}` : playbackAction,
       activeScheduleId: active?.id ?? null,
       activeScheduleName: active?.name ?? null,
       detail: active
@@ -601,7 +615,7 @@ async function enforce() {
     });
     log(
       `${active ? "schedule active" : override ? "temporary open active" : "screen open"} for ${screenId}; ${display.detail} ${
-        dryRun ? "would start" : "started"
+        dryRun ? `would ${playbackAction}` : `${playbackAction}ed`
       } ${vlcService}`
     );
     return;

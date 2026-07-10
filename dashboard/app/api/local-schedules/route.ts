@@ -13,6 +13,7 @@ import { readInventory } from "../../lib/inventory-store";
 import { repairSchedulesForScreens } from "../../lib/local-inventory";
 import { apiErrorResponse } from "../../lib/api-error-response";
 import { readLivePlaylist, readPlaylistStore } from "../../lib/local-playlist";
+import { readCloudHeartbeats } from "../../lib/cloud-heartbeat";
 import {
   dayOptions,
   isValidTime,
@@ -138,11 +139,20 @@ async function scheduleResponse(publish?: {
       .filter((device) => device.screenId)
       .map((device) => [device.screenId as string, device])
   );
+  const linkedDeviceIds = inventoryScreens
+    .map((screen) =>
+      ((screen.deviceId ? devicesById.get(screen.deviceId) : null) ??
+        devicesByScreenId.get(screen.id) ??
+        null)?.id ?? null
+    )
+    .filter((deviceId): deviceId is string => Boolean(deviceId));
+  const cloudHeartbeats = await readCloudHeartbeats(linkedDeviceIds);
   const screens = inventoryScreens.map((screen) => {
     const linkedDevice =
       (screen.deviceId ? devicesById.get(screen.deviceId) : null) ??
       devicesByScreenId.get(screen.id) ??
       null;
+    const heartbeat = linkedDevice ? cloudHeartbeats[linkedDevice.id]?.heartbeat ?? null : null;
 
     return {
       ...screen,
@@ -151,7 +161,12 @@ async function scheduleResponse(publish?: {
       deviceActionType: linkedDevice?.actionType ?? null,
       deviceHost: linkedDevice?.host ?? null,
       deviceId: linkedDevice?.id ?? null,
-      deviceName: linkedDevice?.name ?? null
+      deviceName: linkedDevice?.name ?? null,
+      devicePlaybackState: heartbeat?.playbackState ?? null,
+      deviceScheduleDetail: heartbeat?.scheduleDetail ?? null,
+      deviceScheduleDisplayAction: heartbeat?.scheduleDisplayAction ?? null,
+      deviceScheduleDisplayControlOk: heartbeat?.scheduleDisplayControlOk ?? null,
+      deviceScheduleState: heartbeat?.scheduleState ?? null
     };
   });
   const configuredScreenCount = screens.filter((screen) => Boolean(screen.deviceHost)).length;

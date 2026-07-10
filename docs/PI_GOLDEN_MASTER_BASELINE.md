@@ -1,6 +1,6 @@
 # PI Golden Master Baseline
 
-Last updated: 2026-07-10 06:17 PDT
+Last updated: 2026-07-10 08:29 PDT
 
 ## Baseline Rule
 
@@ -119,6 +119,7 @@ Recent changes incorporated into this baseline:
   - after-hours schedule enforcement prefers verified `wlopm` output power control so closed screens go dark without disabling `HDMI-A-1` in the Wayland session
   - `vcgencmd display_power` is treated as a fallback and verified instead of trusted on exit status alone
   - open-hours schedule enforcement verifies `HDMI-A-1` is powered and enabled before reporting display-on success
+  - if open-hours display-on verification fails, schedule enforcement restarts the user display session once, retries display power/mode recovery, and restarts VLC playback rather than leaving the service merely started from a failed display state
   - screens with no assigned schedule are actively treated as open: schedule enforcement powers the display on and starts VLC instead of leaving playback unchanged
   - VLC startup explicitly powers and re-enables `HDMI-A-1` before applying the display mode
 - Network transport determinism:

@@ -18,6 +18,11 @@ type ScreenRecord = {
   deviceHost: string | null;
   deviceId: string | null;
   deviceName: string | null;
+  devicePlaybackState: string | null;
+  deviceScheduleDetail: string | null;
+  deviceScheduleDisplayAction: string | null;
+  deviceScheduleDisplayControlOk: boolean | null;
+  deviceScheduleState: string | null;
   group: string;
   id: string;
   location: string;
@@ -88,6 +93,16 @@ function stateLabel(state: ScreenScheduleState | undefined): string {
   }
 
   return "No hours set";
+}
+
+function liveScheduleIssue(screen: ScreenRecord, state: ScreenScheduleState | undefined): boolean {
+  return (
+    state?.state === "on" &&
+    (
+      screen.deviceScheduleDisplayControlOk === false ||
+      (Boolean(screen.devicePlaybackState) && screen.devicePlaybackState !== "playing")
+    )
+  );
 }
 
 function formatCount(count: number, noun: string): string {
@@ -403,6 +418,7 @@ export function SchedulingPanel({ dashboardMode }: { dashboardMode: "cloud" | "l
                 const openStorePending =
                   screen.deviceActionType === "open-screen" &&
                   (screen.deviceActionStatus === "pending" || screen.deviceActionStatus === "running");
+                const scheduleIssue = liveScheduleIssue(screen, state);
 
                 return (
                   <li
@@ -417,7 +433,10 @@ export function SchedulingPanel({ dashboardMode }: { dashboardMode: "cloud" | "l
                     </div>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <StatusPill label={stateLabel(state)} tone={state ? stateTone(state.state) : "muted"} />
+                        <StatusPill
+                          label={scheduleIssue ? "Open issue" : stateLabel(state)}
+                          tone={scheduleIssue ? "warn" : state ? stateTone(state.state) : "muted"}
+                        />
                         {state?.state === "off" ? (
                           <button
                             type="button"
@@ -429,6 +448,11 @@ export function SchedulingPanel({ dashboardMode }: { dashboardMode: "cloud" | "l
                           </button>
                         ) : null}
                       </div>
+                      {scheduleIssue ? (
+                        <p className="mt-1 max-w-md break-words text-xs leading-5 text-amber-800">
+                          {screen.deviceScheduleDetail ?? "Schedule is open, but playback/display is not confirmed."}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                       <button

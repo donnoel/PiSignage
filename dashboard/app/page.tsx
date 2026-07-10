@@ -121,6 +121,8 @@ type DeviceLiveStatus = {
   playerStatus: PlayerStatus | null;
   reachable: boolean;
   scheduleDetail: string | null;
+  scheduleDisplayAction: string | null;
+  scheduleDisplayControlOk: boolean | null;
   scheduleOverrideExpiresAt: string | null;
   scheduleState: string | null;
   stale: boolean;
@@ -884,10 +886,11 @@ function cloudDeviceStatus(device: DeviceRecord, cloudHeartbeat: CloudHeartbeatS
   const state = heartbeat.playbackState ?? "unknown";
   const scheduleState = heartbeat.scheduleState ?? null;
   const scheduledClosed = fresh && scheduleState === "off";
+  const scheduleDisplayFailed = fresh && scheduleState !== "off" && heartbeat.scheduleDisplayControlOk === false;
   const deploymentReady =
     state === "ready-for-publishing" ||
     heartbeat.currentPlaylistId === "playlist-ready-for-publishing";
-  const playbackHealthy = fresh && !scheduledClosed && state === "playing";
+  const playbackHealthy = fresh && !scheduledClosed && !scheduleDisplayFailed && state === "playing";
 
   return {
     ageLabel: formatStatusAge(timestamp),
@@ -895,6 +898,8 @@ function cloudDeviceStatus(device: DeviceRecord, cloudHeartbeat: CloudHeartbeatS
     playbackHealthy,
     playbackLabel: scheduledClosed
       ? "Closed"
+      : scheduleDisplayFailed
+        ? "Schedule issue"
       : playbackHealthy
         ? "Playing"
         : deploymentReady && fresh ? "Ready for deployment" : fresh ? "Checking playback" : "Waiting for update",
@@ -907,6 +912,8 @@ function cloudDeviceStatus(device: DeviceRecord, cloudHeartbeat: CloudHeartbeatS
     },
     reachable: fresh && heartbeat.networkOnline,
     scheduleDetail: heartbeat.scheduleDetail,
+    scheduleDisplayAction: heartbeat.scheduleDisplayAction,
+    scheduleDisplayControlOk: heartbeat.scheduleDisplayControlOk,
     scheduleOverrideExpiresAt: heartbeat.scheduleOverrideExpiresAt,
     scheduleState,
     stale: !fresh,
@@ -948,6 +955,8 @@ async function loadDeviceStatuses(
           playerStatus: status,
           reachable: probe.reachable,
           scheduleDetail: null,
+          scheduleDisplayAction: null,
+          scheduleDisplayControlOk: null,
           scheduleOverrideExpiresAt: null,
           scheduleState: null,
           stale: isPlaying && !fresh,
@@ -1333,6 +1342,8 @@ function fleetCommandRows({
       const rowPlaybackHealthy = deviceStatus?.playbackHealthy ?? false;
       const rowPlaybackLabel = deviceStatus?.playbackLabel ?? "Unknown";
       const scheduledClosed = deviceStatus?.scheduleState === "off";
+      const scheduleDisplayFailed =
+        isLive && !scheduledClosed && deviceStatus?.scheduleDisplayControlOk === false;
       const livePlaybackStale = deviceStatus?.stale ?? false;
       const reportedPlaylist = reportedPlaylistId ? playlistsById.get(reportedPlaylistId) ?? null : null;
       const playbackStatusIsPlaying = deviceStatus?.playerStatus?.state === "playing";
@@ -1385,14 +1396,26 @@ function fleetCommandRows({
         syncLabel = "Review";
       }
 
-      const playback = isLive ? (!reachable ? "No live report" : scheduledClosed ? "Closed" : rowPlaybackHealthy ? "Playing" : rowPlaybackLabel) : "Unknown";
+      const playback = isLive
+        ? !reachable
+          ? "No live report"
+          : scheduledClosed
+            ? "Closed"
+            : scheduleDisplayFailed
+              ? "Schedule issue"
+              : rowPlaybackHealthy
+                ? "Playing"
+                : rowPlaybackLabel
+        : "Unknown";
       const needsAttention =
         !hostConfigured ||
         syncTone === "warn" ||
-        (isLive && (!reachable || (!scheduledClosed && !rowPlaybackHealthy) || livePlaybackStale)) ||
+        (isLive && (!reachable || scheduleDisplayFailed || (!scheduledClosed && !rowPlaybackHealthy) || livePlaybackStale)) ||
         (!isLive && hostConfigured);
       const detail = scheduledClosed
         ? deviceStatus?.scheduleDetail ?? "This screen is closed by its assigned schedule."
+        : scheduleDisplayFailed
+          ? deviceStatus?.scheduleDetail ?? "The schedule window is open, but display recovery failed."
         : !hostConfigured
         ? "Add a local address before this Pi can report."
         : isLive

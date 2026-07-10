@@ -75,6 +75,8 @@ type DeviceLiveStatus = {
   } | null;
   reachable: boolean;
   scheduleDetail: string | null;
+  scheduleDisplayAction: string | null;
+  scheduleDisplayControlOk: boolean | null;
   scheduleOverrideExpiresAt: string | null;
   scheduleState: string | null;
   stale: boolean;
@@ -130,6 +132,8 @@ type RowState = {
   reportedAddress: string | null;
   savedAddress: string;
   scheduleDetail: string | null;
+  scheduleDisplayAction: string | null;
+  scheduleDisplayControlOk: boolean | null;
   scheduleOverrideExpiresAt: string | null;
   scheduleState: string | null;
   syncDetail: string;
@@ -562,6 +566,7 @@ function rowActionFor(input: {
   isOffline: boolean;
   isStale: boolean;
   rowPlaybackHealthy: boolean;
+  scheduleDisplayFailed: boolean;
   scheduledClosed: boolean;
   screenLinked: boolean;
   syncLabel: string;
@@ -620,6 +625,14 @@ function rowActionFor(input: {
       detail: "The screen is intentionally off outside scheduled hours.",
       label: "Closed by schedule",
       tone: "muted"
+    };
+  }
+
+  if (input.scheduleDisplayFailed) {
+    return {
+      detail: "The schedule window is open, but the Pi reported display recovery failed.",
+      label: "Recover display",
+      tone: "warn"
     };
   }
 
@@ -1111,6 +1124,8 @@ export function DeviceHealthFleetPanel({
         const rowPlaybackHealthy = status?.playbackHealthy ?? false;
         const rowPlaybackLabel = status?.playbackLabel ?? "unknown";
         const scheduledClosed = status?.scheduleState === "off";
+        const scheduleDisplayFailed =
+          isLive && !scheduledClosed && status?.scheduleDisplayControlOk === false;
         const deploymentReady = rowPlaybackLabel === "Ready for deployment";
         const rowStale = status?.stale ?? false;
         const reportedPlaylistId = status?.playerStatus?.playlistId ?? null;
@@ -1175,6 +1190,10 @@ export function DeviceHealthFleetPanel({
           playbackLabel = "Closed";
           playbackDetail = status?.scheduleDetail ?? "This screen is intentionally off outside scheduled hours.";
           playbackTone = "muted";
+        } else if (scheduleDisplayFailed) {
+          playbackLabel = "Schedule issue";
+          playbackDetail = status?.scheduleDetail ?? "The schedule window is open, but display recovery failed.";
+          playbackTone = "warn";
         } else if (isLive && rowPlaybackHealthy) {
           playbackLabel = "Playing";
           playbackDetail = "Beam has a fresh report that this screen is playing.";
@@ -1242,6 +1261,7 @@ export function DeviceHealthFleetPanel({
           isOffline ||
           isStale ||
           syncTone === "warn" ||
+          scheduleDisplayFailed ||
           (isLive && !scheduledClosed && !rowPlaybackHealthy && !deploymentReady);
         const attentionReason = !hostConfigured
           ? "setup needed"
@@ -1253,6 +1273,8 @@ export function DeviceHealthFleetPanel({
               ? "waiting for update"
               : syncTone === "warn"
                 ? "sync needed"
+                : scheduleDisplayFailed
+                  ? "schedule display failed"
                 : isLive && !scheduledClosed && !rowPlaybackHealthy && !deploymentReady
                   ? "playback not confirmed"
                   : "no action needed";
@@ -1264,6 +1286,7 @@ export function DeviceHealthFleetPanel({
           isOffline,
           isStale,
           rowPlaybackHealthy,
+          scheduleDisplayFailed,
           scheduledClosed,
           screenLinked: Boolean(linkedScreen),
           syncLabel,
@@ -1322,6 +1345,8 @@ export function DeviceHealthFleetPanel({
           reportedAddress,
           savedAddress,
           scheduleDetail: status?.scheduleDetail ?? null,
+          scheduleDisplayAction: status?.scheduleDisplayAction ?? null,
+          scheduleDisplayControlOk: status?.scheduleDisplayControlOk ?? null,
           scheduleOverrideExpiresAt: status?.scheduleOverrideExpiresAt ?? null,
           scheduleState: status?.scheduleState ?? null,
           syncDetail,
