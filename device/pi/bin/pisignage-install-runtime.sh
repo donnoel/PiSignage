@@ -173,7 +173,12 @@ required_asset_sources=(
   "device/pi/assets/ad-dad-logo.ppm"
 )
 
-for source in "${managed_bin_sources[@]}" "${required_asset_sources[@]}"; do
+managed_sudoers_sources=(
+  "device/pi/sudoers.d/pisignage-display-recovery"
+  "device/pi/sudoers.d/pisignage-reset-reboot"
+)
+
+for source in "${managed_bin_sources[@]}" "${required_asset_sources[@]}" "${managed_sudoers_sources[@]}"; do
   [[ -f "${repo_root}/${source}" ]] || die "missing runtime file: ${source}"
 done
 
@@ -332,6 +337,19 @@ install_managed_scripts() {
   apply_or_print mkdir -p "$local_bin_dir"
   for source in "${managed_bin_sources[@]}"; do
     apply_or_print install -m 755 "${repo_root}/${source}" "${local_bin_dir}/$(basename -- "$source")"
+  done
+}
+
+install_managed_sudoers() {
+  print_step "installing managed sudoers drop-ins"
+  for source in "${managed_sudoers_sources[@]}"; do
+    if command -v visudo >/dev/null 2>&1; then
+      visudo -cf "${repo_root}/${source}" >/dev/null
+    fi
+    sudo_apply_or_print install -m 0440 "${repo_root}/${source}" "/etc/sudoers.d/$(basename -- "$source")"
+    if [[ "$mode" == "apply" ]] && command -v visudo >/dev/null 2>&1; then
+      sudo visudo -cf "/etc/sudoers.d/$(basename -- "$source")" >/dev/null
+    fi
   done
 }
 
@@ -552,6 +570,7 @@ install_remote_access_packages
 configure_wayvnc
 configure_tailscale
 install_managed_scripts
+install_managed_sudoers
 install_user_services
 enable_services
 

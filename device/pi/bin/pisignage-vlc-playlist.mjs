@@ -35,6 +35,7 @@ const displayMode = process.env.PISIGNAGE_DISPLAY_RESOLUTION ?? "1920x1080@60.00
 const vlcVideoOutput = process.env.PISIGNAGE_VLC_VIDEO_OUTPUT ?? "wl_shm";
 const vlcAvcodecHardware = process.env.PISIGNAGE_VLC_AVCODEC_HW?.trim() ?? "";
 const vlcAudioMode = process.env.PISIGNAGE_VLC_AUDIO?.trim() ?? "on";
+const userId = String(typeof process.getuid === "function" ? process.getuid() : 1000);
 const vlcWaylandDisplay =
   process.env.PISIGNAGE_VLC_WAYLAND_DISPLAY ?? process.env.WAYLAND_DISPLAY ?? "wayland-0";
 const statusPath = path.resolve(
@@ -939,7 +940,7 @@ async function captureDisplayState() {
 }
 
 async function labwcPids() {
-  const result = await captureCommand("pgrep", ["-x", "labwc"], 2_000);
+  const result = await captureCommand("pgrep", ["-u", userId, "-x", "labwc"], 2_000);
   if (!result.ok) {
     return [];
   }
@@ -950,11 +951,8 @@ async function labwcPids() {
     .filter(Boolean);
 }
 
-async function restartUserDisplaySession() {
-  log("restarting user display session to recover HDMI output");
-  const previousPids = new Set(await labwcPids());
-  await captureCommand("pkill", ["-TERM", "-x", "labwc"], 5_000);
-  for (let attempt = 0; attempt < 15; attempt += 1) {
+async function waitForNewUserLabwc(previousPids, attempts = 30) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     const currentPids = await labwcPids();
     if (currentPids.some((pid) => !previousPids.has(pid))) {
       return true;
@@ -962,7 +960,36 @@ async function restartUserDisplaySession() {
     await sleep(1_000);
   }
 
-  log("display session restart failed: labwc did not return");
+  return false;
+}
+
+async function restartLightdmSession(previousPids) {
+  const result = await captureCommand(
+    "/usr/bin/sudo",
+    ["-n", "/usr/bin/systemctl", "restart", "lightdm.service"],
+    15_000
+  );
+  if (!result.ok) {
+    log(`display session restart via LightDM failed: ${result.stderr.trim() || result.stdout.trim() || "sudo systemctl restart lightdm.service failed"}`);
+    return false;
+  }
+
+  return waitForNewUserLabwc(previousPids);
+}
+
+async function restartUserDisplaySession() {
+  log("restarting user display session to recover HDMI output");
+  const previousPids = new Set(await labwcPids());
+  if (await restartLightdmSession(previousPids)) {
+    return true;
+  }
+
+  await captureCommand("pkill", ["-TERM", "-u", userId, "-x", "labwc"], 5_000);
+  if (await waitForNewUserLabwc(previousPids)) {
+    return true;
+  }
+
+  log("display session restart failed: user labwc did not return");
   return false;
 }
 

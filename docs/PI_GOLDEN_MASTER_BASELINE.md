@@ -1,6 +1,6 @@
 # PI Golden Master Baseline
 
-Last updated: 2026-07-10 08:29 PDT
+Last updated: 2026-07-10 09:26 PDT
 
 ## Baseline Rule
 
@@ -57,7 +57,7 @@ Important packaging note: `device-agent/dist/index.js` is an ignored build artif
 
 - Repo: `/Users/donnoel/Development/PiSignage`
 - Branch: `main`
-- HEAD before this baseline update: `8d11388 Consolidate screen operations navigation`
+- HEAD before this baseline update: `4b518f4 Surface schedule display failures`
 - Dashboard URL: `https://8yyptjawdv.us-west-2.awsapprunner.com`
 - Device heartbeat API URL: `https://yebxh6xyvm2nkgq3i2uw2oixda0izozg.lambda-url.us-west-2.on.aws/`
 
@@ -122,6 +122,18 @@ Recent changes incorporated into this baseline:
   - if open-hours display-on verification fails, schedule enforcement restarts the user display session once, retries display power/mode recovery, and restarts VLC playback rather than leaving the service merely started from a failed display state
   - screens with no assigned schedule are actively treated as open: schedule enforcement powers the display on and starts VLC instead of leaving playback unchanged
   - VLC startup explicitly powers and re-enables `HDMI-A-1` before applying the display mode
+- 2026-07-10 C5 Golden Master promotion evidence:
+  - managed workstation, C5 repo, and C5 installed file hashes matched for `device/pi/bin`, `device/pi/systemd/user`, `device/pi/assets`, and `device-agent/dist/index.js`
+  - `pisignage-enforce-schedule.mjs` hash at promotion: `22b33850869e5ba71cba4751450029d284c0c97880abbc63e498c23826b96352`
+  - `pisignage-vlc-playlist.mjs` hash at promotion: `cb176f8b2f40dbdf7ca05c6766e77b9d7e61d77f336e19e87512b5437b9f7d75`
+  - `pisignage-install-runtime.sh` hash at promotion: `39fd7deac2c85fb2fde233bcf0c46e99853606ddc4abb5c9e3d34c8f9c54fa23`
+  - `pisignage-reset-device.sh` hash at promotion: `fef221b2e4fd8dc1a4009746804a3c70e1e26186191e7a5aa1dae2a912abb5eb`
+  - `device-agent/dist/index.js` hash at promotion: `6694b4f3e4bc79db01bc24556d47de9b07596e175fe4ce97dab4b6ccf709cbb2`
+  - tracked sudoers drop-ins at promotion: `pisignage-display-recovery` hash `b04741c024603fddf13575e30abaaa43c48d340cfc499b090115ff2c1c3a0ca6`; `pisignage-reset-reboot` hash `da9cabb6a1cfdb3b288ff657dc5a7319e8c4d57a51bda4c631c7636bfe2bc8ea`
+  - C5 user services were enabled and active: `pisignage-device-agent.service`, `pisignage-schedule.timer`, `pisignage-vlc.service`, and `pisignage-remote-desktop.service`
+  - C5 system services were enabled and active: `wayvnc.service` and `tailscaled.service`
+  - C5 runtime evidence reported `playbackState=playing`, `scheduleState=unassigned`, `scheduleDisplayAction=display-on`, and `scheduleDisplayControlOk=true`
+  - display recovery now targets the appliance user's `labwc` session and uses the constrained sudoers command `/usr/bin/systemctl restart lightdm.service` for LightDM autologin recovery when that user compositor is missing, preventing open-hours recovery from settling at the login greeter
 - Network transport determinism:
   - device-agent heartbeat prefers `wlan0`, then `eth0`, then any other non-internal IPv4 address
   - Wi-Fi setup applies route metric `50` after successful Wi-Fi configuration so Wi-Fi is preferred when Ethernet and Wi-Fi are both active

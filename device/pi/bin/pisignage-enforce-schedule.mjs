@@ -25,6 +25,7 @@ const screenId = process.env.PISIGNAGE_SCREEN_ID ?? "screen-primary";
 const vlcService = process.env.PISIGNAGE_VLC_SERVICE ?? "pisignage-vlc.service";
 const displayOutput = process.env.PISIGNAGE_DISPLAY_OUTPUT ?? "HDMI-A-1";
 const displayMode = process.env.PISIGNAGE_DISPLAY_RESOLUTION ?? "1920x1080@60.000000";
+const userId = String(typeof process.getuid === "function" ? process.getuid() : 1000);
 const dryRun = process.argv.includes("--dry-run");
 const openOverride = process.argv.includes("--open-override");
 const clearOverride = process.argv.includes("--clear-override");
@@ -320,7 +321,7 @@ function wlrOutputEnabled() {
 }
 
 function labwcPids() {
-  const result = spawnSync("pgrep", ["-x", "labwc"], {
+  const result = spawnSync("pgrep", ["-u", userId, "-x", "labwc"], {
     encoding: "utf8"
   });
   if (result.status !== 0) {
@@ -333,14 +334,52 @@ function labwcPids() {
     .filter(Boolean);
 }
 
+function waitForNewUserLabwc(previousPids, attempts = 30) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const currentPids = labwcPids();
+    if (currentPids.some((pid) => !previousPids.has(pid))) {
+      return true;
+    }
+    spawnSync("sleep", ["1"]);
+  }
+
+  return false;
+}
+
+function restartLightdmSession(previousPids) {
+  if (dryRun) {
+    log("dry run: sudo -n systemctl restart lightdm.service");
+    return true;
+  }
+
+  if (!commandExists("/usr/bin/sudo") || !commandExists("/usr/bin/systemctl")) {
+    return false;
+  }
+
+  const result = spawnSync("/usr/bin/sudo", ["-n", "/usr/bin/systemctl", "restart", "lightdm.service"], {
+    encoding: "utf8"
+  });
+  if (result.status !== 0) {
+    const message = result.stderr.trim() || result.stdout.trim() || "sudo systemctl restart lightdm.service failed";
+    log(`display session restart via LightDM failed: ${message}`);
+    return false;
+  }
+
+  return waitForNewUserLabwc(previousPids);
+}
+
 function restartUserDisplaySession() {
   if (dryRun) {
-    log("dry run: pkill -TERM -x labwc");
+    log(`dry run: pkill -TERM -u ${userId} -x labwc`);
     return true;
   }
 
   const previousPids = new Set(labwcPids());
-  const result = spawnSync("pkill", ["-TERM", "-x", "labwc"], {
+  if (restartLightdmSession(previousPids)) {
+    return true;
+  }
+
+  const result = spawnSync("pkill", ["-TERM", "-u", userId, "-x", "labwc"], {
     encoding: "utf8"
   });
   if (result.status !== 0 && result.status !== 1) {
@@ -349,15 +388,11 @@ function restartUserDisplaySession() {
     return false;
   }
 
-  for (let attempt = 0; attempt < 15; attempt += 1) {
-    const currentPids = labwcPids();
-    if (currentPids.some((pid) => !previousPids.has(pid))) {
-      return true;
-    }
-    spawnSync("sleep", ["1"]);
+  if (waitForNewUserLabwc(previousPids)) {
+    return true;
   }
 
-  log("display session restart failed: labwc did not return");
+  log("display session restart failed: user labwc did not return");
   return false;
 }
 

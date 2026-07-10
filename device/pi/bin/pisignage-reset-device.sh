@@ -134,6 +134,11 @@ required_asset_sources=(
   "device/pi/assets/ad-dad-logo.ppm"
 )
 
+managed_sudoers_sources=(
+  "device/pi/sudoers.d/pisignage-display-recovery"
+  "device/pi/sudoers.d/pisignage-reset-reboot"
+)
+
 print_step() {
   echo "reset: $*"
 }
@@ -258,7 +263,7 @@ if [[ "$source_mode" != "current" ]]; then
 fi
 
 print_step "checking required tracked files"
-for source in "${managed_bin_sources[@]}" "${managed_unit_sources[@]}" "${required_asset_sources[@]}" "sample-content/playlist.local.json"; do
+for source in "${managed_bin_sources[@]}" "${managed_unit_sources[@]}" "${required_asset_sources[@]}" "${managed_sudoers_sources[@]}" "sample-content/playlist.local.json"; do
   if [[ "$source_mode" == "current" ]]; then
     [[ -f "${repo_root}/${source}" ]] || die "missing required reset source: ${source}"
   else
@@ -355,6 +360,21 @@ apply_or_print mkdir -p "$systemd_user_dir"
 for source in "${managed_unit_sources[@]}"; do
   apply_or_print install -m 644 "${repo_root}/${source}" "${systemd_user_dir}/$(basename -- "$source")"
 done
+
+print_step "reinstalling managed sudoers drop-ins"
+if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+  for source in "${managed_sudoers_sources[@]}"; do
+    if command -v visudo >/dev/null 2>&1; then
+      visudo -cf "${repo_root}/${source}" >/dev/null
+    fi
+    apply_or_print sudo install -m 0440 "${repo_root}/${source}" "/etc/sudoers.d/$(basename -- "$source")"
+    if [[ "$mode" == "apply" ]] && command -v visudo >/dev/null 2>&1; then
+      sudo visudo -cf "/etc/sudoers.d/$(basename -- "$source")" >/dev/null
+    fi
+  done
+else
+  print_step "sudo is not available without a password; leaving managed sudoers unchanged"
+fi
 
 print_step "reloading and enabling field services"
 apply_or_print systemctl --user daemon-reload

@@ -1,0 +1,1 @@
+donnoel ALL=(root) NOPASSWD: /usr/bin/systemctl restart lightdm.service
