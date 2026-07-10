@@ -28,8 +28,12 @@ async function writePlaylist(contentRoot, value) {
 async function waitFor(label, output, predicate, timeoutMs = 8_000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
-    if (predicate(output())) {
-      return;
+    try {
+      if (await predicate(output())) {
+        return;
+      }
+    } catch {
+      // Keep polling until the status file or expected output is ready.
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
@@ -59,12 +63,15 @@ async function main() {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "pisignage-vlc-continuous-"));
   const contentRoot = path.join(tempRoot, "content");
   const assetsRoot = path.join(contentRoot, "assets");
+  const fakeBinRoot = path.join(tempRoot, "bin");
   const fakeVlcPath = path.join(tempRoot, "fake-vlc.mjs");
+  const fakeDbusSendPath = path.join(fakeBinRoot, "dbus-send");
   const statusPath = path.join(tempRoot, "player-status.json");
   const output = [];
 
   try {
     await mkdir(assetsRoot, { recursive: true });
+    await mkdir(fakeBinRoot, { recursive: true });
     await writeFile(path.join(assetsRoot, "first.mp4"), Buffer.alloc(16));
     await writeFile(path.join(assetsRoot, "second.mp4"), Buffer.alloc(16));
     await writeFile(path.join(assetsRoot, "new.mp4"), Buffer.alloc(16));
@@ -88,6 +95,19 @@ setInterval(() => {}, 1000);
 `,
       { encoding: "utf8", mode: 0o755 }
     );
+    await writeFile(
+      fakeDbusSendPath,
+      `#!/usr/bin/env node
+console.log(\`method return time=0 sender=:1.1 -> destination=:1.2 serial=1 reply_serial=1
+   variant       array [
+         dict entry(
+            string "xesam:url"
+            variant                string "file://${path.join(assetsRoot, "second.mp4")}"
+         )
+      ]\`);
+`,
+      { encoding: "utf8", mode: 0o755 }
+    );
 
     const child = spawn("node", ["device/pi/bin/pisignage-vlc-playlist.mjs"], {
       cwd: repoRoot,
@@ -98,10 +118,12 @@ setInterval(() => {}, 1000);
         PISIGNAGE_PLAYLIST_HANDOFF_OVERLAP_MS: "200",
         PISIGNAGE_PLAYLIST_POLL_INTERVAL_MS: "100",
         PISIGNAGE_STARTUP_SETTLE_MS: "0",
+        PISIGNAGE_STATUS_HEARTBEAT_INTERVAL_MS: "100",
         PISIGNAGE_STATUS_PATH: statusPath,
         PISIGNAGE_VLC_BIN: fakeVlcPath,
         PISIGNAGE_VLC_PLAYBACK_MODE: "continuous",
-        PISIGNAGE_VLC_STOP_SIGNAL: "SIGTERM"
+        PISIGNAGE_VLC_STOP_SIGNAL: "SIGTERM",
+        PATH: `${fakeBinRoot}${path.delimiter}${process.env.PATH ?? ""}`
       },
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -113,6 +135,10 @@ setInterval(() => {}, 1000);
     await waitFor("initial continuous VLC playlist", renderedOutput, (text) =>
       text.includes("first.mp4") && text.includes("second.mp4")
     );
+    await waitFor("MPRIS current asset status", renderedOutput, async () => {
+      const status = JSON.parse(await readFile(statusPath, "utf8"));
+      return status.currentAssetId === "asset-second" && status.currentAssetPath.endsWith("second.mp4");
+    });
     await writePlaylist(contentRoot, playlist(2, [{ id: "asset-new", file: "new.mp4" }]));
     await new Promise((resolve) => setTimeout(resolve, 900));
     if (renderedOutput().includes("new.mp4")) {

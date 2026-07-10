@@ -126,6 +126,7 @@ let activeStatus = {
   quarantinedAssetIds: [],
   lastError: null
 };
+let statusWriteChain = Promise.resolve();
 
 class StandbyPlaylistError extends Error {
   constructor(message, metadata = {}) {
@@ -241,6 +242,56 @@ function currentContinuousAsset(playlist, loopStartedAtMs, nowMs = Date.now()) {
   return playlist.assets[playlist.assets.length - 1] ?? null;
 }
 
+function unescapeDbusString(value) {
+  return value
+    .replace(/\\"/g, "\"")
+    .replace(/\\\\/g, "\\");
+}
+
+function mprisMetadataUrl(output) {
+  const match = output.match(/string "xesam:url"[\s\S]*?variant\s+string\s+"((?:\\.|[^"\\])*)"/);
+  return match ? unescapeDbusString(match[1]) : null;
+}
+
+function fileUrlPath(value) {
+  if (!value?.startsWith("file://")) {
+    return null;
+  }
+
+  try {
+    return decodeURIComponent(new URL(value).pathname);
+  } catch {
+    return null;
+  }
+}
+
+async function currentMprisAsset(playlist) {
+  const metadata = await captureCommand("dbus-send", [
+    "--session",
+    "--dest=org.mpris.MediaPlayer2.vlc",
+    "--print-reply",
+    "/org/mpris/MediaPlayer2",
+    "org.freedesktop.DBus.Properties.Get",
+    "string:org.mpris.MediaPlayer2.Player",
+    "string:Metadata"
+  ], 2_000);
+  if (!metadata.ok) {
+    return null;
+  }
+
+  const currentPath = fileUrlPath(mprisMetadataUrl(metadata.stdout));
+  if (!currentPath) {
+    return null;
+  }
+
+  const resolvedCurrentPath = path.resolve(currentPath);
+  return playlist.assets.find((asset) => path.resolve(asset.path) === resolvedCurrentPath) ?? null;
+}
+
+async function reportedContinuousAsset(playlist, loopStartedAtMs) {
+  return (await currentMprisAsset(playlist)) ?? currentContinuousAsset(playlist, loopStartedAtMs);
+}
+
 function millisecondsUntilPlaylistBoundary(playlist, loopStartedAtMs) {
   const durationMs = playlistDurationMs(playlist);
   if (!Number.isFinite(durationMs) || durationMs <= 0) {
@@ -264,7 +315,7 @@ function continuousRestartBackoffMs(attempt) {
   return Math.min(baseMs * (2 ** exponent), maxMs);
 }
 
-async function writeStatus(update) {
+async function writeStatusNow(update) {
   activeStatus = {
     ...activeStatus,
     ...update,
@@ -276,6 +327,11 @@ async function writeStatus(update) {
   await mkdir(statusDirectory, { recursive: true });
   await writeFile(temporaryPath, `${JSON.stringify(activeStatus, null, 2)}\n`, "utf8");
   await rename(temporaryPath, statusPath);
+}
+
+async function writeStatus(update) {
+  statusWriteChain = statusWriteChain.catch(() => {}).then(() => writeStatusNow(update));
+  return statusWriteChain;
 }
 
 function playlistAssetPath(asset) {
@@ -1179,7 +1235,7 @@ async function loadPendingPlaylist(currentPlaylist) {
 }
 
 async function writeContinuousPlaybackStatus(playlist, loopStartedAtMs, extra = {}) {
-  const currentAsset = currentContinuousAsset(playlist, loopStartedAtMs);
+  const currentAsset = await reportedContinuousAsset(playlist, loopStartedAtMs);
   await writePlaybackStatus(playlist, "playing", {
     currentAssetId: currentAsset?.assetId ?? null,
     currentAssetPath: currentAsset?.path ?? null,
