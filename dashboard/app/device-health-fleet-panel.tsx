@@ -2215,7 +2215,17 @@ export function DeviceHealthFleetPanel({
                           >
                             <ScreenActionIcon name="playlist" />
                           </a>
-                        ) : null}
+                        ) : (
+                          <button
+                            type="button"
+                            disabled
+                            title="Assign a playlist before opening playlist details"
+                            aria-label={`Playlist details unavailable for ${screenName(row)} until a playlist is assigned`}
+                            className={`inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white text-base font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${screenActionClass("primary")}`}
+                          >
+                            <ScreenActionIcon name="playlist" />
+                          </button>
+                        )}
                         {(() => {
                           const audioAction = audioToggleActionFor(row);
                           const audioIcon = audioToggleIconFor(row);
