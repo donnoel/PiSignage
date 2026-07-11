@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   ensureLivePlaylistPath,
+  normalizePublishHandoffMode,
+  playlistWithPublishHandoffMode,
   type PiPublishResult,
   type PublishStatusTarget,
   writePlaylist,
@@ -53,6 +55,7 @@ function publishTargetStatus(
     deviceId: target.id,
     deviceName: target.name,
     enabled: result.enabled,
+    handoffMode: result.handoffMode,
     host: target.host,
     message: result.message,
     ok: result.ok,
@@ -64,10 +67,14 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as {
       deviceId?: string;
+      handoffMode?: unknown;
       playlistId?: string;
       screenId?: string;
     };
     const { playlist } = await readStoredPlaylist(body.playlistId);
+    const publishHandoffMode = normalizePublishHandoffMode(body.handoffMode);
+    const publishPlaylist = playlistWithPublishHandoffMode(playlist, publishHandoffMode);
+    const publishVerb = publishHandoffMode === "asset-boundary" ? "Publish now sent" : "Published";
     if (playlist.assets.length === 0) {
       return NextResponse.json(
         { error: "Add media before publishing this playlist." },
@@ -78,34 +85,36 @@ export async function POST(request: Request) {
     if (isCloudInventoryConfigured()) {
       const resolvedTargets = await resolveCloudPlaylistPublishTargets({
         deviceId: body.deviceId,
-        playlistId: playlist.playlistId,
+        playlistId: publishPlaylist.playlistId,
         screenId: body.screenId
       });
       const release = resolvedTargets.length > 0
-        ? await writeCloudRelease(buildCloudReleaseManifest(playlist, resolvedTargets))
+        ? await writeCloudRelease(buildCloudReleaseManifest(publishPlaylist, resolvedTargets, publishHandoffMode))
         : null;
       const targets = await markCloudPlaylistPublished({
         desiredReleaseId: release?.releaseId,
         desiredReleaseManifestChecksum: release?.manifestChecksum,
         deviceId: body.deviceId,
-        playlistId: playlist.playlistId,
-        playlistVersion: playlist.version,
+        playlistId: publishPlaylist.playlistId,
+        playlistVersion: publishPlaylist.version,
         screenId: body.screenId
       });
       const publishTargets = targets.map((target): PublishStatusTarget => ({
         deviceId: target.device?.id ?? null,
         deviceName: target.device?.name ?? target.screen?.name ?? "No assigned Pi",
         enabled: true,
+        handoffMode: publishHandoffMode,
         host: target.device?.host ?? null,
         message: target.device
-          ? `Published ${playlist.name} v${playlist.version} release ${release?.releaseId ?? "pending"} to ${target.device.name}.`
-          : `Published ${playlist.name} v${playlist.version} to assigned screen.`,
+          ? `${publishVerb} ${publishPlaylist.name} v${publishPlaylist.version} release ${release?.releaseId ?? "pending"} to ${target.device.name}.`
+          : `${publishVerb} ${publishPlaylist.name} v${publishPlaylist.version} to assigned screen.`,
         ok: Boolean(target.device),
         screenId: target.screen?.id ?? null
       }));
       const okCount = publishTargets.filter((target) => target.ok).length;
       const piPublish: PiPublishResult = {
         enabled: true,
+        handoffMode: publishHandoffMode,
         ok: publishTargets.length > 0 && publishTargets.every((target) => target.ok),
         message:
           publishTargets.length === 0
@@ -115,11 +124,12 @@ export async function POST(request: Request) {
               : `Published ${okCount}/${publishTargets.length} assigned AWS device(s).`
       };
 
-      await writePublishStatus("publish", playlist, piPublish, publishTargets);
+      await writePublishStatus("publish", publishPlaylist, piPublish, publishTargets);
 
       return NextResponse.json({
-        playlistVersion: playlist.version,
-        assetCount: playlist.assets.length,
+        playlistVersion: publishPlaylist.version,
+        assetCount: publishPlaylist.assets.length,
+        handoffMode: publishHandoffMode,
         release,
         releaseId: release?.releaseId ?? null,
         manifestChecksum: release?.manifestChecksum ?? null,
@@ -131,10 +141,10 @@ export async function POST(request: Request) {
     }
 
     const playlistPath = await ensureLivePlaylistPath();
-    await writePlaylist(playlistPath, playlist);
+    await writePlaylist(playlistPath, publishPlaylist);
     const targets = await targetDevicesForRequest({
       deviceId: body.deviceId,
-      playlistId: playlist.playlistId,
+      playlistId: publishPlaylist.playlistId,
       screenId: body.screenId
     });
     const publishAttempts = targets.length
@@ -142,11 +152,11 @@ export async function POST(request: Request) {
           targets.map(async (device) => ({
             result: await publishPlaylistToPi(
               playlistPath,
-              playlist,
+              publishPlaylist,
               {
                 notConfigured: `Pi publish is not configured for ${device.name}; playlist stayed local.`,
                 failure: `Manual publish to ${device.name} needs attention.`,
-                success: `Published ${playlist.name} to ${device.name}'s playback cache at ${device.host}.`
+                success: `${publishVerb} ${publishPlaylist.name} to ${device.name}'s playback cache at ${device.host}.`
               },
               piConfigForDevice(device)
             ),
@@ -160,7 +170,7 @@ export async function POST(request: Request) {
         )
       : [
           {
-            result: await publishPlaylistToPi(playlistPath, playlist, {
+            result: await publishPlaylistToPi(playlistPath, publishPlaylist, {
               notConfigured: "No assigned Pi was found for this playlist; playlist stayed local.",
               failure: "Manual publish needs attention."
             }),
@@ -183,6 +193,7 @@ export async function POST(request: Request) {
       assetsVerifiedByChecksum: sumPublishMetric(publishResults, "assetsVerifiedByChecksum"),
       assetsVerifiedBySize: sumPublishMetric(publishResults, "assetsVerifiedBySize"),
       enabled: publishResults.some((result) => result.enabled),
+      handoffMode: publishHandoffMode,
       ok: publishResults.length > 0 && publishResults.every((result) => result.ok),
       message:
         publishResults.length === 1
@@ -191,11 +202,12 @@ export async function POST(request: Request) {
               .map((result) => result.message)
               .join(" ")}`
     };
-    await writePublishStatus("publish", playlist, piPublish, publishTargets);
+    await writePublishStatus("publish", publishPlaylist, piPublish, publishTargets);
 
     return NextResponse.json({
-      playlistVersion: playlist.version,
-      assetCount: playlist.assets.length,
+      playlistVersion: publishPlaylist.version,
+      assetCount: publishPlaylist.assets.length,
+      handoffMode: publishHandoffMode,
       piPublish,
       publishResults,
       publishTargets

@@ -65,6 +65,7 @@ export async function GET(request: Request, context: RouteContext) {
       })),
       name: release.playlistName,
       playlistId: release.playlistId,
+      publishHandoffMode: release.publishHandoffMode,
       updatedAt: release.publishedAt,
       version: release.playlistVersion,
       workspaceId: release.workspaceId

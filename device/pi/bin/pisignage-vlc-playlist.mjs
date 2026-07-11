@@ -242,6 +242,32 @@ function currentContinuousAsset(playlist, loopStartedAtMs, nowMs = Date.now()) {
   return playlist.assets[playlist.assets.length - 1] ?? null;
 }
 
+function publishHandoffMode(playlist) {
+  return playlist?.publishHandoffMode === "asset-boundary" ? "asset-boundary" : "playlist-boundary";
+}
+
+function millisecondsUntilCurrentAssetBoundary(playlist, loopStartedAtMs) {
+  if (!Number.isFinite(loopStartedAtMs) || playlist.assets.length === 0) {
+    return 1_000;
+  }
+
+  const durationMs = playlistDurationMs(playlist);
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    return 1_000;
+  }
+
+  let elapsedMs = Math.max(Date.now() - loopStartedAtMs, 0) % durationMs;
+  for (const asset of playlist.assets) {
+    const candidateDurationMs = assetDurationMs(asset);
+    if (elapsedMs < candidateDurationMs) {
+      return Math.max(candidateDurationMs - elapsedMs, 0);
+    }
+    elapsedMs -= candidateDurationMs;
+  }
+
+  return 1_000;
+}
+
 function unescapeDbusString(value) {
   return value
     .replace(/\\"/g, "\"")
@@ -302,6 +328,12 @@ function millisecondsUntilPlaylistBoundary(playlist, loopStartedAtMs) {
   const remainingMs = durationMs - (elapsedMs % durationMs);
   const minimumLeadMs = Math.max(Math.min(playlistHandoffOverlapMs, durationMs), 1_000);
   return remainingMs < minimumLeadMs ? remainingMs + durationMs : remainingMs;
+}
+
+function millisecondsUntilPublishHandoff(playlist, loopStartedAtMs, handoffMode) {
+  return handoffMode === "asset-boundary"
+    ? millisecondsUntilCurrentAssetBoundary(playlist, loopStartedAtMs)
+    : millisecondsUntilPlaylistBoundary(playlist, loopStartedAtMs);
 }
 
 function continuousRestartBackoffMs(attempt) {
@@ -402,6 +434,7 @@ async function writePlaybackStatus(playlist, state, extra = {}) {
     state,
     playlistId: playlist.playlistId,
     playlistVersion: playlist.version,
+    publishHandoffMode: publishHandoffMode(playlist),
     assetCount: playlist.assets.length,
     assetIds: playlist.assets.map((asset) => asset.assetId),
     quarantinedAssets,
@@ -926,6 +959,7 @@ async function playableAssetsFromPlaylist() {
   return {
     playlistId: playlist.playlistId ?? "local-playlist",
     version: playlist.version ?? "unknown",
+    publishHandoffMode: publishHandoffMode(playlist),
     assets: playableAssets,
     signature
   };
@@ -1253,6 +1287,7 @@ async function playPlaylist(playlist) {
   let currentIndex = 0;
   let currentAsset = activePlaylist.assets[currentIndex];
   let pendingPlaylistReload = false;
+  let pendingHandoffMode = "playlist-boundary";
   log(`playing asset ${currentAsset.assetId} for ${currentAsset.durationSeconds}s`);
   await writePlayingAssetStatus(activePlaylist, currentAsset, { pendingPlaylistReload });
   let currentPlayer = startAssetPlayer(currentAsset);
@@ -1280,9 +1315,24 @@ async function playPlaylist(playlist) {
       ]);
 
       if (playbackResult.reloadRequested) {
-        pendingPlaylistReload = true;
-        log("playlist changed; staging reload for the next playlist boundary");
-        await writePlayingAssetStatus(activePlaylist, currentAsset, { pendingPlaylistReload });
+        const pending = await loadPendingPlaylist(activePlaylist);
+        if (pending.state === "ready") {
+          pendingPlaylistReload = true;
+          pendingHandoffMode = publishHandoffMode(pending.playlist);
+          log(
+            `playlist changed; staging reload for the next ${
+              pendingHandoffMode === "asset-boundary" ? "asset" : "playlist"
+            } boundary`
+          );
+          await writePlayingAssetStatus(activePlaylist, currentAsset, {
+            pendingPlaylistHandoffMode: pendingHandoffMode,
+            pendingPlaylistReload
+          });
+        } else if (pending.state === "unchanged") {
+          pendingPlaylistReload = false;
+          pendingHandoffMode = "playlist-boundary";
+          await writePlayingAssetStatus(activePlaylist, currentAsset, { pendingPlaylistReload });
+        }
       }
 
       if (playbackResult.exit && !isExpectedPlayerExit(currentPlayer, playbackResult.exit)) {
@@ -1316,7 +1366,7 @@ async function playPlaylist(playlist) {
       }
 
       const reachedPlaylistBoundary = nextIndex <= currentIndex;
-      if (pendingPlaylistReload && reachedPlaylistBoundary) {
+      if (pendingPlaylistReload && (pendingHandoffMode === "asset-boundary" || reachedPlaylistBoundary)) {
         const pending = await loadPendingPlaylist(activePlaylist);
         if (pending.state === "ready") {
           const previousPlayer = currentPlayer;
@@ -1327,8 +1377,9 @@ async function playPlaylist(playlist) {
           currentIndex = 0;
           currentAsset = activePlaylist.assets[currentIndex];
           pendingPlaylistReload = false;
+          pendingHandoffMode = "playlist-boundary";
           log(
-            `handoff at playlist boundary from ${previousAsset.assetId} to ${currentAsset.assetId} in ${activePlaylist.playlistId} version ${activePlaylist.version}`
+            `handoff to ${activePlaylist.playlistId} version ${activePlaylist.version} from ${previousAsset.assetId} to ${currentAsset.assetId}`
           );
           currentPlayer = startAssetPlayer(currentAsset);
           await writePlayingAssetStatus(activePlaylist, currentAsset, { pendingPlaylistReload });
@@ -1341,6 +1392,7 @@ async function playPlaylist(playlist) {
 
         if (pending.state === "unchanged") {
           pendingPlaylistReload = false;
+          pendingHandoffMode = "playlist-boundary";
           await writePlayingAssetStatus(activePlaylist, currentAsset, { pendingPlaylistReload });
         }
       }
@@ -1360,9 +1412,24 @@ async function playPlaylist(playlist) {
 
       const overlapResult = await waitPlaybackWindow(activePlaylist, overlapMs, pendingPlaylistReload);
       if (overlapResult.reloadRequested) {
-        pendingPlaylistReload = true;
-        log("playlist changed during handoff overlap; staging reload for the next playlist boundary");
-        await writePlayingAssetStatus(activePlaylist, currentAsset, { pendingPlaylistReload });
+        const pending = await loadPendingPlaylist(activePlaylist);
+        if (pending.state === "ready") {
+          pendingPlaylistReload = true;
+          pendingHandoffMode = publishHandoffMode(pending.playlist);
+          log(
+            `playlist changed during handoff overlap; staging reload for the next ${
+              pendingHandoffMode === "asset-boundary" ? "asset" : "playlist"
+            } boundary`
+          );
+          await writePlayingAssetStatus(activePlaylist, currentAsset, {
+            pendingPlaylistHandoffMode: pendingHandoffMode,
+            pendingPlaylistReload
+          });
+        } else if (pending.state === "unchanged") {
+          pendingPlaylistReload = false;
+          pendingHandoffMode = "playlist-boundary";
+          await writePlayingAssetStatus(activePlaylist, currentAsset, { pendingPlaylistReload });
+        }
       }
 
       stopAssetPlayer(previousPlayer);
@@ -1382,6 +1449,7 @@ async function playPlaylistContinuously(playlist) {
   let activePlaylist = playlist;
   let loopStartedAtMs = Date.now();
   let pendingPlaylistReload = false;
+  let pendingHandoffMode = "playlist-boundary";
   let continuousRestartAttempt = 0;
   let continuousRetryStatus = null;
   await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, { pendingPlaylistReload });
@@ -1392,9 +1460,13 @@ async function playPlaylistContinuously(playlist) {
       const statusWrite = continuousRetryStatus
         ? writePlaybackStatus(activePlaylist, "degraded", {
             ...continuousRetryStatus,
+            pendingPlaylistHandoffMode: pendingHandoffMode,
             pendingPlaylistReload
           })
-        : writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, { pendingPlaylistReload });
+        : writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, {
+            pendingPlaylistHandoffMode: pendingHandoffMode,
+            pendingPlaylistReload
+          });
       statusWrite.catch((error) => {
         log(`status heartbeat failed: ${error instanceof Error ? error.message : String(error)}`);
       });
@@ -1404,7 +1476,7 @@ async function playPlaylistContinuously(playlist) {
   try {
     while (!stopping) {
       const waitMs = pendingPlaylistReload
-        ? millisecondsUntilPlaylistBoundary(activePlaylist, loopStartedAtMs)
+        ? millisecondsUntilPublishHandoff(activePlaylist, loopStartedAtMs, pendingHandoffMode)
         : playlistPollIntervalMs;
       const playbackResult = await Promise.race([
         pendingPlaylistReload
@@ -1414,12 +1486,26 @@ async function playPlaylistContinuously(playlist) {
       ]);
 
       if (playbackResult.reloadRequested) {
-        pendingPlaylistReload = true;
-        log("playlist changed; staging continuous VLC handoff for playlist boundary");
-        await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, {
-          nextPlaylistReloadAt: new Date(Date.now() + millisecondsUntilPlaylistBoundary(activePlaylist, loopStartedAtMs)).toISOString(),
-          pendingPlaylistReload
-        });
+        const pending = await loadPendingPlaylist(activePlaylist);
+        if (pending.state === "ready") {
+          pendingPlaylistReload = true;
+          pendingHandoffMode = publishHandoffMode(pending.playlist);
+          const nextReloadInMs = millisecondsUntilPublishHandoff(activePlaylist, loopStartedAtMs, pendingHandoffMode);
+          log(
+            `playlist changed; staging continuous VLC handoff for ${
+              pendingHandoffMode === "asset-boundary" ? "asset" : "playlist"
+            } boundary`
+          );
+          await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, {
+            nextPlaylistReloadAt: new Date(Date.now() + nextReloadInMs).toISOString(),
+            pendingPlaylistHandoffMode: pendingHandoffMode,
+            pendingPlaylistReload
+          });
+        } else if (pending.state === "unchanged") {
+          pendingPlaylistReload = false;
+          pendingHandoffMode = "playlist-boundary";
+          await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, { pendingPlaylistReload });
+        }
         continue;
       }
 
@@ -1427,15 +1513,17 @@ async function playPlaylistContinuously(playlist) {
         const pending = await loadPendingPlaylist(activePlaylist);
         if (pending.state === "ready") {
           const previousPlayer = player;
+          const completedHandoffMode = pendingHandoffMode;
           activePlaylist = pending.playlist;
           assetQuarantine.clear();
           lastLoadedPlaylistSignature = activePlaylist.signature;
           pendingPlaylistReload = false;
+          pendingHandoffMode = "playlist-boundary";
           continuousRestartAttempt = 0;
           continuousRetryStatus = null;
           loopStartedAtMs = Date.now();
           log(
-            `handoff at playlist boundary to ${activePlaylist.playlistId} version ${activePlaylist.version}`
+            `handoff at ${completedHandoffMode === "asset-boundary" ? "asset" : "playlist"} boundary to ${activePlaylist.playlistId} version ${activePlaylist.version}`
           );
           player = startPlaylistPlayer(activePlaylist);
           await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, {
@@ -1452,6 +1540,7 @@ async function playPlaylistContinuously(playlist) {
 
         if (pending.state === "unchanged") {
           pendingPlaylistReload = false;
+          pendingHandoffMode = "playlist-boundary";
           await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, { pendingPlaylistReload });
         }
 
@@ -1481,6 +1570,7 @@ async function playPlaylistContinuously(playlist) {
         );
         await writePlaybackStatus(activePlaylist, "degraded", {
           ...continuousRetryStatus,
+          pendingPlaylistHandoffMode: pendingHandoffMode,
           pendingPlaylistReload
         });
 
@@ -1492,6 +1582,7 @@ async function playPlaylistContinuously(playlist) {
             assetQuarantine.clear();
             lastLoadedPlaylistSignature = activePlaylist.signature;
             pendingPlaylistReload = false;
+            pendingHandoffMode = "playlist-boundary";
             continuousRestartAttempt = 0;
             log(
               `using updated playlist after VLC exit: ${activePlaylist.playlistId} ` +
@@ -1499,6 +1590,7 @@ async function playPlaylistContinuously(playlist) {
             );
           } else if (pending.state === "unchanged") {
             pendingPlaylistReload = false;
+            pendingHandoffMode = "playlist-boundary";
           } else {
             pendingPlaylistReload = true;
           }
@@ -1514,6 +1606,7 @@ async function playPlaylistContinuously(playlist) {
         await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, {
           continuousRestartAttempt,
           recoveredFromUnexpectedExitAt: new Date().toISOString(),
+          pendingPlaylistHandoffMode: pendingHandoffMode,
           pendingPlaylistReload
         });
       }

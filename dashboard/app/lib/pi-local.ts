@@ -412,6 +412,7 @@ export async function publishPlaylistToPi(
   if (!config) {
     return {
       enabled: false,
+      handoffMode: playlist.publishHandoffMode,
       ok: false,
       message: messages.notConfigured
     };
@@ -450,6 +451,7 @@ export async function publishPlaylistToPi(
       assetsVerifiedByChecksum: assetSync.verifiedByChecksum,
       assetsVerifiedBySize: assetSync.verifiedBySize,
       enabled: true,
+      handoffMode: playlist.publishHandoffMode,
       ok: true,
       message: `${messages.success ?? `Published playlist to Pi playback cache at ${config.host}.`}${assetSyncMessage(assetSync)}`
     };
@@ -457,6 +459,7 @@ export async function publishPlaylistToPi(
     console.error("local playlist publish failed", error);
     return {
       enabled: true,
+      handoffMode: playlist.publishHandoffMode,
       ok: false,
       message: `${messages.failure} ${describePiPublishFailure(error)}`
     };

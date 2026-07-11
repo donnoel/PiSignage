@@ -18,12 +18,15 @@ export type PlaylistAsset = {
   storageProvider?: "local" | "s3";
 };
 
+export type PublishHandoffMode = "asset-boundary" | "playlist-boundary";
+
 export type Playlist = {
   playlistId: string;
   name: string;
   version: number;
   updatedAt: string;
   assets: PlaylistAsset[];
+  publishHandoffMode?: PublishHandoffMode;
   workspaceId?: string;
 };
 
@@ -41,6 +44,7 @@ export type PiPublishResult = {
   assetsVerifiedByChecksum?: number;
   assetsVerifiedBySize?: number;
   enabled: boolean;
+  handoffMode?: PublishHandoffMode;
   ok: boolean;
   message: string;
 };
@@ -91,6 +95,17 @@ async function fileExists(filePath: string): Promise<boolean> {
 
 function isoNow(): string {
   return new Date().toISOString();
+}
+
+export function normalizePublishHandoffMode(value: unknown): PublishHandoffMode {
+  return value === "asset-boundary" ? "asset-boundary" : "playlist-boundary";
+}
+
+export function playlistWithPublishHandoffMode(playlist: Playlist, handoffMode: PublishHandoffMode): Playlist {
+  return {
+    ...playlist,
+    publishHandoffMode: handoffMode
+  };
 }
 
 export async function writeFileAtomic(filePath: string, value: Buffer | string): Promise<void> {
@@ -276,6 +291,7 @@ export async function writePublishStatus(
         assetsSkipped: piPublish.assetsSkipped,
         assetsVerifiedByChecksum: piPublish.assetsVerifiedByChecksum,
         assetsVerifiedBySize: piPublish.assetsVerifiedBySize,
+        handoffMode: piPublish.handoffMode,
         playlistId: playlist.playlistId,
         playlistName: playlist.name,
         playlistVersion: playlist.version,

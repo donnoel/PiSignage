@@ -18,12 +18,15 @@ type PlaylistAsset = {
   sizeBytes?: number;
 };
 
+type PublishHandoffMode = "asset-boundary" | "playlist-boundary";
+
 type Playlist = {
   playlistId: string;
   name: string;
   version: number;
   updatedAt: string;
   assets: PlaylistAsset[];
+  publishHandoffMode?: PublishHandoffMode;
 };
 
 type Heartbeat = {
@@ -84,6 +87,7 @@ type CloudReleaseCheck = {
   playlistName: string;
   playlistVersion: number;
   publishedAt: string;
+  publishHandoffMode?: PublishHandoffMode;
   releaseId: string;
 };
 

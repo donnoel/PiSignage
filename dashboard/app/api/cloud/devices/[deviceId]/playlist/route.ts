@@ -48,6 +48,7 @@ function releaseSummary(request: Request, deviceId: string, release: CloudReleas
     playlistName: release.playlistName,
     playlistVersion: release.playlistVersion,
     publishedAt: release.publishedAt,
+    publishHandoffMode: release.publishHandoffMode,
     releaseId: release.releaseId
   };
 }

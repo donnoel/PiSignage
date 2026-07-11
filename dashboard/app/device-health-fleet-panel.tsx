@@ -84,6 +84,7 @@ type DeviceLiveStatus = {
 };
 
 type FilterKey = "all" | "attention" | "offline" | "online" | "stale" | "sync" | "waiting";
+type PublishHandoffMode = "asset-boundary" | "playlist-boundary";
 type SortDirection = "asc" | "desc";
 type SortKey = "action" | "device" | "lastSeen" | "playback" | "playlist" | "screen" | "status" | "sync";
 type AudioToggleAction = "mute" | "unmute";
@@ -1703,7 +1704,11 @@ export function DeviceHealthFleetPanel({
     }
   }
 
-  async function runAction(action: "diagnostics" | "mute" | "open" | "publish" | "reboot" | "recover" | "reset" | "restart" | "resume" | "showDesktop" | "unmute", row: RowState) {
+  async function runAction(
+    action: "diagnostics" | "mute" | "open" | "publish" | "reboot" | "recover" | "reset" | "restart" | "resume" | "showDesktop" | "unmute",
+    row: RowState,
+    handoffMode: PublishHandoffMode = "playlist-boundary"
+  ) {
     const remoteRecoveryAction = action === "mute" ||
       action === "unmute" ||
       action === "open" ||
@@ -1772,17 +1777,18 @@ export function DeviceHealthFleetPanel({
     setBusyAction(action);
     setBusyDeviceId(row.device.id);
     if (action === "publish") {
+      const publishPrefix = handoffMode === "asset-boundary" ? "Publishing now" : "Publishing";
       setPublishFeedbackByDeviceId((current) => ({
         ...current,
         [row.device.id]: {
-          detail: `Publishing ${row.assignedPlaylistName} to ${targetName}...`,
+          detail: `${publishPrefix} ${row.assignedPlaylistName} to ${targetName}...`,
           status: "pending"
         }
       }));
     }
     setMessage(
       action === "publish"
-        ? `Publishing ${row.assignedPlaylistName} to ${targetName}...`
+        ? `${handoffMode === "asset-boundary" ? "Publishing now" : "Publishing"} ${row.assignedPlaylistName} to ${targetName}...`
         : action === "diagnostics"
           ? `Queueing remote diagnostics for ${targetName}...`
         : action === "mute"
@@ -1808,6 +1814,7 @@ export function DeviceHealthFleetPanel({
         action === "publish"
           ? await postJson("/api/local-playlist/publish", {
               deviceId: row.device.id,
+              handoffMode,
               playlistId: row.linkedScreen?.playlistId ?? row.device.playlistId ?? undefined,
               screenId: row.linkedScreen?.id ?? undefined
             })
@@ -1861,12 +1868,12 @@ export function DeviceHealthFleetPanel({
         setPublishFeedbackByDeviceId((current) => ({
           ...current,
           [row.device.id]: {
-            detail: `Publish sent for ${targetName}. Waiting for the screen to confirm ${row.assignedPlaylistName}.`,
+            detail: `${handoffMode === "asset-boundary" ? "Publish now" : "Publish"} sent for ${targetName}. Waiting for the screen to confirm ${row.assignedPlaylistName}.`,
             status: "sent"
           }
         }));
       }
-      setMessage(action === "publish" ? `Publish sent for ${targetName}. Waiting for screen confirmation.` : actionMessage);
+      setMessage(action === "publish" ? `${handoffMode === "asset-boundary" ? "Publish now" : "Publish"} sent for ${targetName}. Waiting for screen confirmation.` : actionMessage);
       startTransition(() => router.refresh());
     } catch (error) {
       if (action === "reboot") {
@@ -2187,6 +2194,17 @@ export function DeviceHealthFleetPanel({
                         >
                           <ScreenActionIcon name="playlist" />
                           <span>{publishPending ? "Publishing" : "Publish"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void runAction("publish", row, "asset-boundary")}
+                          disabled={!row.linkedScreen || !row.isLive || !row.assignedPlaylistId || isBusy}
+                          title={`Publish ${row.assignedPlaylistName} to ${screenName(row)} after the current video finishes`}
+                          aria-label={`Publish ${row.assignedPlaylistName} now to ${screenName(row)} after the current video finishes`}
+                          aria-busy={publishPending}
+                          className={`inline-flex h-9 min-w-[104px] items-center justify-center rounded-md border bg-white px-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${screenActionClass("primary")}`}
+                        >
+                          <span>{publishPending ? "Publishing" : "Publish now"}</span>
                         </button>
                         {row.assignedPlaylistId ? (
                           <a

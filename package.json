@@ -27,8 +27,9 @@
     "test:bad-playback": "node scripts/bad-media-playback-smoke.mjs",
     "test:vlc-boundary-handoff": "node scripts/vlc-boundary-handoff-smoke.mjs",
     "test:vlc-continuous-handoff": "node scripts/vlc-continuous-handoff-smoke.mjs",
+    "test:vlc-continuous-immediate-handoff": "node scripts/vlc-continuous-immediate-handoff-smoke.mjs",
     "test:vlc-continuous-exit": "node scripts/vlc-continuous-exit-backoff-smoke.mjs",
-    "test:release-hardening": "npm run typecheck && npm run test:cloud-inventory && npm run test:device-agent-cache && npm run test:release-state && npm run test:schedule && npm run test:vlc-boundary-handoff && npm run test:vlc-continuous-handoff && npm run test:vlc-continuous-exit && npm run simulate:failures",
+    "test:release-hardening": "npm run typecheck && npm run test:cloud-inventory && npm run test:device-agent-cache && npm run test:release-state && npm run test:schedule && npm run test:vlc-boundary-handoff && npm run test:vlc-continuous-handoff && npm run test:vlc-continuous-immediate-handoff && npm run test:vlc-continuous-exit && npm run simulate:failures",
     "drill:pi": "node scripts/pi-failure-drills.mjs",
     "check:rc-parity": "node scripts/beam-rc-parity-check.mjs",
     "generate:still-presets": "node scripts/generate-still-video-presets.mjs"

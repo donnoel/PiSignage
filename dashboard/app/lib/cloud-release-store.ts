@@ -10,7 +10,7 @@ import {
 import type { AttributeValue } from "@aws-sdk/client-dynamodb";
 import type { InventoryPublishTarget } from "./inventory-store";
 import { localStateDirectory, writeFileAtomic } from "./local-playlist";
-import type { Playlist, PlaylistAsset } from "./local-playlist";
+import type { Playlist, PlaylistAsset, PublishHandoffMode } from "./local-playlist";
 import {
   activeWorkspaceId,
   requireActiveWorkspacePermission,
@@ -44,6 +44,7 @@ export type CloudReleaseManifest = {
   playlistId: string;
   playlistName: string;
   playlistVersion: number;
+  publishHandoffMode: PublishHandoffMode;
   releaseId: string;
   targetDeviceIds: string[];
   targetScreenIds: string[];
@@ -193,6 +194,7 @@ function releaseRecordFromItem(item: Record<string, AttributeValue>): CloudRelea
 
   return {
     ...manifest,
+    publishHandoffMode: manifest.publishHandoffMode === "asset-boundary" ? "asset-boundary" : "playlist-boundary",
     workspaceId: workspaceIdOrDefault(manifest.workspaceId)
   };
 }
@@ -302,6 +304,7 @@ export async function deleteLocalCloudReleaseRecordsForPlaylists(playlistIds: Se
 export function buildCloudReleaseManifest(
   playlist: Playlist,
   targets: InventoryPublishTarget[],
+  publishHandoffMode: PublishHandoffMode = playlist.publishHandoffMode ?? "playlist-boundary",
   publishedAt: string = isoNow()
 ): CloudReleaseRecord {
   const workspaceId = workspaceIdOrDefault(playlist.workspaceId);
@@ -317,6 +320,7 @@ export function buildCloudReleaseManifest(
     assets,
     playlistId: playlist.playlistId,
     playlistVersion: playlist.version,
+    publishHandoffMode,
     targetDeviceIds,
     targetScreenIds,
     workspaceId
@@ -333,6 +337,7 @@ export function buildCloudReleaseManifest(
     playlistId: playlist.playlistId,
     playlistName: playlist.name,
     playlistVersion: playlist.version,
+    publishHandoffMode,
     publishedAt,
     releaseId,
     targetDeviceIds,
