@@ -2281,7 +2281,14 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             className={selectedView === "media-store" ? "mt-6" : "hidden"}
           >
             <h2 id="media-store-heading" className="sr-only">Library</h2>
-            <MediaStorePanel mode={dashboardMode} />
+            <MediaStorePanel
+              mode={dashboardMode}
+              playlists={playlistOptions.map((option) => ({
+                assetCount: option.assets.length,
+                name: option.name,
+                playlistId: option.playlistId
+              }))}
+            />
           </section>
 
           <section

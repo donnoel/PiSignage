@@ -2,7 +2,7 @@
 
 import type { InputHTMLAttributes } from "react";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { FileUp, FolderOpen, Plus, Tag, Trash2, UploadCloud } from "lucide-react";
+import { FileUp, FolderOpen, Plus, Tag, Trash2, UploadCloud, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { StatusPill } from "./dashboard-ui";
 import { isPlaybackSafeVideoFileName, isStillClipFileName } from "./lib/playback-safety";
@@ -153,8 +153,15 @@ type TypeFilter = "all" | "video" | "still" | "mov";
 type UploadSource = "file" | "directory";
 type MediaStoreMode = "cloud" | "local";
 
+type PlaylistOption = {
+  assetCount: number;
+  name: string;
+  playlistId: string;
+};
+
 type MediaStorePanelProps = {
   mode?: MediaStoreMode;
+  playlists?: PlaylistOption[];
 };
 
 type PlaybackSafety = {
@@ -700,7 +707,7 @@ function sidebarButtonClass(selected: boolean): string {
     : "bg-white text-zinc-700 ring-zinc-200 hover:bg-zinc-50";
 }
 
-export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
+export function MediaStorePanel({ mode = "local", playlists = [] }: MediaStorePanelProps) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const directoryInputRef = useRef<HTMLInputElement>(null);
@@ -738,6 +745,8 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
   const [addingMediaId, setAddingMediaId] = useState<string | null>(null);
   const [preparingMediaId, setPreparingMediaId] = useState<string | null>(null);
   const [deletingMediaId, setDeletingMediaId] = useState<string | null>(null);
+  const [pendingPlaylistAddItem, setPendingPlaylistAddItem] = useState<MediaItem | null>(null);
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState("");
   const [editingTagMediaId, setEditingTagMediaId] = useState<string | null>(null);
   const [editingTagDraft, setEditingTagDraft] = useState("");
   const [editingTags, setEditingTags] = useState("");
@@ -807,6 +816,7 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
   }, [availableTags, items]);
   const selectedFolderId = selectedCustomFolderId(folderFilter);
   const selectedFolder = folders.find((folder) => folder.id === selectedFolderId) ?? null;
+  const selectedPlaylist = playlists.find((playlist) => playlist.playlistId === selectedPlaylistId) ?? null;
   const visibleIds = visibleItems.map((item) => item.id);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
   const isBusy =
@@ -1216,7 +1226,23 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
     }
   }
 
-  async function handleAddToPlaylist(item: MediaItem) {
+  useEffect(() => {
+    if (!pendingPlaylistAddItem) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && addingMediaId === null) {
+        setPendingPlaylistAddItem(null);
+        setSelectedPlaylistId("");
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [addingMediaId, pendingPlaylistAddItem]);
+
+  function requestPlaylistForMedia(item: MediaItem) {
     if (isBusy) {
       return;
     }
@@ -1237,9 +1263,30 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
       setMessageTone("idle");
       return;
     }
+    if (playlists.length === 0) {
+      setMessage("Create a playlist before adding media.");
+      setMessageTone("warning");
+      return;
+    }
+
+    setPendingPlaylistAddItem(item);
+    setSelectedPlaylistId("");
+  }
+
+  async function handleAddToPlaylist(item: MediaItem, playlistId: string) {
+    if (isBusy) {
+      return;
+    }
+
+    const targetPlaylist = playlists.find((playlist) => playlist.playlistId === playlistId);
+    if (!targetPlaylist) {
+      setMessage("Choose a playlist first.");
+      setMessageTone("warning");
+      return;
+    }
 
     setAddingMediaId(item.id);
-    setMessage(`Adding ${item.title}...`);
+    setMessage(`Adding ${item.title} to ${targetPlaylist.name}...`);
     setMessageTone("idle");
     try {
       const response = await fetch("/api/local-playlist/items", {
@@ -1250,7 +1297,8 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
         },
         body: JSON.stringify({
           action: "add-media",
-          mediaId: item.id
+          mediaId: item.id,
+          playlistId
         })
       });
       const result = (await response.json()) as PlaylistActionResponse;
@@ -1260,7 +1308,9 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
 
       const publishMessage = result.piPublish?.message ? ` ${result.piPublish.message}` : "";
       await loadMedia(true);
-      setMessage(`Added to playlist.${publishMessage}`);
+      setPendingPlaylistAddItem(null);
+      setSelectedPlaylistId("");
+      setMessage(`Added to ${targetPlaylist.name}.${publishMessage}`);
       setMessageTone(result.piPublish && !result.piPublish.ok ? "warning" : "success");
       startTransition(() => router.refresh());
     } catch (error) {
@@ -2168,7 +2218,7 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
                           {canAdd ? (
                             <button
                               type="button"
-                              onClick={() => void handleAddToPlaylist(item)}
+                              onClick={() => requestPlaylistForMedia(item)}
                               disabled={isBusy}
                               className="min-h-9 shrink-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-500"
                             >
@@ -2227,6 +2277,109 @@ export function MediaStorePanel({ mode = "local" }: MediaStorePanelProps) {
             {isLoading ? "Loading" : hasMore ? "Load more" : "All loaded"}
           </button>
         </div>
+
+        {pendingPlaylistAddItem ? (
+          <div
+            className="fixed inset-0 z-50 bg-zinc-950/45 backdrop-blur-sm"
+            role="presentation"
+            onClick={() => {
+              if (addingMediaId === null) {
+                setPendingPlaylistAddItem(null);
+                setSelectedPlaylistId("");
+              }
+            }}
+          >
+            <section
+              aria-labelledby="playlist-target-heading"
+              aria-modal="true"
+              className="mx-auto mt-20 w-[min(92vw,560px)] rounded-lg bg-white shadow-2xl"
+              role="dialog"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-5 py-4">
+                <div className="min-w-0">
+                  <h3 id="playlist-target-heading" className="text-xl font-semibold text-zinc-950">Choose playlist</h3>
+                  <p className="mt-1 truncate text-sm text-zinc-600" title={pendingPlaylistAddItem.title}>
+                    Add {pendingPlaylistAddItem.title}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPendingPlaylistAddItem(null);
+                    setSelectedPlaylistId("");
+                  }}
+                  disabled={addingMediaId !== null}
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-zinc-300 bg-white text-zinc-900 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-teal-600 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400"
+                  aria-label="Close playlist chooser"
+                  title="Close"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+
+              <fieldset className="px-5 py-4">
+                <legend className="sr-only">Playlist destination</legend>
+                <div className="grid gap-2">
+                  {playlists.map((playlist) => {
+                    const selected = selectedPlaylistId === playlist.playlistId;
+                    return (
+                      <label
+                        key={playlist.playlistId}
+                        className={`grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md border px-3 py-3 text-sm transition ${
+                          selected
+                            ? "border-teal-500 bg-teal-50 text-teal-950 ring-2 ring-teal-500 ring-offset-1"
+                            : "border-zinc-200 bg-white text-zinc-900 hover:border-teal-200 hover:bg-teal-50"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="playlist-target"
+                          value={playlist.playlistId}
+                          checked={selected}
+                          onChange={() => setSelectedPlaylistId(playlist.playlistId)}
+                          disabled={addingMediaId !== null}
+                          className="h-4 w-4 accent-teal-700"
+                        />
+                        <span className="min-w-0 truncate font-semibold" title={playlist.name}>{playlist.name}</span>
+                        <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-600">
+                          {playlist.assetCount} item{playlist.assetCount === 1 ? "" : "s"}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+
+              <div className="flex flex-col gap-2 border-t border-zinc-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-zinc-600">
+                  {selectedPlaylist ? `Selected: ${selectedPlaylist.name}` : "Select a playlist to continue."}
+                </p>
+                <div className="flex shrink-0 justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPendingPlaylistAddItem(null);
+                      setSelectedPlaylistId("");
+                    }}
+                    disabled={addingMediaId !== null}
+                    className="min-h-10 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleAddToPlaylist(pendingPlaylistAddItem, selectedPlaylistId)}
+                    disabled={addingMediaId !== null || !selectedPlaylist}
+                    className="min-h-10 rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
+                  >
+                    {addingMediaId === pendingPlaylistAddItem.id ? "Adding" : "Add to playlist"}
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>
+        ) : null}
     </section>
   );
 }
