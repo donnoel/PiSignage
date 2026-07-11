@@ -18,7 +18,7 @@ This repo is a local-first Raspberry Pi digital signage proof of concept. You ar
 
 1. Rock-solid local playback on the Pi/TV.
 2. Recovery without user interaction after service restart, software reboot, network loss, and power loss.
-3. Clear local dashboard controls for one Pi, one TV, one playlist.
+3. Clear local dashboard controls for the five-Pi pilot, screen assignments, and reusable playlists.
 4. Useful local health/status evidence: playback state, playlist sync, service state, display mode, temperature, throttle, uptime, and publish results.
 5. UI polish that makes the local operations console feel trustworthy and demo-ready.
 6. AWS/cloud only after the local end-to-end foundation is proven.
@@ -42,6 +42,7 @@ This repo is a local-first Raspberry Pi digital signage proof of concept. You ar
 - The manual publish button is the intentional operator-controlled step for sending saved playlist changes to the screen.
 - Preserve local playback when the network is unavailable. A missing network must not stop cached/local playback.
 - Cloud playlist/media behavior must stay publish-gated and cache-aware: normal polling must not return or trigger full media downloads.
+- Library "Add" must require an explicit playlist choice. Do not silently add unassigned media to the default playlist.
 
 ## Pi And Playback Rules
 
@@ -58,6 +59,7 @@ This repo is a local-first Raspberry Pi digital signage proof of concept. You ar
 - Build the actual usable operations experience, not a marketing page.
 - Keep the main dashboard focused on the most important state; put deeper controls in focused views.
 - Use clear status text for online/offline, playing/stale, sync/behind, publish success/failure, and recovery evidence.
+- Keep the exposed dashboard navigation aligned with the current operator surface: What's Playing, Library, Playlists, Screens, and Scheduling.
 - Keep UI dense enough for operations but polished enough for demos.
 - Do not add decorative complexity that hides the local proof signals.
 - For user-facing UI changes, check responsive layout so text does not overlap or get clipped.
@@ -98,6 +100,7 @@ If validation cannot run, state the exact reason.
 ## Do Not
 
 - Do not create AWS resources or require AWS credentials unless explicitly requested.
+- Do not treat App Runner `start-deployment` as a hosted dashboard code deploy. Use the `infra/beam` CDK image deploy path because this service is image-backed.
 - Do not commit `.env.local`, local state, uploaded media, build output, or generated caches.
 - Do not rewrite working systems for style.
 - Do not hide failures or call manual-only behavior fully automated.

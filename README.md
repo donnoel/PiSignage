@@ -6,13 +6,13 @@ The current repository provides a local-first product foundation plus an opt-in 
 
 ## What Exists Now
 
-- `dashboard/`: Next.js + TypeScript + Tailwind operations dashboard with What's Playing, Library, Playlists, Screens, Diagnostics, and Scheduling views. Screens now combines inventory, health/status, publishing, diagnostics, and recovery controls.
+- `dashboard/`: Next.js + TypeScript + Tailwind operations dashboard with What's Playing, Library, Playlists, Screens, and Scheduling views. Screens combines inventory, health/status, publishing, diagnostics, recovery, reset, and deployment controls.
 - `player/`: TypeScript browser playback fallback/experimental app for same-origin local playlist playback.
 - `device-agent/`: Node.js + TypeScript device agent that reads a local playlist or optional cloud playlist endpoint, writes heartbeat JSON with current-video evidence, caches the last known good playlist, and can post an optional dev cloud heartbeat.
 - `docs/`: architecture, phase plan, API contract, AWS alpha notes, security notes, and device setup.
 - `docs/WORKSPACES_AND_ROLES.md`: planned client workspace and role model for multi-workspace users and server-enforced tenant isolation.
 - `sample-content/`: tracked seed playlist and local media fixtures.
-- `infra/`: AWS CDK scaffold for the Beam `dev` alpha. It includes App Runner for the dashboard, a dedicated Lambda Function URL for device heartbeat check-ins, DynamoDB, S3, Lambda, and log resources when deliberately deployed.
+- `infra/`: AWS CDK scaffold for the Beam `dev` alpha. It includes App Runner for the dashboard, a dedicated Lambda Function URL for device heartbeat check-ins, DynamoDB, S3, Lambda, and log resources when deliberately deployed. The App Runner dashboard is image-backed, so code deploys must go through the `infra/beam` CDK image deploy path; restarting App Runner alone does not publish new code.
 
 ## Local Requirements
 
@@ -62,6 +62,8 @@ instead of inventing values.
 PISIGNAGE_SCREEN_NAME='<real-screen-name>'
 PISIGNAGE_LOCATION_NAME='<real-location-name>'
 ```
+
+The Library Add action opens a playlist chooser for unassigned media. Operators must choose the target playlist explicitly; Beam no longer silently adds those assets to the default playlist.
 
 Run the local player:
 
@@ -123,7 +125,7 @@ PiSignage/
 
 ## Current Phase
 
-The current focus is production-minded sprint hardening: real media uploads, reusable playlists, honest screen/device status, simple screen hours, local recovery evidence, and an AWS `dev` alpha that preserves manual publish and cached Pi playback. The five-Pi pilot is using VLC appliance playback with current-video reporting so the dashboard can show which asset each screen reports as live.
+The current focus is production-minded sprint hardening: real media uploads, reusable playlists, honest screen/device status, simple screen hours, local recovery evidence, and an AWS `dev` alpha that preserves manual publish and cached Pi playback. The five-Pi pilot is using VLC appliance playback with current-video reporting so What's Playing can show reported playback, snapshots, and Live view without replacing the administrative Show desktop control on Screens.
 
 The current Pi appliance baseline is documented in `docs/PI_GOLDEN_MASTER_BASELINE.md`. The Golden Master is the promoted repo commit, built artifacts, baseline evidence, and fleet validation record, not a one-off manual state on a single Pi. C1-C5 should remain identical to that managed baseline except for intentional identity, network, screen assignment, location, and secret fields.
 

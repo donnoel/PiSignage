@@ -30,13 +30,16 @@ The repository is in a local product re-baseline phase. Product requirements now
 
 Current implementation snapshot:
 
-- The dashboard currently exposes What's Playing, Library, Playlists, Screens, Diagnostics, and Scheduling views.
-- Device inventory and activity evidence exist in local JSON and are surfaced through the current What's Playing, Screens, Diagnostics, Scheduling, and recovery workflows.
-- Screens carries inventory, status, publishing, diagnostics, recovery, reset, and deployment controls. Diagnostics carries deeper Pi evidence, logs, recovery history, and troubleshooting activity.
+- The dashboard currently exposes What's Playing, Library, Playlists, Screens, and Scheduling views.
+- Device inventory and activity evidence exist in local JSON and are surfaced through the current What's Playing, Screens, Scheduling, and recovery workflows.
+- Screens carries inventory, status, publishing, diagnostics, recovery, reset, and deployment controls. Legacy Diagnostics, device-health, and troubleshooting URLs route back to Screens.
+- What's Playing includes selected-screen status, snapshots, and a Live view action for a true remote view without replacing the administrative Show desktop control on Screens.
+- Library requires an explicit playlist choice when adding unassigned media; it must not silently add media to the default playlist.
+- Playlists use `Default Playlist` as the built-in default playlist label.
 
 Current goals:
 
-- Keep the dashboard focused on operations: What's Playing, Library, Playlists, Screens, Diagnostics, Activity, Scheduling, and Settings.
+- Keep the dashboard focused on the current operator surface: What's Playing, Library, Playlists, Screens, and Scheduling. Activity and Settings data stores may exist underneath, but they are not top-level navigation until implemented.
 - Keep dashboard, player, and device-agent boundaries clear.
 - Preserve the proven local playback and Pi recovery path while adding inventory, media, activity, scheduling, and recovery workflows.
 - Do not create or mutate AWS resources unless the user explicitly asks for that deploy/change in the current task.
@@ -113,7 +116,7 @@ Near-term priority order:
 ## Dashboard Rules
 
 - Keep the dashboard operational and focused, not marketing-heavy.
-- Use these main sections: What's Playing, Library, Playlists, Screens, Diagnostics, Activity, Scheduling, and Settings when those views are implemented.
+- Use these main sections for the current operator surface: What's Playing, Library, Playlists, Screens, and Scheduling. Keep diagnostics and recovery controls inside Screens unless a future approved scope reintroduces a separate view.
 - Use accessible status text for online/offline state.
 - Prefer dense tables and detail panels for screen inventory; map UI is deferred.
 - Keep cloud data behind explicit cloud-mode contracts and honest unavailable states when a workflow is not wired.
@@ -157,6 +160,7 @@ Heartbeat model starts with:
 - Do not create, update, destroy, or deploy real AWS infrastructure unless the user explicitly approves that action in the current task.
 - Do not require AWS credentials for local operations.
 - Read `docs/AWS_COST_GUARDRAILS.md` before changing AWS infrastructure, cloud traffic, uploads, media delivery, polling, monitoring, billing, or deployed dashboard behavior.
+- The hosted Beam dashboard App Runner service is image-backed from `infra/beam`. A real code deploy requires the CDK deploy path that builds and publishes a new dashboard image; App Runner `start-deployment` only restarts the already-configured image.
 - Every AWS change must preserve the traffic contract: tiny heartbeat/status is allowed, uploads are operator-initiated, media sync is manual-publish-gated, and unchanged devices download nothing.
 - Every AWS change must include a cost review for always-on services, paid APIs, S3 transfer, DynamoDB Scan usage, log retention, lifecycle cleanup, metrics, tags, and expected daily/monthly cost.
 - When AWS starts, build real resource-backed behavior rather than placeholder cloud flows.
