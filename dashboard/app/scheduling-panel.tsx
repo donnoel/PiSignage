@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { StatusPill } from "./dashboard-ui";
 
@@ -72,6 +72,10 @@ type ScheduleResponse = {
   screenStates: ScreenScheduleState[];
   storeUpdatedAt: string;
   storeVersion: number;
+};
+
+type LoadSchedulesOptions = {
+  silent?: boolean;
 };
 
 const defaultDays = [1, 2, 3, 4, 5];
@@ -177,8 +181,10 @@ export function SchedulingPanel({ dashboardMode }: { dashboardMode: "cloud" | "l
   const [isPending, startTransition] = useTransition();
   const isBusy = Boolean(busyAction) || isPending;
 
-  async function loadSchedules() {
-    setBusyAction((current) => current ?? "load");
+  const loadSchedules = useCallback(async (options: LoadSchedulesOptions = {}) => {
+    if (!options.silent) {
+      setBusyAction((current) => current ?? "load");
+    }
     try {
       const response = await fetch("/api/local-schedules", { cache: "no-store" });
       const result = (await response.json()) as ScheduleResponse;
@@ -187,18 +193,24 @@ export function SchedulingPanel({ dashboardMode }: { dashboardMode: "cloud" | "l
       }
       setData(result);
       setTimezone((current) => current || result.defaultTimezone);
-      setMessage("Schedule view loaded.");
+      if (!options.silent) {
+        setMessage("Schedule view loaded.");
+      }
     } catch (error) {
-      setData(null);
-      setMessage(error instanceof Error ? error.message : "Could not load schedules.");
+      if (!options.silent) {
+        setData(null);
+        setMessage(error instanceof Error ? error.message : "Could not load schedules.");
+      }
     } finally {
-      setBusyAction((current) => (current === "load" ? null : current));
+      if (!options.silent) {
+        setBusyAction((current) => (current === "load" ? null : current));
+      }
     }
-  }
+  }, []);
 
   useEffect(() => {
     void loadSchedules();
-  }, []);
+  }, [loadSchedules]);
 
   const screenStateById = useMemo(() => {
     return new Map((data?.screenStates ?? []).map((state) => [state.screenId, state]));
@@ -223,6 +235,12 @@ export function SchedulingPanel({ dashboardMode }: { dashboardMode: "cloud" | "l
   const unassignedCount = effectiveScreenStates.filter((state) => state.state === "unassigned").length;
   const scheduledCount = effectiveScreenStates.length - unassignedCount;
   const selectedFormScreens = screenIds.map((id) => screensById.get(id)).filter((screen): screen is ScreenRecord => Boolean(screen));
+  const hasPendingScheduleAction = useMemo(() => {
+    return (data?.screens ?? []).some((screen) =>
+      (screen.deviceActionType === "open-screen" || screen.deviceActionType === "close-screen") &&
+      (screen.deviceActionStatus === "pending" || screen.deviceActionStatus === "running")
+    );
+  }, [data]);
   const isEditorOpen = selectedFormScreens.length > 0 || Boolean(editingId);
   const formTitle = editingId
     ? selectedFormScreens.length === 1
@@ -244,6 +262,18 @@ export function SchedulingPanel({ dashboardMode }: { dashboardMode: "cloud" | "l
     { label: "Fri", value: 5 },
     { label: "Sat", value: 6 }
   ];
+
+  useEffect(() => {
+    if (!hasPendingScheduleAction) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void loadSchedules({ silent: true });
+    }, 3_000);
+
+    return () => window.clearInterval(interval);
+  }, [hasPendingScheduleAction, loadSchedules]);
 
   function resetForm(defaultTimezone = data?.defaultTimezone ?? "America/Los_Angeles") {
     setEditingId(null);
@@ -418,7 +448,7 @@ export function SchedulingPanel({ dashboardMode }: { dashboardMode: "cloud" | "l
         throw new Error(result.error ?? "Open store failed.");
       }
       setMessage(result.message ?? `Open store queued for ${screen.name}.`);
-      await loadSchedules();
+      await loadSchedules({ silent: true });
       startTransition(() => router.refresh());
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Open store failed.");
@@ -459,7 +489,7 @@ export function SchedulingPanel({ dashboardMode }: { dashboardMode: "cloud" | "l
         throw new Error(result.error ?? "Close store failed.");
       }
       setMessage(result.message ?? `Close store queued for ${screen.name}.`);
-      await loadSchedules();
+      await loadSchedules({ silent: true });
       startTransition(() => router.refresh());
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Close store failed.");
