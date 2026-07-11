@@ -119,7 +119,7 @@ type DeviceCommand = {
   requestedAt: string;
   status: "pending" | "running";
   statusUrl?: string;
-  type: "collect-diagnostics" | "mute-audio" | "open-screen" | "reboot-device" | "reset-device" | "restart-playback" | "resume-playback" | "run-recovery" | "screen-snapshot" | "show-desktop" | "unmute-audio";
+  type: "close-screen" | "collect-diagnostics" | "mute-audio" | "open-screen" | "reboot-device" | "reset-device" | "restart-playback" | "resume-playback" | "run-recovery" | "screen-snapshot" | "show-desktop" | "unmute-audio";
 };
 
 type ScheduleStatus = {
@@ -1022,6 +1022,20 @@ async function openScheduledScreen(root: string): Promise<string> {
   return "Open store completed. The screen was opened now and will return to schedule control at the next scheduled close.";
 }
 
+async function closeScheduledScreen(root: string): Promise<string> {
+  const scriptPath = scheduleEnforcerPath(root);
+  await execFileAsync("node", [scriptPath, "--clear-override"], {
+    cwd: root,
+    env: {
+      ...process.env,
+      PISIGNAGE_REPO_ROOT: root
+    },
+    timeout: 45_000
+  });
+
+  return "Close store completed. The temporary open override was cleared and schedule control is active.";
+}
+
 async function muteVlcAudio(): Promise<string> {
   const overrideDirectory = path.join(os.homedir(), ".config", "systemd", "user", "pisignage-vlc.service.d");
   const overridePath = path.join(overrideDirectory, "audio.conf");
@@ -1216,6 +1230,9 @@ function actionRunningMessage(type: DeviceCommand["type"]): string {
   if (type === "open-screen") {
     return "Open store is running on the Pi.";
   }
+  if (type === "close-screen") {
+    return "Close store is running on the Pi.";
+  }
   if (type === "run-recovery") {
     return "Full recovery is running on the Pi.";
   }
@@ -1267,6 +1284,8 @@ async function runActionCommand(root: string, cacheDirectory: string, command: D
         ? await resumePlaybackService()
         : command.type === "open-screen"
         ? await openScheduledScreen(root)
+        : command.type === "close-screen"
+        ? await closeScheduledScreen(root)
         : command.type === "reboot-device"
           ? await requestCommandReboot()
           : await runRecoveryAction(cacheDirectory);
@@ -1509,6 +1528,7 @@ async function fetchCloudPlaylist(cacheDirectory: string): Promise<{
       body.command.type === "mute-audio" ||
       body.command.type === "unmute-audio" ||
       body.command.type === "open-screen" ||
+      body.command.type === "close-screen" ||
       body.command.type === "run-recovery" ||
       body.command.type === "screen-snapshot" ||
       body.command.type === "reboot-device"

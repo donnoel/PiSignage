@@ -287,7 +287,8 @@ function actionStatusOrNull(value: AttributeValue | undefined): DeviceActionStat
 
 function actionTypeOrNull(value: AttributeValue | undefined): DeviceActionType | null {
   const type = stringOrNullAttribute(value);
-  return type === "mute-audio" ||
+  return type === "close-screen" ||
+    type === "mute-audio" ||
     type === "open-screen" ||
     type === "reboot-device" ||
     type === "restart-playback" ||
@@ -1036,6 +1037,9 @@ function hasActiveCommand(device: DeviceRecord): boolean {
 }
 
 function actionLabel(type: DeviceActionType): string {
+  if (type === "close-screen") {
+    return "Close store";
+  }
   if (type === "mute-audio") {
     return "Mute audio";
   }

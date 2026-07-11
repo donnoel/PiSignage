@@ -95,7 +95,7 @@ export type ScreenStore = {
 };
 
 export type DeviceCommandStatus = "failed" | "pending" | "running" | "succeeded";
-export type DeviceActionType = "mute-audio" | "open-screen" | "reboot-device" | "restart-playback" | "resume-playback" | "run-recovery" | "screen-snapshot" | "show-desktop" | "unmute-audio";
+export type DeviceActionType = "close-screen" | "mute-audio" | "open-screen" | "reboot-device" | "restart-playback" | "resume-playback" | "run-recovery" | "screen-snapshot" | "show-desktop" | "unmute-audio";
 export type DeviceActionStatus = DeviceCommandStatus;
 export type DeviceDiagnosticsStatus = DeviceCommandStatus;
 export type DeviceResetStatus = DeviceCommandStatus;

@@ -28,7 +28,7 @@ type DeviceRecord = {
   actionStartedAt?: string | null;
   actionStatus?: "failed" | "pending" | "running" | "succeeded" | null;
   actionStatusMessage?: string | null;
-  actionType?: "mute-audio" | "open-screen" | "reboot-device" | "restart-playback" | "resume-playback" | "run-recovery" | "screen-snapshot" | "show-desktop" | "unmute-audio" | null;
+  actionType?: "close-screen" | "mute-audio" | "open-screen" | "reboot-device" | "restart-playback" | "resume-playback" | "run-recovery" | "screen-snapshot" | "show-desktop" | "unmute-audio" | null;
   actionUpdatedAt?: string | null;
   diagnosticsFinishedAt?: string | null;
   diagnosticsRequestedAt?: string | null;
@@ -705,6 +705,9 @@ function resetStateFor(device: DeviceRecord): { active: boolean; detail: string;
 }
 
 function actionName(type: DeviceRecord["actionType"]): string {
+  if (type === "close-screen") {
+    return "Close store";
+  }
   if (type === "mute-audio") {
     return "Mute audio";
   }
@@ -810,6 +813,18 @@ function summarizedActionDetail(device: DeviceRecord, fallback: string): string 
     }
     if (device.actionStatus === "succeeded") {
       return "Open store completed. The screen will return to schedule control at the next scheduled close.";
+    }
+  }
+
+  if (device.actionType === "close-screen") {
+    if (device.actionStatus === "pending") {
+      return "Close store is queued. The Pi will resume schedule control on its next cloud check-in.";
+    }
+    if (device.actionStatus === "running") {
+      return "Ending the open-store override and resuming the schedule.";
+    }
+    if (device.actionStatus === "succeeded") {
+      return "Close store completed. Schedule control is active again.";
     }
   }
 

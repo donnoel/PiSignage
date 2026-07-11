@@ -14,7 +14,7 @@ type DayOption = {
 type ScreenRecord = {
   deviceActionActive: boolean;
   deviceActionStatus: "failed" | "pending" | "running" | "succeeded" | null;
-  deviceActionType: "open-screen" | string | null;
+  deviceActionType: "close-screen" | "open-screen" | string | null;
   deviceHost: string | null;
   deviceId: string | null;
   deviceName: string | null;
@@ -22,6 +22,7 @@ type ScreenRecord = {
   deviceScheduleDetail: string | null;
   deviceScheduleDisplayAction: string | null;
   deviceScheduleDisplayControlOk: boolean | null;
+  deviceScheduleOverrideExpiresAt: string | null;
   deviceScheduleState: string | null;
   group: string;
   id: string;
@@ -122,6 +123,44 @@ function formatCount(count: number, noun: string): string {
   return `${count} ${count === 1 ? noun : `${noun}s`}`;
 }
 
+function formatFriendlyPacificDateTime(timestamp: string | null | undefined): string | null {
+  if (!timestamp) {
+    return null;
+  }
+
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    month: "short",
+    timeZone: "America/Los_Angeles",
+    weekday: "long"
+  }).format(date);
+}
+
+function openOverrideDetail(expiresAt: string | null | undefined): string {
+  const formatted = formatFriendlyPacificDateTime(expiresAt);
+  return formatted
+    ? `Opened outside normal hours until ${formatted}.`
+    : "Opened outside normal hours. It will return to the regular schedule automatically.";
+}
+
+function scheduleStatePillClassName(tone: Tone): string {
+  const colorClassName = {
+    danger: "bg-rose-100 text-rose-800 ring-rose-200",
+    good: "bg-emerald-100 text-emerald-800 ring-emerald-200",
+    muted: "bg-zinc-100 text-zinc-700 ring-zinc-200",
+    warn: "bg-amber-100 text-amber-900 ring-amber-200"
+  }[tone];
+
+  return `inline-flex min-h-9 w-28 items-center justify-center whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ring-1 ${colorClassName}`;
+}
+
 export function SchedulingPanel({ dashboardMode }: { dashboardMode: "cloud" | "local" }) {
   const router = useRouter();
   const [data, setData] = useState<ScheduleResponse | null>(null);
@@ -133,8 +172,8 @@ export function SchedulingPanel({ dashboardMode }: { dashboardMode: "cloud" | "l
   const [endTime, setEndTime] = useState("17:00");
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>(defaultDays);
   const [screenIds, setScreenIds] = useState<string[]>([]);
-  const [busyAction, setBusyAction] = useState<"clear" | "load" | "open" | "save" | null>(null);
-  const [openingScreenId, setOpeningScreenId] = useState<string | null>(null);
+  const [busyAction, setBusyAction] = useState<"clear" | "close" | "load" | "open" | "save" | null>(null);
+  const [scheduleActionScreenId, setScheduleActionScreenId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const isBusy = Boolean(busyAction) || isPending;
 
@@ -364,7 +403,7 @@ export function SchedulingPanel({ dashboardMode }: { dashboardMode: "cloud" | "l
     }
 
     setBusyAction("open");
-    setOpeningScreenId(screen.id);
+    setScheduleActionScreenId(screen.id);
     setMessage(`Opening ${screen.name} outside scheduled hours...`);
     try {
       const response = await fetch(`/api/cloud/devices/${encodeURIComponent(screen.deviceId)}/actions`, {
@@ -384,7 +423,48 @@ export function SchedulingPanel({ dashboardMode }: { dashboardMode: "cloud" | "l
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Open store failed.");
     } finally {
-      setOpeningScreenId(null);
+      setScheduleActionScreenId(null);
+      setBusyAction(null);
+    }
+  }
+
+  async function closeStoreForScreen(screen: ScreenRecord) {
+    if (isBusy) {
+      return;
+    }
+
+    if (dashboardMode !== "cloud") {
+      setMessage("Close store is available from the AWS dashboard after the device-agent is installed.");
+      return;
+    }
+
+    if (!screen.deviceId) {
+      setMessage(`${screen.name} does not have a linked Pi yet.`);
+      return;
+    }
+
+    setBusyAction("close");
+    setScheduleActionScreenId(screen.id);
+    setMessage(`Closing ${screen.name} and resuming its schedule...`);
+    try {
+      const response = await fetch(`/api/cloud/devices/${encodeURIComponent(screen.deviceId)}/actions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ action: "close-screen" })
+      });
+      const result = (await response.json()) as { error?: string; message?: string };
+      if (!response.ok || result.error) {
+        throw new Error(result.error ?? "Close store failed.");
+      }
+      setMessage(result.message ?? `Close store queued for ${screen.name}.`);
+      await loadSchedules();
+      startTransition(() => router.refresh());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Close store failed.");
+    } finally {
+      setScheduleActionScreenId(null);
       setBusyAction(null);
     }
   }
@@ -439,8 +519,13 @@ export function SchedulingPanel({ dashboardMode }: { dashboardMode: "cloud" | "l
                 const openStorePending =
                   screen.deviceActionType === "open-screen" &&
                   (screen.deviceActionStatus === "pending" || screen.deviceActionStatus === "running");
+                const closeStorePending =
+                  screen.deviceActionType === "close-screen" &&
+                  (screen.deviceActionStatus === "pending" || screen.deviceActionStatus === "running");
                 const scheduleIssue = liveScheduleIssue(screen, state);
-                const showOverrideDetail = overrideOpenDuringClosedHours && Boolean(screen.deviceScheduleDetail);
+                const showOverrideDetail = overrideOpenDuringClosedHours && Boolean(screen.deviceScheduleOverrideExpiresAt || screen.deviceScheduleDetail);
+                const statusTone = scheduleIssue ? "warn" : state ? stateTone(state.state) : "muted";
+                const statusLabel = scheduleIssue ? "Open issue" : stateLabel(state);
 
                 return (
                   <li
@@ -455,21 +540,26 @@ export function SchedulingPanel({ dashboardMode }: { dashboardMode: "cloud" | "l
                     </div>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <StatusPill
-                          label={scheduleIssue ? "Open issue" : stateLabel(state)}
-                          tone={scheduleIssue ? "warn" : state ? stateTone(state.state) : "muted"}
-                        />
+                        <span className={scheduleStatePillClassName(statusTone)}>
+                          {statusLabel}
+                        </span>
                         {scheduledState?.state === "off" ? (
                           <button
                             type="button"
                             disabled={dashboardMode !== "cloud" || isBusy || !screen.deviceId || screen.deviceActionActive}
-                            onClick={() => void openStoreForScreen(screen)}
-                            className="min-h-9 rounded-md border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
+                            onClick={() => void (overrideOpenDuringClosedHours ? closeStoreForScreen(screen) : openStoreForScreen(screen))}
+                            className={`min-h-9 w-28 rounded-md border bg-white px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${
+                              overrideOpenDuringClosedHours
+                                ? "border-zinc-200 text-zinc-800 hover:bg-zinc-50"
+                                : "border-emerald-200 text-emerald-800 hover:bg-emerald-50"
+                            }`}
                           >
-                            {openingScreenId === screen.id || openStorePending
-                              ? "Opening..."
+                            {scheduleActionScreenId === screen.id || openStorePending || closeStorePending
+                              ? overrideOpenDuringClosedHours || closeStorePending
+                                ? "Closing..."
+                                : "Opening..."
                               : overrideOpenDuringClosedHours
-                                ? "Re-open"
+                                ? "Close store"
                                 : "Open store"}
                           </button>
                         ) : null}
@@ -478,7 +568,7 @@ export function SchedulingPanel({ dashboardMode }: { dashboardMode: "cloud" | "l
                         <p className={`mt-1 max-w-md break-words text-xs leading-5 ${scheduleIssue ? "text-amber-800" : "text-emerald-800"}`}>
                           {scheduleIssue
                             ? screen.deviceScheduleDetail ?? "Schedule is open, but playback/display is not confirmed."
-                            : screen.deviceScheduleDetail}
+                            : openOverrideDetail(screen.deviceScheduleOverrideExpiresAt)}
                         </p>
                       ) : null}
                     </div>

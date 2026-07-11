@@ -484,10 +484,10 @@ feac26778e52d042e4b8c3661321498439ee45fcb1000713dfee13cc4a17e9e6  ad-dad-logo.pp
 Compiled device agent:
 
 ```text
-7d19e3255bf10b3bfcd04a592dfdffbd54573362295f0af888b9e8cacad6f07b  device-agent/dist/index.js
+b14d8b1c23fa1c031ee2033edccb15bb66f28162a347df1d464ea605e7867e91  device-agent/dist/index.js
 ```
 
-These hashes supersede the 2026-07-09 13:57 baseline hashes and include the current command-plane behavior, including schedule-aware heartbeat reporting, the remote Open store action, the remote screen snapshot prototype, remote Show desktop and Resume playback actions that pause and restore schedule control, Restart playback recovery that restores schedule control, Show desktop desktop-panel restoration and verification for noVNC administration, automatic playback resume if desktop-panel restoration fails, deterministic Wi-Fi-first heartbeat address selection, Tailscale tailnet address reporting, verified `wlopm` display power control for schedule close/open, no-schedule playback enforcement that actively powers on display and starts VLC, automatic HDMI/headless-output display session recovery, MPRIS-backed current-video reporting for continuous VLC playback, 10-second cloud heartbeat check-ins with up to 2 seconds of jitter through the dedicated device heartbeat API, Golden Master-managed remote access installation/enrollment support, and strict device-agent cache parity that prunes stale unreferenced media after successful release sync. The MPRIS current-video reporting update was rolled to C5 first; C1-C4 still need the same managed script rollout when reachable from the workstation.
+These hashes supersede the 2026-07-09 13:57 baseline hashes and include the current command-plane behavior, including schedule-aware heartbeat reporting, the remote Open store action, the remote Close store action that clears the temporary open override and resumes schedule enforcement, the remote screen snapshot prototype, remote Show desktop and Resume playback actions that pause and restore schedule control, Restart playback recovery that restores schedule control, Show desktop desktop-panel restoration and verification for noVNC administration, automatic playback resume if desktop-panel restoration fails, deterministic Wi-Fi-first heartbeat address selection, Tailscale tailnet address reporting, verified `wlopm` display power control for schedule close/open, no-schedule playback enforcement that actively powers on display and starts VLC, automatic HDMI/headless-output display session recovery, MPRIS-backed current-video reporting for continuous VLC playback, 10-second cloud heartbeat check-ins with up to 2 seconds of jitter through the dedicated device heartbeat API, Golden Master-managed remote access installation/enrollment support, and strict device-agent cache parity that prunes stale unreferenced media after successful release sync. The MPRIS current-video reporting update was rolled to C5 first; C1-C4 still need the same managed script rollout when reachable from the workstation.
 
 ## Required Baseline Update Workflow
 
@@ -596,6 +596,18 @@ On all four Pis, `pisignage-device-agent.service`, `pisignage-vlc.service`, `pis
 | C5 | `100.66.60.59` | `6694b4f3e4bc79db01bc24556d47de9b07596e175fe4ce97dab4b6ccf709cbb2` | `2e8aaa558b8409fd55f9bdfdd0a19550868bed03628316688a5b65037f967116` | `dbc71d0eff8d95880e72c870f2f0db1e766bdde1e0170cc236ecd9a624be1200` | device-agent active; schedule timer active; VLC active after Resume playback |
 
 C5 live validation after the rollout: Show desktop succeeded in the browser noVNC session, then Resume playback returned VLC to `active/running`; local player status and heartbeat both reported `playing` on playlist `playlist-community-vision` v32.
+
+2026-07-11 Scheduling Close store rollout:
+
+| Pi | Tailnet IPv4 | Device-agent hash | Device-agent state | VLC state | Schedule timer state |
+| --- | --- | --- | --- | --- | --- |
+| C1 | `100.108.135.20` | `b14d8b1c23fa1c031ee2033edccb15bb66f28162a347df1d464ea605e7867e91` | active | inactive | active |
+| C2 | `100.95.194.15` | `b14d8b1c23fa1c031ee2033edccb15bb66f28162a347df1d464ea605e7867e91` | active | inactive | active |
+| C3 | `100.86.155.95` | `b14d8b1c23fa1c031ee2033edccb15bb66f28162a347df1d464ea605e7867e91` | active | inactive | active |
+| C4 | `100.85.111.13` | `b14d8b1c23fa1c031ee2033edccb15bb66f28162a347df1d464ea605e7867e91` | active | inactive | active |
+| C5 | `100.66.60.59` | `b14d8b1c23fa1c031ee2033edccb15bb66f28162a347df1d464ea605e7867e91` | active | active | active |
+
+The compiled device-agent runtime was refreshed on C1-C5 over Tailscale and `pisignage-device-agent.service` was restarted on each Pi. VLC playback was not restarted by this rollout; C1-C4 remained closed by schedule and C5 remained open/playing under the active open-store override.
 
 The same rule applies to every future C1-Cx appliance.
 

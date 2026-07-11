@@ -166,6 +166,7 @@ async function scheduleResponse(publish?: {
       deviceScheduleDetail: heartbeat?.scheduleDetail ?? null,
       deviceScheduleDisplayAction: heartbeat?.scheduleDisplayAction ?? null,
       deviceScheduleDisplayControlOk: heartbeat?.scheduleDisplayControlOk ?? null,
+      deviceScheduleOverrideExpiresAt: heartbeat?.scheduleOverrideExpiresAt ?? null,
       deviceScheduleState: heartbeat?.scheduleState ?? null
     };
   });
