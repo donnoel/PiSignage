@@ -56,7 +56,7 @@ Validation:
 - Adding a screen from the AWS-hosted dashboard persists in DynamoDB and survives App Runner restarts.
 - The AWS-hosted dashboard resolves the C5 screen's assigned playlist from DynamoDB instead of local JSON.
 - Uploading an MP4 from the AWS-hosted dashboard creates a private S3 source object and DynamoDB asset record.
-- Adding a cloud MP4 to `Main Playlist` lets the device-agent fetch the assigned playlist and cache the media locally.
+- Adding a cloud MP4 to `Default Playlist` lets the device-agent fetch the assigned playlist and cache the media locally.
 
 ## Phase 3: Device Agent Cloud Mode
 

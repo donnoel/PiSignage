@@ -90,7 +90,7 @@ function playlistFromItem(item: Record<string, AttributeValue>): Playlist {
   const playlistId = stringOrDefault(item.playlistId, seedPlaylistId);
   return {
     assets: parseAssets(item.assetsJson),
-    name: stringOrDefault(item.name, playlistId === seedPlaylistId ? "Main Playlist" : "Untitled Playlist"),
+    name: stringOrDefault(item.name, playlistId === seedPlaylistId ? "Default Playlist" : "Untitled Playlist"),
     playlistId,
     updatedAt: stringOrDefault(item.updatedAt, isoNow()),
     version: numberOrDefault(item.version, 1),
@@ -140,7 +140,7 @@ async function ensureSeedPlaylist(tableName: string, playlists: Playlist[]): Pro
 
   const playlist: Playlist = {
     assets: [],
-    name: "Main Playlist",
+    name: "Default Playlist",
     playlistId: seedPlaylistId,
     updatedAt: isoNow(),
     version: 1,

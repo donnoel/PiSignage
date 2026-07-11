@@ -58,7 +58,7 @@ App Runner runs the Next.js server. It reads the heartbeat table through its
 instance IAM role using `BEAM_HEARTBEATS_TABLE_NAME`, and it reads/writes the
 cloud Screens and Devices tables through `BEAM_SCREENS_TABLE_NAME` and
 `BEAM_DEVICES_TABLE_NAME`. It also reads the cloud playlist catalog through
-`BEAM_PLAYLISTS_TABLE_NAME` and seeds the dev `Main Playlist` record when that
+`BEAM_PLAYLISTS_TABLE_NAME` and seeds the dev `Default Playlist` record when that
 catalog is empty. Media uploads in cloud mode write source objects to
 `BEAM_SOURCE_MEDIA_BUCKET_NAME`, playback-ready renditions to
 `BEAM_PLAYBACK_MEDIA_BUCKET_NAME`, and catalog records to
