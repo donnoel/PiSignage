@@ -472,6 +472,26 @@ function openOverrideDetail(expiresAt: string | null | undefined): string {
     : "Opened outside normal hours. It will return to the regular schedule automatically.";
 }
 
+function closedSchedulePreviewDetail(detail: string | null | undefined): string {
+  const defaultDetail =
+    "This screen is closed for now. Beam will turn it back on automatically when its schedule opens.";
+
+  if (!detail) {
+    return defaultDetail;
+  }
+
+  const normalizedDetail = detail.toLowerCase();
+  if (
+    normalizedDetail.includes("assigned schedule is outside") ||
+    normalizedDetail.includes("wlopm") ||
+    normalizedDetail.includes("hdmi")
+  ) {
+    return defaultDetail;
+  }
+
+  return detail;
+}
+
 function formatElapsedSince(timestamp: string | null | undefined): string | null {
   const age = formatStatusAge(timestamp);
   return age === "Not reported" || age === "Unknown" ? null : age.replace(/ ago$/, "");
@@ -1900,7 +1920,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
     if (focusedScreenReachable) {
       if (focusedScheduledClosed) {
-        focusedScreenDetail = focusedScreen.scheduleDetail ?? "This screen is intentionally off outside scheduled hours.";
+        focusedScreenDetail = closedSchedulePreviewDetail(focusedScreen.scheduleDetail);
       } else if (focusedScheduleOverrideOpen) {
         focusedScreenDetail = openOverrideDetail(focusedScreen.scheduleOverrideExpiresAt);
       } else if (focusedCurrentItem) {
