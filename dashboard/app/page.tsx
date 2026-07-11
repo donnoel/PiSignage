@@ -1261,6 +1261,7 @@ type FleetCommandRow = {
   lastReportLabel: string;
   playbackLabel: string;
   reachable: boolean;
+  remoteDesktopUrl: string | null;
   scheduleDetail: string | null;
   scheduleOverrideExpiresAt: string | null;
   scheduleState: string | null;
@@ -1476,6 +1477,7 @@ function fleetCommandRows({
         lastReportLabel: isLive ? deviceStatus?.ageLabel ?? "No timestamp" : "not checking in",
         playbackLabel: playback,
         reachable,
+        remoteDesktopUrl: remoteDesktopUrlForHost(deviceStatus?.host ?? device.host),
         reportedCurrentAssetId,
         scheduleDetail: deviceStatus?.scheduleDetail ?? null,
         scheduleOverrideExpiresAt: deviceStatus?.scheduleOverrideExpiresAt ?? null,
@@ -1497,8 +1499,13 @@ function scalarCookieValue(value: string | undefined): string | null {
   return value?.trim() || null;
 }
 
-function screenLiveReportUrl(deviceId: string | null | undefined): string | null {
-  return deviceId ? `/screen-player/${encodeURIComponent(deviceId)}` : null;
+function remoteDesktopUrlForHost(host: string | null | undefined): string | null {
+  const trimmedHost = host?.trim();
+  if (!trimmedHost || trimmedHost === "Not configured") {
+    return null;
+  }
+
+  return `http://${trimmedHost}:6080/vnc.html?host=${encodeURIComponent(trimmedHost)}&port=6080&autoconnect=true&resize=scale`;
 }
 
 function parseScreenSnapshotResult(value: string | null | undefined): ScreenSnapshotResult | null {
@@ -1921,7 +1928,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     ? `${focusedScheduledClosed ? "Closed by schedule" : focusedLiveSummary} · ${focusedSyncLabel} · Last update ${focusedLastReportLabel}`
     : [focusedLiveSummary, focusedScreenIsLive ? "Playback unknown" : "No live report"].join(" · ");
   const previewEyebrow = focusedScheduledClosed ? "Closed now" : focusedScreenIsLive && focusedScreenReachable ? "Showing now" : "Screen status";
-  const focusedLiveReportUrl = focusedScreen ? screenLiveReportUrl(focusedScreen.id) : null;
+  const focusedLiveViewUrl = focusedScreen?.remoteDesktopUrl ?? null;
   const focusedSnapshot = parseScreenSnapshotResult(focusedScreen?.actionResult);
   const focusedSnapshotPending = focusedScreen?.actionType === "screen-snapshot" &&
     (focusedScreen.actionStatus === "pending" || focusedScreen.actionStatus === "running");
@@ -2168,15 +2175,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                               <p className="mt-2 break-words text-3xl font-black leading-tight sm:text-4xl">{focusedScreenTitle}</p>
                             </div>
                             <div className="flex flex-wrap items-start justify-end gap-2">
-                              {focusedLiveReportUrl ? (
+                              {focusedLiveViewUrl ? (
                                 <a
-                                  href={focusedLiveReportUrl}
+                                  href={focusedLiveViewUrl}
                                   target="_blank"
                                   rel="noreferrer"
-                                  title="Open the selected screen's current video"
+                                  title="Open a live view of the selected Pi display without changing playback"
                                   className="beam-preview-button inline-flex min-h-10 shrink-0 items-center justify-center rounded-md px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2"
                                 >
-                                  Current video
+                                  Live view
                                 </a>
                               ) : null}
                               <ScreenSnapshotButton
