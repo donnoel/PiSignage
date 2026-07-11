@@ -445,6 +445,33 @@ function formatRelativeTime(timestamp: string | null | undefined): string {
   return age === "Not reported" || age === "Unknown" ? formatTimestamp(timestamp) : age;
 }
 
+function formatFriendlyPacificDateTime(timestamp: string | null | undefined): string | null {
+  if (!timestamp) {
+    return null;
+  }
+
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    month: "short",
+    day: "numeric",
+    timeZone: "America/Los_Angeles",
+    weekday: "long"
+  }).format(date);
+}
+
+function openOverrideDetail(expiresAt: string | null | undefined): string {
+  const formatted = formatFriendlyPacificDateTime(expiresAt);
+  return formatted
+    ? `Opened outside normal hours until ${formatted}.`
+    : "Opened outside normal hours. It will return to the regular schedule automatically.";
+}
+
 function formatElapsedSince(timestamp: string | null | undefined): string | null {
   const age = formatStatusAge(timestamp);
   return age === "Not reported" || age === "Unknown" ? null : age.replace(/ ago$/, "");
@@ -1868,7 +1895,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       if (focusedScheduledClosed) {
         focusedScreenDetail = focusedScreen.scheduleDetail ?? "This screen is intentionally off outside scheduled hours.";
       } else if (focusedScheduleOverrideOpen) {
-        focusedScreenDetail = focusedScreen.scheduleDetail ?? "This screen was opened manually outside scheduled hours and will return to schedule control.";
+        focusedScreenDetail = openOverrideDetail(focusedScreen.scheduleOverrideExpiresAt);
       } else if (focusedCurrentItem) {
         focusedScreenDetail = `VLC reports item ${focusedCurrentItem.index + 1} of ${focusedCurrentItem.total} from ${focusedScreen.assignedPlaylistName}${focusedCurrentItem.durationLabel ? ` (${focusedCurrentItem.durationLabel})` : ""}.`;
       } else if (focusedScreen.reportedCurrentAssetId) {
