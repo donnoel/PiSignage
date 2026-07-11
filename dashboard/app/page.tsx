@@ -2081,9 +2081,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
           <section
             aria-labelledby="now-playing-heading"
-            className={selectedView === "dashboard" ? "mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]" : "hidden"}
+            className={selectedView === "dashboard" ? "mt-4 grid gap-3 xl:grid-cols-3" : "hidden"}
           >
-            <div className="order-2 rounded-lg border border-zinc-200 bg-white shadow-sm xl:order-2">
+            <div className="order-2 rounded-lg border border-zinc-200 bg-white shadow-sm xl:order-2 xl:col-span-1">
               <div className="flex flex-col gap-3 border-b border-zinc-200 p-5 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <h2 id="now-playing-heading" className="mt-1 text-2xl font-semibold">{commandAttentionCount === 0 ? "All clear" : "Needs attention"}</h2>
@@ -2151,7 +2151,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               )}
             </div>
 
-            <div className="order-1 space-y-4 xl:order-1">
+            <div className="order-1 space-y-4 xl:order-1 xl:col-span-2">
               <div className="rounded-lg border border-zinc-200 bg-white shadow-sm">
                 <div className="flex flex-col gap-4 border-b border-zinc-200 p-5">
                   <div>
