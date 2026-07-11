@@ -48,7 +48,7 @@ type ScreenScheduleState = {
   scheduleId: string | null;
   scheduleName: string | null;
   screenId: string;
-  state: "off" | "on" | "unassigned";
+  state: "off" | "on" | "override-open" | "unassigned";
 };
 
 type ScheduleSupport = {
@@ -76,7 +76,7 @@ type ScheduleResponse = {
 const defaultDays = [1, 2, 3, 4, 5];
 
 function stateTone(state: ScreenScheduleState["state"]): Tone {
-  return state === "on" ? "good" : "muted";
+  return state === "on" || state === "override-open" ? "good" : "muted";
 }
 
 function stateLabel(state: ScreenScheduleState | undefined): string {
@@ -84,7 +84,7 @@ function stateLabel(state: ScreenScheduleState | undefined): string {
     return "Not loaded";
   }
 
-  if (state.state === "on") {
+  if (state.state === "on" || state.state === "override-open") {
     return "Open now";
   }
 
@@ -97,12 +97,25 @@ function stateLabel(state: ScreenScheduleState | undefined): string {
 
 function liveScheduleIssue(screen: ScreenRecord, state: ScreenScheduleState | undefined): boolean {
   return (
-    state?.state === "on" &&
+    (state?.state === "on" || state?.state === "override-open") &&
     (
       screen.deviceScheduleDisplayControlOk === false ||
       (Boolean(screen.devicePlaybackState) && screen.devicePlaybackState !== "playing")
     )
   );
+}
+
+function effectiveScheduleState(screen: ScreenRecord, state: ScreenScheduleState | undefined): ScreenScheduleState | undefined {
+  if (screen.deviceScheduleState !== "override-open" || !state) {
+    return state;
+  }
+
+  return {
+    ...state,
+    detail: screen.deviceScheduleDetail ?? state.detail,
+    label: "Open now",
+    state: "override-open"
+  };
 }
 
 function formatCount(count: number, noun: string): string {
@@ -152,6 +165,12 @@ export function SchedulingPanel({ dashboardMode }: { dashboardMode: "cloud" | "l
     return new Map((data?.screenStates ?? []).map((state) => [state.screenId, state]));
   }, [data]);
 
+  const effectiveScreenStates = useMemo(() => {
+    return (data?.screens ?? [])
+      .map((screen) => effectiveScheduleState(screen, screenStateById.get(screen.id)))
+      .filter((state): state is ScreenScheduleState => Boolean(state));
+  }, [data, screenStateById]);
+
   const scheduleById = useMemo(() => {
     return new Map((data?.schedules ?? []).map((schedule) => [schedule.id, schedule]));
   }, [data]);
@@ -160,10 +179,10 @@ export function SchedulingPanel({ dashboardMode }: { dashboardMode: "cloud" | "l
     return new Map((data?.screens ?? []).map((screen) => [screen.id, screen]));
   }, [data]);
 
-  const openCount = data?.screenStates.filter((state) => state.state === "on").length ?? 0;
-  const closedCount = data?.screenStates.filter((state) => state.state === "off").length ?? 0;
-  const unassignedCount = data?.screenStates.filter((state) => state.state === "unassigned").length ?? 0;
-  const scheduledCount = (data?.screenStates.length ?? 0) - unassignedCount;
+  const openCount = effectiveScreenStates.filter((state) => state.state === "on" || state.state === "override-open").length;
+  const closedCount = effectiveScreenStates.filter((state) => state.state === "off").length;
+  const unassignedCount = effectiveScreenStates.filter((state) => state.state === "unassigned").length;
+  const scheduledCount = effectiveScreenStates.length - unassignedCount;
   const selectedFormScreens = screenIds.map((id) => screensById.get(id)).filter((screen): screen is ScreenRecord => Boolean(screen));
   const isEditorOpen = selectedFormScreens.length > 0 || Boolean(editingId);
   const formTitle = editingId
@@ -412,13 +431,16 @@ export function SchedulingPanel({ dashboardMode }: { dashboardMode: "cloud" | "l
             </div>
             <ol className="max-h-[42rem] divide-y divide-zinc-200 overflow-auto">
               {(data?.screens ?? []).map((screen) => {
-                const state = screenStateById.get(screen.id);
-                const schedule = state?.scheduleId ? scheduleById.get(state.scheduleId) : null;
+                const scheduledState = screenStateById.get(screen.id);
+                const state = effectiveScheduleState(screen, scheduledState);
+                const schedule = scheduledState?.scheduleId ? scheduleById.get(scheduledState.scheduleId) : null;
                 const isSelected = screenIds.includes(screen.id);
+                const overrideOpenDuringClosedHours = scheduledState?.state === "off" && state?.state === "override-open";
                 const openStorePending =
                   screen.deviceActionType === "open-screen" &&
                   (screen.deviceActionStatus === "pending" || screen.deviceActionStatus === "running");
                 const scheduleIssue = liveScheduleIssue(screen, state);
+                const showOverrideDetail = overrideOpenDuringClosedHours && Boolean(screen.deviceScheduleDetail);
 
                 return (
                   <li
@@ -437,20 +459,26 @@ export function SchedulingPanel({ dashboardMode }: { dashboardMode: "cloud" | "l
                           label={scheduleIssue ? "Open issue" : stateLabel(state)}
                           tone={scheduleIssue ? "warn" : state ? stateTone(state.state) : "muted"}
                         />
-                        {state?.state === "off" ? (
+                        {scheduledState?.state === "off" ? (
                           <button
                             type="button"
                             disabled={dashboardMode !== "cloud" || isBusy || !screen.deviceId || screen.deviceActionActive}
                             onClick={() => void openStoreForScreen(screen)}
                             className="min-h-9 rounded-md border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
                           >
-                            {openingScreenId === screen.id || openStorePending ? "Opening..." : "Open store"}
+                            {openingScreenId === screen.id || openStorePending
+                              ? "Opening..."
+                              : overrideOpenDuringClosedHours
+                                ? "Re-open"
+                                : "Open store"}
                           </button>
                         ) : null}
                       </div>
-                      {scheduleIssue ? (
-                        <p className="mt-1 max-w-md break-words text-xs leading-5 text-amber-800">
-                          {screen.deviceScheduleDetail ?? "Schedule is open, but playback/display is not confirmed."}
+                      {scheduleIssue || showOverrideDetail ? (
+                        <p className={`mt-1 max-w-md break-words text-xs leading-5 ${scheduleIssue ? "text-amber-800" : "text-emerald-800"}`}>
+                          {scheduleIssue
+                            ? screen.deviceScheduleDetail ?? "Schedule is open, but playback/display is not confirmed."
+                            : screen.deviceScheduleDetail}
                         </p>
                       ) : null}
                     </div>
