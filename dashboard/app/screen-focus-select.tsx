@@ -4,6 +4,7 @@ import { useEffect, useMemo, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 const SCREEN_FOCUS_STORAGE_KEY = "beam.whatsPlaying.selectedScreenId";
+const screenFocusCookieName = "beam-whats-playing-screen";
 
 type ScreenFocusOption = {
   location: string;
@@ -15,6 +16,11 @@ type ScreenFocusSelectProps = {
   options: ScreenFocusOption[];
   selectedScreenId: string;
 };
+
+function saveScreenFocus(screenId: string): void {
+  window.localStorage.setItem(SCREEN_FOCUS_STORAGE_KEY, screenId);
+  document.cookie = `${screenFocusCookieName}=${encodeURIComponent(screenId)}; Path=/; Max-Age=31536000; SameSite=Lax`;
+}
 
 export function ScreenFocusSelect({ options, selectedScreenId }: ScreenFocusSelectProps) {
   const router = useRouter();
@@ -36,13 +42,14 @@ export function ScreenFocusSelect({ options, selectedScreenId }: ScreenFocusSele
 
     if (hasExplicitScreen) {
       if (selectedScreenId && validScreenIds.has(selectedScreenId)) {
-        window.localStorage.setItem(SCREEN_FOCUS_STORAGE_KEY, selectedScreenId);
+        saveScreenFocus(selectedScreenId);
       }
       return;
     }
 
     const storedScreenId = window.localStorage.getItem(SCREEN_FOCUS_STORAGE_KEY);
     if (storedScreenId && validScreenIds.has(storedScreenId)) {
+      saveScreenFocus(storedScreenId);
       if (storedScreenId !== selectedScreenId) {
         params.set("view", "dashboard");
         params.set("screen", storedScreenId);
@@ -56,7 +63,7 @@ export function ScreenFocusSelect({ options, selectedScreenId }: ScreenFocusSele
     }
 
     if (selectedScreenId && validScreenIds.has(selectedScreenId)) {
-      window.localStorage.setItem(SCREEN_FOCUS_STORAGE_KEY, selectedScreenId);
+      saveScreenFocus(selectedScreenId);
     }
   }, [options.length, router, selectedScreenId, validScreenIds]);
 
@@ -72,7 +79,7 @@ export function ScreenFocusSelect({ options, selectedScreenId }: ScreenFocusSele
           if (!screenId) {
             return;
           }
-          window.localStorage.setItem(SCREEN_FOCUS_STORAGE_KEY, screenId);
+          saveScreenFocus(screenId);
           startTransition(() => {
             const params = new URLSearchParams(window.location.search);
             params.set("view", "dashboard");

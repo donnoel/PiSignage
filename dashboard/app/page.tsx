@@ -175,6 +175,7 @@ const probeCacheTtlMs = 10_000;
 const staleStatusThresholdMs = 45_000;
 const staleHeartbeatThresholdMs = 120_000;
 const dashboardMode = process.env.BEAM_DASHBOARD_MODE === "cloud" ? "cloud" : "local";
+const screenFocusCookieName = "beam-whats-playing-screen";
 
 type PiProbeCacheEntry = {
   pending: Promise<void> | null;
@@ -1465,6 +1466,10 @@ function scalarSearchParam(value: string | string[] | undefined): string | null 
   return candidate?.trim() || null;
 }
 
+function scalarCookieValue(value: string | undefined): string | null {
+  return value?.trim() || null;
+}
+
 function screenLiveReportUrl(deviceId: string | null | undefined): string | null {
   return deviceId ? `/screen-player/${encodeURIComponent(deviceId)}` : null;
 }
@@ -1517,10 +1522,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const selectedView = dashboardViewFrom(resolvedSearchParams?.view);
   const selectedPlaylistParam = scalarSearchParam(resolvedSearchParams?.playlist);
   const selectedPlaylistStep = playlistWorkflowStepFrom(resolvedSearchParams?.playlistStep);
+  const selectedScreenCookie = scalarCookieValue(cookieStore.get(screenFocusCookieName)?.value);
   const currentViewCopy = viewCopy[selectedView];
   const { cloudHeartbeats, deviceStatuses, heartbeat, inventory, lastKnownPlayback, playlist, playlistStore, publishStatus, pi } =
     await loadDashboardState(selectedPlaylistParam);
-  const selectedScreenParam = scalarSearchParam(resolvedSearchParams?.screen);
+  const selectedScreenParam = scalarSearchParam(resolvedSearchParams?.screen) ?? selectedScreenCookie;
   const playerStatus = pi.playerStatus;
   const playbackState = playerStatus?.state ?? (pi.reachable ? "unknown" : "unreachable");
   const isPlaying = playbackState === "playing";
