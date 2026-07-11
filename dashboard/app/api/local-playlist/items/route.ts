@@ -321,6 +321,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing media selection." }, { status: 400 });
     }
 
+    if (body.action === "add-media" && !body.playlistId) {
+      return NextResponse.json({ error: "Choose a playlist before adding media." }, { status: 400 });
+    }
+
     const { playlist } = await readStoredPlaylist(body.playlistId);
     let nextPlaylist = playlist;
     if (body.action === "add-media") {
