@@ -143,4 +143,4 @@ See `docs/PHASES.md` for the full phase plan.
 
 ## Credits
 
-Built with care by Don Noel and Codex collaboration.
+Built with care by **Don Noel** and AI collaboration.
