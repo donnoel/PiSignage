@@ -310,10 +310,16 @@ function fileUrlPath(value) {
   }
 }
 
-function mprisProperty(property) {
+function mprisDestination(playerPid) {
+  return Number.isInteger(playerPid) && playerPid > 0
+    ? `org.mpris.MediaPlayer2.vlc.instance${playerPid}`
+    : "org.mpris.MediaPlayer2.vlc";
+}
+
+function mprisProperty(property, playerPid = null) {
   return captureCommand("dbus-send", [
     "--session",
-    "--dest=org.mpris.MediaPlayer2.vlc",
+    `--dest=${mprisDestination(playerPid)}`,
     "--print-reply",
     "/org/mpris/MediaPlayer2",
     "org.freedesktop.DBus.Properties.Get",
@@ -322,11 +328,11 @@ function mprisProperty(property) {
   ], 2_000);
 }
 
-async function continuousMprisSample(playlist) {
+async function continuousMprisSample(playlist, playerPid = null) {
   const [metadata, playbackStatus, position] = await Promise.all([
-    mprisProperty("Metadata"),
-    mprisProperty("PlaybackStatus"),
-    mprisProperty("Position")
+    mprisProperty("Metadata", playerPid),
+    mprisProperty("PlaybackStatus", playerPid),
+    mprisProperty("Position", playerPid)
   ]);
 
   const currentPath = metadata.ok ? fileUrlPath(mprisMetadataUrl(metadata.stdout)) : null;
@@ -1351,8 +1357,14 @@ async function loadPendingPlaylist(currentPlaylist) {
   }
 }
 
-async function writeContinuousPlaybackStatus(playlist, loopStartedAtMs, proofTracker, extra = {}) {
-  const mprisSample = await continuousMprisSample(playlist);
+async function writeContinuousPlaybackStatus(
+  playlist,
+  loopStartedAtMs,
+  proofTracker,
+  extra = {},
+  playerPid = null
+) {
+  const mprisSample = await continuousMprisSample(playlist, playerPid);
   const currentAsset = mprisSample.asset ?? currentContinuousAsset(playlist, loopStartedAtMs);
   const proof = continuousPlaybackProof(proofTracker, mprisSample);
   await writePlaybackStatus(playlist, proof.state, {
@@ -1560,7 +1572,7 @@ async function playPlaylistContinuously(playlist) {
         : writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, playbackProofTracker, {
             pendingPlaylistHandoffMode: pendingHandoffMode,
             pendingPlaylistReload
-          });
+          }, player.child.pid);
       statusWrite.catch((error) => {
         log(`status heartbeat failed: ${error instanceof Error ? error.message : String(error)}`);
       });
@@ -1594,11 +1606,17 @@ async function playPlaylistContinuously(playlist) {
             nextPlaylistReloadAt: new Date(Date.now() + nextReloadInMs).toISOString(),
             pendingPlaylistHandoffMode: pendingHandoffMode,
             pendingPlaylistReload
-          });
+          }, player.child.pid);
         } else if (pending.state === "unchanged") {
           pendingPlaylistReload = false;
           pendingHandoffMode = "playlist-boundary";
-          await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, playbackProofTracker, { pendingPlaylistReload });
+          await writeContinuousPlaybackStatus(
+            activePlaylist,
+            loopStartedAtMs,
+            playbackProofTracker,
+            { pendingPlaylistReload },
+            player.child.pid
+          );
         }
         continue;
       }
@@ -1624,7 +1642,7 @@ async function playPlaylistContinuously(playlist) {
           await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, playbackProofTracker, {
             handoffCompletedAt: new Date().toISOString(),
             pendingPlaylistReload
-          });
+          }, player.child.pid);
           await sleep(Math.max(playlistHandoffOverlapMs, 0));
           stopAssetPlayer(previousPlayer);
           previousPlayer.exited.catch((error) => {
@@ -1636,7 +1654,13 @@ async function playPlaylistContinuously(playlist) {
         if (pending.state === "unchanged") {
           pendingPlaylistReload = false;
           pendingHandoffMode = "playlist-boundary";
-          await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, playbackProofTracker, { pendingPlaylistReload });
+          await writeContinuousPlaybackStatus(
+            activePlaylist,
+            loopStartedAtMs,
+            playbackProofTracker,
+            { pendingPlaylistReload },
+            player.child.pid
+          );
         }
 
         continue;
@@ -1704,7 +1728,7 @@ async function playPlaylistContinuously(playlist) {
           recoveredFromUnexpectedExitAt: new Date().toISOString(),
           pendingPlaylistHandoffMode: pendingHandoffMode,
           pendingPlaylistReload
-        });
+        }, player.child.pid);
       }
     }
   } finally {

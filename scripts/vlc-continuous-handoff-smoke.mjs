@@ -66,6 +66,8 @@ async function main() {
   const fakeBinRoot = path.join(tempRoot, "bin");
   const fakeVlcPath = path.join(tempRoot, "fake-vlc.mjs");
   const fakeDbusSendPath = path.join(fakeBinRoot, "dbus-send");
+  const fakeDbusLogPath = path.join(tempRoot, "dbus.log");
+  const fakeVlcStartsPath = path.join(tempRoot, "vlc-starts.log");
   const statusPath = path.join(tempRoot, "player-status.json");
   const output = [];
 
@@ -85,7 +87,9 @@ async function main() {
     await writeFile(
       fakeVlcPath,
       `#!/usr/bin/env node
+import fs from "node:fs";
 const assets = process.argv.slice(2).filter((arg) => arg.endsWith(".mp4"));
+fs.appendFileSync(process.env.FAKE_VLC_STARTS_PATH, process.pid + ":" + assets.join(",") + "\\n");
 console.log("fake-vlc:start:" + assets.join(","));
 process.on("SIGTERM", () => {
   console.log("fake-vlc:stop:" + assets.join(","));
@@ -98,13 +102,24 @@ setInterval(() => {}, 1000);
     await writeFile(
       fakeDbusSendPath,
       `#!/usr/bin/env node
-console.log(\`method return time=0 sender=:1.1 -> destination=:1.2 serial=1 reply_serial=1
+import fs from "node:fs";
+fs.appendFileSync(process.env.FAKE_DBUS_LOG_PATH, process.argv.slice(2).join(" ") + "\\n");
+const property = String(process.argv.at(-1) ?? "").replace(/^string:/, "");
+if (property === "Metadata") {
+  console.log(\`method return time=0 sender=:1.1 -> destination=:1.2 serial=1 reply_serial=1
    variant       array [
          dict entry(
             string "xesam:url"
             variant                string "file://${path.join(assetsRoot, "second.mp4")}"
          )
       ]\`);
+} else if (property === "PlaybackStatus") {
+  console.log('method return\\n   variant string "Playing"');
+} else if (property === "Position") {
+  console.log("method return\\n   variant int64 " + Date.now() * 1000);
+} else {
+  process.exit(1);
+}
 `,
       { encoding: "utf8", mode: 0o755 }
     );
@@ -113,6 +128,8 @@ console.log(\`method return time=0 sender=:1.1 -> destination=:1.2 serial=1 repl
       cwd: repoRoot,
       env: {
         ...process.env,
+        FAKE_DBUS_LOG_PATH: fakeDbusLogPath,
+        FAKE_VLC_STARTS_PATH: fakeVlcStartsPath,
         PISIGNAGE_CONTENT_ROOT: contentRoot,
         PISIGNAGE_PLAYLIST_FILE: "playlist.local.json",
         PISIGNAGE_PLAYLIST_HANDOFF_OVERLAP_MS: "200",
@@ -149,6 +166,18 @@ console.log(\`method return time=0 sender=:1.1 -> destination=:1.2 serial=1 repl
     await waitFor("old VLC process stopped after overlap", renderedOutput, (text) =>
       text.includes("fake-vlc:stop:") && text.includes("first.mp4") && text.includes("second.mp4")
     );
+    await waitFor("new VLC instance-specific MPRIS proof", renderedOutput, async () => {
+      const starts = (await readFile(fakeVlcStartsPath, "utf8")).trim().split("\n");
+      const newPlayerPid = starts.at(-1)?.split(":", 1)[0];
+      const dbusLog = await readFile(fakeDbusLogPath, "utf8");
+      const status = JSON.parse(await readFile(statusPath, "utf8"));
+      return (
+        newPlayerPid &&
+        dbusLog.includes(`--dest=org.mpris.MediaPlayer2.vlc.instance${newPlayerPid}`) &&
+        status.state === "playing" &&
+        status.playbackProof === "advancing"
+      );
+    });
 
     const finalOutput = renderedOutput();
     if (startCount(finalOutput, "first.mp4") !== 1 || startCount(finalOutput, "new.mp4") !== 1) {
