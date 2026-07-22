@@ -119,6 +119,9 @@ const [inventorySource, playlistRouteSource] = await Promise.all([
 const targetedReadStart = inventorySource.indexOf("export async function readInventoryDeviceContext");
 const targetedReadEnd = inventorySource.indexOf("export async function ensureCloudCallHomeDevice", targetedReadStart);
 const targetedReadSource = inventorySource.slice(targetedReadStart, targetedReadEnd);
+const callHomeReadStart = targetedReadEnd;
+const callHomeReadEnd = inventorySource.indexOf("export function isCloudInventoryConfigured", callHomeReadStart);
+const callHomeReadSource = inventorySource.slice(callHomeReadStart, callHomeReadEnd);
 
 assert(targetedReadStart >= 0 && targetedReadEnd > targetedReadStart, "targeted device context reader exists");
 assert(
@@ -136,6 +139,11 @@ assert(
 assert(
   !targetedReadSource.includes("queryWorkspaceItems") && !targetedReadSource.includes("readCloudInventory"),
   "cloud device context does not query workspace-wide inventory"
+);
+assert(callHomeReadStart >= 0 && callHomeReadEnd > callHomeReadStart, "call-home device reader exists");
+assert(
+  callHomeReadSource.includes("new GetItemCommand") && !callHomeReadSource.includes("readCloudInventory"),
+  "legacy call-home registration uses a keyed device read"
 );
 
 if (failures.length > 0) {

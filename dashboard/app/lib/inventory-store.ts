@@ -826,8 +826,13 @@ export async function ensureCloudCallHomeDevice(input: {
     return { created: false, device: null };
   }
 
-  const inventory = await readCloudInventory(config);
-  const existingDevice = inventory.devices.items.find((device) => device.id === input.deviceId);
+  const existingResult = await dynamoDb.send(new GetItemCommand({
+    Key: {
+      deviceId: stringAttribute(input.deviceId)
+    },
+    TableName: config.devicesTableName
+  }));
+  const existingDevice = existingResult.Item ? deviceFromItem(existingResult.Item) : null;
   const timestamp = isoNow();
   const localIpAddress = input.localIpAddress?.trim();
   if (existingDevice) {
