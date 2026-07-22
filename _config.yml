@@ -3,9 +3,9 @@ description: A local-first Raspberry Pi digital-signage operations console.
 tagline: Reliable playback. Clear controls. Screens that recover themselves.
 project_label: Don Noel / Projects
 status_label: Five-Pi pilot
-github_url: https://github.com/donnoel/PiSignage
+github_url: https://github.com/donnoel/Beam
 url: https://donnoel.github.io
-baseurl: /PiSignage
+baseurl: /Beam
 lang: en-US
 
 remote_theme: donnoel/projects-theme@v1.0.0
@@ -20,4 +20,3 @@ exclude:
   - node_modules
   - player
   - infra
-

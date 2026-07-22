@@ -111,7 +111,7 @@ device-agent/local-state/heartbeat.json
 ## Project Structure
 
 ```text
-PiSignage/
+Beam/
 ├── dashboard/
 ├── device-agent/
 ├── docs/

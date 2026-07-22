@@ -102,7 +102,7 @@ Important packaging note: `device-agent/dist/index.js` is an ignored build artif
 
 ## Workstation State
 
-- Repo: `/Users/donnoel/Development/PiSignage`
+- Repo: `/Users/donnoel/Development/Beam`
 - Branch: `main`
 - Base HEAD for this baseline update: `17eb0c5` (`17eb0c5 Restart VLC after display recovery`)
 - This baseline update promotes playback-proof hardening and HDMI display-session playback recovery into the reproducible repo source; the playback-proof controller and schedule recovery script are installed on C1-C3 and C5 after the user-authorized rollouts below

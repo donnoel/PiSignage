@@ -1,6 +1,6 @@
 # Device Configuration
 
-PiSignage device configuration is local-first. The current agent reads environment variables for both local mode and optional AWS dev alpha mode; `device-agent/config.example.json` documents the intended stable config shape for provisioning and future pairing.
+Beam device configuration is local-first. The current agent reads environment variables for both local mode and optional AWS dev alpha mode; `device-agent/config.example.json` documents the intended stable config shape for provisioning and future pairing.
 
 No config file should contain AWS credentials, IoT private keys, signed URLs, or production secrets.
 
