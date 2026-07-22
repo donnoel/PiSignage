@@ -49,6 +49,7 @@ async function main() {
   const fakeDbusSendPath = path.join(fakeBinRoot, "dbus-send");
   const playbackModePath = path.join(tempRoot, "playback-mode.txt");
   const playbackPositionPath = path.join(tempRoot, "playback-position.txt");
+  const dbusLockPath = path.join(tempRoot, "dbus.lock");
   const assetPath = path.join(assetsRoot, "proof.mp4");
   const statusPath = path.join(tempRoot, "player-status.json");
   const output = [];
@@ -96,6 +97,14 @@ import fs from "node:fs";
 if (process.argv.some((arg) => arg.includes("org.mpris.MediaPlayer2.vlc.instance"))) {
   process.exit(1);
 }
+let lockFile;
+try {
+  lockFile = fs.openSync(process.env.FAKE_DBUS_LOCK_PATH, "wx");
+} catch {
+  process.exit(0);
+}
+try {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
 const property = String(process.argv.at(-1) ?? "").replace(/^string:/, "");
 if (property === "Metadata") {
   console.log(${JSON.stringify(`method return
@@ -118,6 +127,10 @@ if (property === "Metadata") {
 } else {
   process.exit(1);
 }
+} finally {
+  fs.closeSync(lockFile);
+  fs.unlinkSync(process.env.FAKE_DBUS_LOCK_PATH);
+}
 `,
       { encoding: "utf8", mode: 0o755 }
     );
@@ -126,6 +139,7 @@ if (property === "Metadata") {
       cwd: repoRoot,
       env: {
         ...process.env,
+        FAKE_DBUS_LOCK_PATH: dbusLockPath,
         PATH: `${fakeBinRoot}${path.delimiter}${process.env.PATH ?? ""}`,
         PISIGNAGE_CONTENT_ROOT: contentRoot,
         PISIGNAGE_PLAYBACK_PROOF_MAX_AGE_MS: "200",

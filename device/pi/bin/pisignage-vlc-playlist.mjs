@@ -341,11 +341,9 @@ async function mprisProperty(property, playerPid = null) {
 }
 
 async function continuousMprisSample(playlist, playerPid = null) {
-  const [metadata, playbackStatus, position] = await Promise.all([
-    mprisProperty("Metadata", playerPid),
-    mprisProperty("PlaybackStatus", playerPid),
-    mprisProperty("Position", playerPid)
-  ]);
+  const metadata = await mprisProperty("Metadata", playerPid);
+  const playbackStatus = await mprisProperty("PlaybackStatus", playerPid);
+  const position = await mprisProperty("Position", playerPid);
 
   const currentPath = metadata.ok ? fileUrlPath(mprisMetadataUrl(metadata.stdout)) : null;
   const resolvedCurrentPath = currentPath ? path.resolve(currentPath) : null;
