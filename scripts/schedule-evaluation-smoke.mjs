@@ -31,7 +31,7 @@ const scheduleStore = {
 
 await writeFile(schedulePath, `${JSON.stringify(scheduleStore, null, 2)}\n`, "utf8");
 
-function runCase(label, now, screenId, expectedState) {
+function runCase(label, now, screenId, expectedState, extraEnv = {}) {
   const result = spawnSync(
     "node",
     ["device/pi/bin/pisignage-enforce-schedule.mjs", "--dry-run", `--now=${now}`],
@@ -42,7 +42,8 @@ function runCase(label, now, screenId, expectedState) {
         ...process.env,
         PISIGNAGE_SCHEDULE_PATH: schedulePath,
         PISIGNAGE_SCHEDULE_STATUS_PATH: statusPath,
-        PISIGNAGE_SCREEN_ID: screenId
+        PISIGNAGE_SCREEN_ID: screenId,
+        ...extraEnv
       }
     }
   );
@@ -67,6 +68,15 @@ async function requireState(label, expectedState, expectedAction = null) {
 
 runCase("weekday active window", "2026-06-01T21:00:00.000Z", "screen-primary", "on");
 await requireState("weekday active window", "on", "would-start");
+
+runCase(
+  "active window after display session recovery",
+  "2026-06-01T21:00:00.000Z",
+  "screen-primary",
+  "on",
+  { PISIGNAGE_DRY_RUN_DISPLAY_SESSION_RESTARTED: "1" }
+);
+await requireState("active window after display session recovery", "on", "would-restart");
 
 runCase("weekday after hours", "2026-06-02T01:00:00.000Z", "screen-primary", "off");
 await requireState("weekday after hours", "off", "would-stop");

@@ -31,6 +31,8 @@ const openOverride = process.argv.includes("--open-override");
 const clearOverride = process.argv.includes("--clear-override");
 const nowArg = process.argv.find((argument) => argument.startsWith("--now="));
 const now = nowArg ? new Date(nowArg.slice("--now=".length)) : new Date();
+const dryRunDisplaySessionRestarted =
+  dryRun && process.env.PISIGNAGE_DRY_RUN_DISPLAY_SESSION_RESTARTED === "1";
 
 const weekdayNumbers = new Map([
   ["Sun", 0],
@@ -461,7 +463,7 @@ function ensureWlrOutputOn() {
 function setDisplayPower(power, options = { allowSessionRestart: true }) {
   const enabled = power === "on";
   const attempts = [];
-  let retriedDisplaySession = false;
+  let displaySessionRestarted = dryRunDisplaySessionRestarted;
 
   if (commandExists("/usr/bin/wlopm")) {
     attempts.push({
@@ -508,10 +510,10 @@ function setDisplayPower(power, options = { allowSessionRestart: true }) {
     if (!runDisplayCommand(attempt.command, args)) {
       if (enabled) {
         const state = wlrOutputState();
-        if (!retriedDisplaySession && state?.targetReported && state.noopEnabled) {
+        if (!displaySessionRestarted && state?.targetReported && state.noopEnabled) {
           log(`${attempt.label} could not enable ${displayOutput} while headless output is active; restarting user display session`);
-          retriedDisplaySession = true;
           if (restartUserDisplaySession()) {
+            displaySessionRestarted = true;
             index = -1;
           }
         }
@@ -524,6 +526,7 @@ function setDisplayPower(power, options = { allowSessionRestart: true }) {
         return {
           ok: true,
           action: enabled ? "display-on" : "display-off",
+          displaySessionRestarted,
           detail: `${attempt.label} would set ${displayOutput} ${power}.${
             enabled ? "" : " HDMI output would stay attached to the display session."
           }`
@@ -550,10 +553,10 @@ function setDisplayPower(power, options = { allowSessionRestart: true }) {
       if (enabled) {
         if (attempt.label !== "wlr-randr" && !ensureWlrOutputOn()) {
           const state = wlrOutputState();
-          if (!retriedDisplaySession && state?.targetReported && state.noopEnabled) {
+          if (!displaySessionRestarted && state?.targetReported && state.noopEnabled) {
             log(`${attempt.label} could not re-enable ${displayOutput}; restarting user display session from headless output`);
-            retriedDisplaySession = true;
             if (restartUserDisplaySession()) {
+              displaySessionRestarted = true;
               index = -1;
             }
           }
@@ -563,10 +566,10 @@ function setDisplayPower(power, options = { allowSessionRestart: true }) {
         const outputState = wlrOutputState();
         if (outputState?.targetEnabled === false) {
           log(`${attempt.label} returned success, but ${displayOutput} is still disabled`);
-          if (!retriedDisplaySession && outputState.targetReported && outputState.noopEnabled) {
+          if (!displaySessionRestarted && outputState.targetReported && outputState.noopEnabled) {
             log(`${displayOutput} is disabled while headless output is active; restarting user display session`);
-            retriedDisplaySession = true;
             if (restartUserDisplaySession()) {
+              displaySessionRestarted = true;
               index = -1;
             }
           }
@@ -577,6 +580,7 @@ function setDisplayPower(power, options = { allowSessionRestart: true }) {
       return {
         ok: true,
         action: enabled ? "display-on" : "display-off",
+        displaySessionRestarted,
         detail: `${attempt.label} set ${displayOutput} ${power}.${
           enabled ? "" : " HDMI output stayed attached to the display session."
         }`
@@ -591,6 +595,7 @@ function setDisplayPower(power, options = { allowSessionRestart: true }) {
       if (retry.ok) {
         return {
           ...retry,
+          displaySessionRestarted: true,
           detail: `${retry.detail} Display session was restarted before the retry.`
         };
       }
@@ -600,6 +605,7 @@ function setDisplayPower(power, options = { allowSessionRestart: true }) {
   return {
     ok: false,
     action: enabled ? "display-on-failed" : "display-off-failed",
+    displaySessionRestarted,
     detail: attempts.length
       ? `Could not turn display ${power} with available local commands.`
       : "No supported local display power command was found."
@@ -631,7 +637,8 @@ async function enforce() {
 
   if (active || override) {
     const display = setDisplayPower("on");
-    const playbackAction = display.ok || dryRun ? "start" : "restart";
+    const playbackAction =
+      (display.ok || dryRun) && !display.displaySessionRestarted ? "start" : "restart";
     runSystemctl(playbackAction);
     await writeStatus({
       action: dryRun ? `would-${playbackAction}` : playbackAction,
@@ -678,9 +685,11 @@ async function enforce() {
   }
 
   const display = setDisplayPower("on");
-  runSystemctl("start");
+  const playbackAction =
+    (display.ok || dryRun) && !display.displaySessionRestarted ? "start" : "restart";
+  runSystemctl(playbackAction);
   await writeStatus({
-    action: dryRun ? "would-start" : "start",
+    action: dryRun ? `would-${playbackAction}` : playbackAction,
     activeScheduleId: null,
     activeScheduleName: null,
     detail: `No schedule is assigned to this screen. Playback is running. ${display.detail}`,
@@ -691,7 +700,7 @@ async function enforce() {
   });
   log(
     `no schedule assigned to ${screenId}; ${display.detail} ${
-      dryRun ? "would start" : "started"
+      dryRun ? `would ${playbackAction}` : `${playbackAction}ed`
     } ${vlcService}`
   );
 }
