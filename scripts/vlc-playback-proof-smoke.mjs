@@ -93,6 +93,9 @@ setInterval(() => {}, 1000);
       fakeDbusSendPath,
       `#!/usr/bin/env node
 import fs from "node:fs";
+if (process.argv.some((arg) => arg.includes("org.mpris.MediaPlayer2.vlc.instance"))) {
+  process.exit(1);
+}
 const property = String(process.argv.at(-1) ?? "").replace(/^string:/, "");
 if (property === "Metadata") {
   console.log(${JSON.stringify(`method return

@@ -316,16 +316,28 @@ function mprisDestination(playerPid) {
     : "org.mpris.MediaPlayer2.vlc";
 }
 
-function mprisProperty(property, playerPid = null) {
-  return captureCommand("dbus-send", [
-    "--session",
-    `--dest=${mprisDestination(playerPid)}`,
-    "--print-reply",
-    "/org/mpris/MediaPlayer2",
-    "org.freedesktop.DBus.Properties.Get",
-    "string:org.mpris.MediaPlayer2.Player",
-    `string:${property}`
-  ], 2_000);
+async function mprisProperty(property, playerPid = null) {
+  const destinations = Number.isInteger(playerPid) && playerPid > 0
+    ? [mprisDestination(playerPid), mprisDestination(null)]
+    : [mprisDestination(null)];
+  let result = null;
+
+  for (const destination of destinations) {
+    result = await captureCommand("dbus-send", [
+      "--session",
+      `--dest=${destination}`,
+      "--print-reply",
+      "/org/mpris/MediaPlayer2",
+      "org.freedesktop.DBus.Properties.Get",
+      "string:org.mpris.MediaPlayer2.Player",
+      `string:${property}`
+    ], 2_000);
+    if (result.ok) {
+      return result;
+    }
+  }
+
+  return result;
 }
 
 async function continuousMprisSample(playlist, playerPid = null) {
