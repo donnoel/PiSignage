@@ -221,7 +221,14 @@ Recent changes incorporated into this baseline:
   - C1-C3 and C5 all reported `pisignage-vlc.service`, `pisignage-device-agent.service`, and `pisignage-schedule.timer` active; `HDMI-A-1` on; schedule state `on` with successful display control; player and heartbeat state `playing`; playback proof `advancing`; and live MPRIS position advancement
   - C1-C3 and C5 retained Node `v20.19.2`, VLC `3.0.23`, controller hash `14b916ef3435daa917d73e06f6318b4a465b7faf5bc07280aa74b30cf72d91db`, installer hash `3fc11238a4202f9c40f2570b108e829df130a6ccac68730059c9ab17722143e3`, VLC service hash `6ff1d651e227fd2a7ffd8e68a21de407da90a75cbce87a8670c5bae879ed784b`, and device-agent hash `b14d8b1c23fa1c031ee2033edccb15bb66f28162a347df1d464ea605e7867e91`
   - all four reachable appliances retained `playlist-main-playlist@4`, current asset `asset-2026-03-31-ad-dad-website-ad-signage-1080p`, one published asset, and matching asset fingerprint `c4b6cc2afc968b16bc46acd869efeaf91285d743509eae468dfdd18d68a3b7d8`; raw playlist hashes differ only by previously documented serialization/runtime metadata
-  - C4 remains offline and unverified; its last Tailscale observation was four days earlier
+  - C4 was still offline and unverified during the initial C1-C3 rollout; its later power-up and completed validation are recorded below
+- 2026-07-22 C4 power-up and Golden Master completion:
+  - the operator confirmed C4 had only been powered down; after power-up it returned on tailnet address `100.85.111.13` and studio LAN address `192.168.1.177` with its C4 hostname, device identity, screen assignment, schedule, playlist, and secrets intact
+  - the complete managed-file comparison found exactly two stale files: schedule recovery hash `22b33850869e5ba71cba4751450029d284c0c97880abbc63e498c23826b96352` and VLC controller hash `3b8c6ad2b85e776ede0d04fd1ac1a8db15af26d6341c6a2ad9737b5de87b00d8`; every other managed script, service, sudoers file, appliance asset, and compiled device-agent artifact already matched the Golden Master
+  - the staged replacements passed `node --check` and exact checksum validation before C4 repo and installed paths were updated to schedule hash `b115e646f938bbdc45d7f090b908b2cb27390c5ad69cfe2fdc97e1ebd3f600bb` and controller hash `14b916ef3435daa917d73e06f6318b4a465b7faf5bc07280aa74b30cf72d91db`
+  - C4's cached `Default Playlist` was already `playlist-main-playlist@4` with the expected single asset; the authorized VLC restart changed PID `1125` to `2284`, the operator confirmed visible video, direct MPRIS positions advanced, and player proof reached `playing` / `advancing` with no playback error
+  - C4 retained Node `v20.19.2`, VLC `3.0.23`, the matching one-file media cache, active display and schedule control, and active VLC, device-agent, schedule timer, and remote-desktop services
+  - C1-C5 now share the managed Golden Master hashes and current Default Playlist contract; future per-device differences remain limited to documented identity, network, screen, schedule, location, and operator-controlled audio fields
 - Network transport determinism:
   - device-agent heartbeat prefers `wlan0`, then `eth0`, then any other non-internal IPv4 address
   - Wi-Fi setup applies route metric `50` after successful Wi-Fi configuration so Wi-Fi is preferred when Ethernet and Wi-Fi are both active
@@ -337,9 +344,10 @@ Current player facts at capture:
 - mode: `vlc`
 - state: `playing`
 - playlist path: `/home/donnoel/.local/cache/pisignage/device-agent/playlists/current.json`
-- playlist ID: `playlist-community-vision`
-- playlist version: `32`
-- asset count in active playlist: `29`
+- playlist ID: `playlist-main-playlist`
+- playlist name: `Default Playlist`
+- playlist version: `4`
+- asset count in active playlist: `1`
 - display output: `HDMI-A-1`
 - display mode: `1920x1080@60.000000`
 - audio mode: `on`
@@ -350,11 +358,12 @@ Current player facts at capture:
   - `currentAssetPath`
   - `currentAssetDurationSeconds`
 
-At capture time, `player-status.json` reported:
+At the 2026-07-22 C1-C5 parity capture, `player-status.json` reported:
 
 - state: `playing`
-- current asset ID: `asset-2025-08-25-apple-eye-care-30-second-ad-signage-1080p`
-- current asset path and duration fields present; exact current asset rotates during normal playback
+- playback proof: `advancing`
+- current asset ID: `asset-2026-03-31-ad-dad-website-ad-signage-1080p`
+- current asset path and duration fields present
 
 Heartbeat path:
 
@@ -368,8 +377,8 @@ Heartbeat facts at capture:
 - hostname: `C5`
 - local IP: `192.168.100.27`
 - app version: `0.1.0`
-- current playlist ID: `playlist-community-vision`
-- playlist version: `32`
+- current playlist ID: `playlist-main-playlist`
+- playlist version: `4`
 - playback state: `playing`
 - network online: `true`
 - heartbeat interval: `10s`
@@ -383,7 +392,7 @@ Heartbeat facts at capture:
   - `scheduleDisplayControlOk`
   - `scheduleOverrideExpiresAt`
 
-At capture time, `heartbeat.json` reported current asset ID `asset-2025-08-25-apple-eye-care-30-second-ad-signage-1080p`, `scheduleState` `on`, and `scheduleDetail` `Schedule window is active. wlopm set HDMI-A-1 on.` This may differ briefly from `player-status.json` because the player can advance between reads.
+At the 2026-07-22 parity capture, `heartbeat.json` reported current asset ID `asset-2026-03-31-ad-dad-website-ad-signage-1080p`, `scheduleState` `on`, and `scheduleDetail` `Schedule window is active. wlopm set HDMI-A-1 on.`
 
 ## Schedule Evidence
 
@@ -457,9 +466,10 @@ Playlist cache directory:
 Playlist content:
 
 ```text
-playlist-community-vision@32
-29 assets
-19831a243ae3a3af78fd1edfa6fa37a31ce7e4d049f385f86258bbf263bcd67f  normalized playlist content fingerprint
+playlist-main-playlist@4
+1 asset
+a3ac93411848d0d20f125cf8b1d36f00e3f089bfb390c6ac46674187c01deb79  normalized playlist content fingerprint
+c4b6cc2afc968b16bc46acd869efeaf91285d743509eae468dfdd18d68a3b7d8  active asset hash-set fingerprint
 ```
 
 Raw playlist JSON file hashes can differ across appliances because device-local runtime metadata or serialization order is not a Golden Master contract. The normalized playlist identity, version, ordered asset identity, duration, checksum, and size are the parity surface.
@@ -470,12 +480,12 @@ Asset cache directory:
 /home/donnoel/.local/cache/pisignage/device-agent/assets
 ```
 
-Cached asset facts:
+Cached asset facts at the 2026-07-22 C1-C5 parity capture:
 
-- cached files: `29`
-- active playlist asset count: `29`
-- cache size: `286M`
-- active media fingerprint: `4afa76fdf340146f0ae18bb7151e9ea5989b8dbccfa45afe81c7a53b1f7a342d`
+- cached files: `1`
+- active playlist asset count: `1`
+- active asset checksum: `45b9a7e47a898172513f8e01b54a36eb7c25914d00099f35b99d9bf329978201`
+- active asset hash-set fingerprint: `c4b6cc2afc968b16bc46acd869efeaf91285d743509eae468dfdd18d68a3b7d8`
 - cache parity contract: the asset cache must contain only files referenced by the currently published playlist
 - sync behavior: matching cached files are skipped by size/checksum; missing or changed files are downloaded individually; unreferenced files are pruned after successful sync
 
@@ -528,7 +538,7 @@ Compiled device agent:
 b14d8b1c23fa1c031ee2033edccb15bb66f28162a347df1d464ea605e7867e91  device-agent/dist/index.js
 ```
 
-These hashes supersede the 2026-07-09 13:57 baseline hashes and include the current command-plane behavior, including schedule-aware heartbeat reporting, the remote Open store action, the remote Close store action that clears the temporary open override and resumes schedule enforcement, the remote screen snapshot prototype, remote Show desktop and Resume playback actions that pause and restore schedule control, Restart playback recovery that restores schedule control, Show desktop desktop-panel restoration and verification for noVNC administration, automatic playback resume if desktop-panel restoration fails, deterministic Wi-Fi-first heartbeat address selection, Tailscale tailnet address reporting, verified `wlopm` display power control for schedule close/open, no-schedule playback enforcement that actively powers on display and starts VLC, automatic HDMI/headless-output display session recovery with VLC restart after compositor replacement, MPRIS-backed current-video reporting for continuous VLC playback, playback advancement proof before reporting continuous VLC as `playing`, publish-now asset-boundary handoff for VLC playlist reloads, 10-second cloud heartbeat check-ins with up to 2 seconds of jitter through the dedicated device heartbeat API, Golden Master-managed remote access installation/enrollment support, and strict device-agent cache parity that prunes stale unreferenced media after successful release sync. The playback-proof controller and schedule recovery hashes are validated and installed on C1-C3 and C5. C4 remains offline and unverified.
+These hashes supersede the 2026-07-09 13:57 baseline hashes and include the current command-plane behavior, including schedule-aware heartbeat reporting, the remote Open store action, the remote Close store action that clears the temporary open override and resumes schedule enforcement, the remote screen snapshot prototype, remote Show desktop and Resume playback actions that pause and restore schedule control, Restart playback recovery that restores schedule control, Show desktop desktop-panel restoration and verification for noVNC administration, automatic playback resume if desktop-panel restoration fails, deterministic Wi-Fi-first heartbeat address selection, Tailscale tailnet address reporting, verified `wlopm` display power control for schedule close/open, no-schedule playback enforcement that actively powers on display and starts VLC, automatic HDMI/headless-output display session recovery with VLC restart after compositor replacement, MPRIS-backed current-video reporting for continuous VLC playback, playback advancement proof before reporting continuous VLC as `playing`, publish-now asset-boundary handoff for VLC playlist reloads, 10-second cloud heartbeat check-ins with up to 2 seconds of jitter through the dedicated device heartbeat API, Golden Master-managed remote access installation/enrollment support, and strict device-agent cache parity that prunes stale unreferenced media after successful release sync. The playback-proof controller and schedule recovery hashes are validated and installed on C1-C5.
 
 ## Required Baseline Update Workflow
 

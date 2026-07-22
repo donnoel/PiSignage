@@ -34,11 +34,12 @@ const requiredUserServices = [
 ];
 
 const expectedPlaylist = {
-  assetCount: 29,
-  fingerprint: "19831a243ae3a3af78fd1edfa6fa37a31ce7e4d049f385f86258bbf263bcd67f",
-  playlistId: "playlist-community-vision",
-  version: 32
+  assetCount: 1,
+  fingerprint: "a3ac93411848d0d20f125cf8b1d36f00e3f089bfb390c6ac46674187c01deb79",
+  playlistId: "playlist-main-playlist",
+  version: 4
 };
+const expectedAssetCountLabel = `${expectedPlaylist.assetCount} ${expectedPlaylist.assetCount === 1 ? "asset" : "assets"}`;
 
 const results = [];
 
@@ -190,10 +191,10 @@ async function checkRepoAndBaseline() {
 
   if (
     baseline.includes(`${expectedPlaylist.playlistId}@${expectedPlaylist.version}`) &&
-    baseline.includes(`${expectedPlaylist.assetCount} assets`) &&
+    baseline.includes(expectedAssetCountLabel) &&
     baseline.includes(expectedPlaylist.fingerprint)
   ) {
-    addResult("baseline playlist contract", "pass", `${expectedPlaylist.playlistId}@${expectedPlaylist.version}, ${expectedPlaylist.assetCount} assets, normalized fingerprint recorded.`);
+    addResult("baseline playlist contract", "pass", `${expectedPlaylist.playlistId}@${expectedPlaylist.version}, ${expectedAssetCountLabel}, normalized fingerprint recorded.`);
   } else {
     addResult("baseline playlist contract", "fail", "Baseline does not record the expected playlist identity/version/asset-count/fingerprint contract.");
   }
