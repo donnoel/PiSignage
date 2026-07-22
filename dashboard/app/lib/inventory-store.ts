@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   DeleteItemCommand,
   DynamoDBClient,
+  GetItemCommand,
   PutItemCommand,
   QueryCommand,
   TransactWriteItemsCommand
@@ -773,6 +774,46 @@ async function updateCloudInventory(config: { devicesTableName: string; screensT
 export async function readInventory(fallbackPlaylistId: string): Promise<InventoryStore> {
   const config = cloudInventoryConfig();
   return config ? readCloudInventory(config) : readNormalizedInventory(fallbackPlaylistId);
+}
+
+export async function readInventoryDeviceContext(
+  deviceId: string,
+  fallbackPlaylistId: string
+): Promise<InventoryPublishTarget> {
+  const config = cloudInventoryConfig();
+  if (!config) {
+    const inventory = await readNormalizedInventory(fallbackPlaylistId);
+    const device = inventory.devices.items.find((candidate) => candidate.id === deviceId) ?? null;
+    const screen = device
+      ? inventory.screens.items.find((candidate) =>
+          candidate.deviceId === device.id || candidate.id === device.screenId
+        ) ?? null
+      : null;
+    return { device, screen };
+  }
+
+  const deviceResult = await dynamoDb.send(new GetItemCommand({
+    Key: {
+      deviceId: stringAttribute(deviceId)
+    },
+    TableName: config.devicesTableName
+  }));
+  const device = deviceResult.Item ? deviceFromItem(deviceResult.Item) : null;
+  if (!device?.screenId) {
+    return { device, screen: null };
+  }
+
+  const screenResult = await dynamoDb.send(new GetItemCommand({
+    Key: {
+      screenId: stringAttribute(device.screenId)
+    },
+    TableName: config.screensTableName
+  }));
+
+  return {
+    device,
+    screen: screenResult.Item ? screenFromItem(screenResult.Item) : null
+  };
 }
 
 export async function ensureCloudCallHomeDevice(input: {

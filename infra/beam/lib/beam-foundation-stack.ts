@@ -205,6 +205,7 @@ export class BeamFoundationStack extends Stack {
       actions: [
         "dynamodb:DeleteItem",
         "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
         "dynamodb:PutItem",
         "dynamodb:Query",
         "dynamodb:TransactWriteItems"

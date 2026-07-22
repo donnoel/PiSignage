@@ -151,6 +151,19 @@ async function registerDeviceIfMissing(deviceId, receivedAt, heartbeat) {
   }
 }
 
+async function isFirstHeartbeat(deviceId) {
+  const result = await dynamoDb.send(new GetItemCommand({
+    ConsistentRead: true,
+    Key: {
+      deviceId: { S: deviceId }
+    },
+    ProjectionExpression: "deviceId",
+    TableName: heartbeatTableName
+  }));
+
+  return !result.Item;
+}
+
 function validateHeartbeat(body, pathDeviceId) {
   const deviceId = stringOrNull(body.deviceId);
   const timestamp = stringOrNull(body.timestamp);
@@ -354,11 +367,15 @@ export async function handler(event, context) {
     receivedAt: { S: receivedAt }
   };
 
+  const shouldRegisterDevice = await isFirstHeartbeat(body.deviceId);
+  const registeredDevice = shouldRegisterDevice
+    ? await registerDeviceIfMissing(body.deviceId, receivedAt, body)
+    : false;
+
   await dynamoDb.send(new PutItemCommand({
     TableName: heartbeatTableName,
     Item: item
   }));
-  const registeredDevice = await registerDeviceIfMissing(body.deviceId, receivedAt, body);
 
   return jsonResponse(202, {
     accepted: true,

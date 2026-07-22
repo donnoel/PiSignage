@@ -4,7 +4,7 @@ import {
   releaseTargetsDevice,
   type CloudReleaseRecord
 } from "../../../../../lib/cloud-release-store";
-import { commandForDevice, readInventory } from "../../../../../lib/inventory-store";
+import { commandForDevice, readInventoryDeviceContext } from "../../../../../lib/inventory-store";
 import { readScheduleStore, type ScheduleStore } from "../../../../../lib/local-data-store";
 import { publicUrlForRequest } from "../../../../../lib/public-origin";
 
@@ -58,18 +58,15 @@ export async function GET(request: Request, context: RouteContext) {
   const { searchParams } = new URL(request.url);
   const currentReleaseId = searchParams.get("currentReleaseId");
   const currentManifestChecksum = searchParams.get("manifestChecksum");
-  const [inventory, scheduleStore] = await Promise.all([
-    readInventory("playlist-main-playlist"),
+  const [inventoryContext, scheduleStore] = await Promise.all([
+    readInventoryDeviceContext(deviceId, "playlist-main-playlist"),
     readScheduleStore()
   ]);
-  const device = inventory.devices.items.find((candidate) => candidate.id === deviceId);
+  const { device, screen } = inventoryContext;
   if (!device) {
     return NextResponse.json({ error: "Device was not found." }, { status: 404 });
   }
 
-  const screen = inventory.screens.items.find((candidate) =>
-    candidate.deviceId === device.id || candidate.id === device.screenId
-  );
   const schedule = scheduleStoreForDevice(scheduleStore, screen?.id ?? device.screenId);
   const resetStatusUrl = publicUrlForRequest(
     request,

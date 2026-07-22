@@ -20,6 +20,7 @@
     "test:schedule": "node scripts/schedule-evaluation-smoke.mjs",
     "test:workspace-auth": "node scripts/workspace-auth-smoke.mjs",
     "test:cloud-inventory": "node scripts/cloud-inventory-assignment-smoke.mjs",
+    "test:aws-cost-hot-path": "node scripts/aws-cost-hot-path-smoke.mjs",
     "test:device-agent-cache": "npm --workspace device-agent run build && node scripts/device-agent-cache-sync-smoke.mjs",
     "test:release-state": "node scripts/release-state-smoke.mjs",
     "test:dashboard-css": "node scripts/dashboard-css-smoke.mjs",
