@@ -69,6 +69,10 @@ const statusHeartbeatIntervalMs = Number.parseInt(
   process.env.PISIGNAGE_STATUS_HEARTBEAT_INTERVAL_MS ?? "15000",
   10
 );
+const playbackProofMaxAgeMs = Number.parseInt(
+  process.env.PISIGNAGE_PLAYBACK_PROOF_MAX_AGE_MS ?? "30000",
+  10
+);
 const dryRun = process.argv.includes("--dry-run");
 const assetQuarantineWindowMs = Number.parseInt(
   process.env.PISIGNAGE_ASSET_QUARANTINE_WINDOW_MS ?? "300000",
@@ -279,6 +283,21 @@ function mprisMetadataUrl(output) {
   return match ? unescapeDbusString(match[1]) : null;
 }
 
+function mprisStringValue(output) {
+  const match = output.match(/variant\s+string\s+"((?:\\.|[^"\\])*)"/);
+  return match ? unescapeDbusString(match[1]) : null;
+}
+
+function mprisPositionMicros(output) {
+  const match = output.match(/variant\s+(?:u?int64)\s+(-?\d+)/);
+  if (!match) {
+    return null;
+  }
+
+  const value = Number.parseInt(match[1], 10);
+  return Number.isFinite(value) ? value : null;
+}
+
 function fileUrlPath(value) {
   if (!value?.startsWith("file://")) {
     return null;
@@ -291,31 +310,95 @@ function fileUrlPath(value) {
   }
 }
 
-async function currentMprisAsset(playlist) {
-  const metadata = await captureCommand("dbus-send", [
+function mprisProperty(property) {
+  return captureCommand("dbus-send", [
     "--session",
     "--dest=org.mpris.MediaPlayer2.vlc",
     "--print-reply",
     "/org/mpris/MediaPlayer2",
     "org.freedesktop.DBus.Properties.Get",
     "string:org.mpris.MediaPlayer2.Player",
-    "string:Metadata"
+    `string:${property}`
   ], 2_000);
-  if (!metadata.ok) {
-    return null;
-  }
-
-  const currentPath = fileUrlPath(mprisMetadataUrl(metadata.stdout));
-  if (!currentPath) {
-    return null;
-  }
-
-  const resolvedCurrentPath = path.resolve(currentPath);
-  return playlist.assets.find((asset) => path.resolve(asset.path) === resolvedCurrentPath) ?? null;
 }
 
-async function reportedContinuousAsset(playlist, loopStartedAtMs) {
-  return (await currentMprisAsset(playlist)) ?? currentContinuousAsset(playlist, loopStartedAtMs);
+async function continuousMprisSample(playlist) {
+  const [metadata, playbackStatus, position] = await Promise.all([
+    mprisProperty("Metadata"),
+    mprisProperty("PlaybackStatus"),
+    mprisProperty("Position")
+  ]);
+
+  const currentPath = metadata.ok ? fileUrlPath(mprisMetadataUrl(metadata.stdout)) : null;
+  const resolvedCurrentPath = currentPath ? path.resolve(currentPath) : null;
+  const asset = resolvedCurrentPath
+    ? playlist.assets.find((candidate) => path.resolve(candidate.path) === resolvedCurrentPath) ?? null
+    : null;
+
+  return {
+    asset,
+    observedAtMs: Date.now(),
+    playbackStatus: playbackStatus.ok ? mprisStringValue(playbackStatus.stdout) : null,
+    positionMicros: position.ok ? mprisPositionMicros(position.stdout) : null
+  };
+}
+
+function continuousPlaybackProof(tracker, sample) {
+  const validSample =
+    sample.playbackStatus === "Playing" &&
+    Number.isFinite(sample.positionMicros);
+
+  if (validSample && tracker.lastSample) {
+    const assetChanged = Boolean(
+      sample.asset?.assetId &&
+      tracker.lastSample.assetId &&
+      sample.asset.assetId !== tracker.lastSample.assetId
+    );
+    const positionChanged = Math.abs(sample.positionMicros - tracker.lastSample.positionMicros) >= 100_000;
+    if (assetChanged || positionChanged) {
+      tracker.lastAdvancementAtMs = sample.observedAtMs;
+    }
+  }
+
+  if (validSample) {
+    tracker.lastSample = {
+      assetId: sample.asset?.assetId ?? null,
+      positionMicros: sample.positionMicros
+    };
+  }
+
+  const proofAgeMs = tracker.lastAdvancementAtMs === null
+    ? null
+    : sample.observedAtMs - tracker.lastAdvancementAtMs;
+  const proofFresh =
+    validSample &&
+    proofAgeMs !== null &&
+    proofAgeMs < Math.max(playbackProofMaxAgeMs, 100);
+  const playbackProof = proofFresh
+    ? "advancing"
+    : sample.playbackStatus === null || sample.positionMicros === null
+      ? "unavailable"
+      : sample.playbackStatus !== "Playing"
+        ? "not-playing"
+        : tracker.lastAdvancementAtMs === null
+          ? "waiting"
+          : "stalled";
+
+  return {
+    playbackProof,
+    playbackProofAt: tracker.lastAdvancementAtMs === null
+      ? null
+      : new Date(tracker.lastAdvancementAtMs).toISOString(),
+    playbackProofObservedAt: new Date(sample.observedAtMs).toISOString(),
+    mprisPlaybackStatus: sample.playbackStatus,
+    mprisPositionMicros: sample.positionMicros,
+    state: proofFresh ? "playing" : "checking"
+  };
+}
+
+function resetContinuousPlaybackProof(tracker) {
+  tracker.lastAdvancementAtMs = null;
+  tracker.lastSample = null;
 }
 
 function millisecondsUntilPlaylistBoundary(playlist, loopStartedAtMs) {
@@ -1268,14 +1351,21 @@ async function loadPendingPlaylist(currentPlaylist) {
   }
 }
 
-async function writeContinuousPlaybackStatus(playlist, loopStartedAtMs, extra = {}) {
-  const currentAsset = await reportedContinuousAsset(playlist, loopStartedAtMs);
-  await writePlaybackStatus(playlist, "playing", {
+async function writeContinuousPlaybackStatus(playlist, loopStartedAtMs, proofTracker, extra = {}) {
+  const mprisSample = await continuousMprisSample(playlist);
+  const currentAsset = mprisSample.asset ?? currentContinuousAsset(playlist, loopStartedAtMs);
+  const proof = continuousPlaybackProof(proofTracker, mprisSample);
+  await writePlaybackStatus(playlist, proof.state, {
     currentAssetId: currentAsset?.assetId ?? null,
     currentAssetPath: currentAsset?.path ?? null,
     currentAssetDurationSeconds: currentAsset?.durationSeconds ?? null,
     readyScreen: null,
     lastError: null,
+    playbackProof: proof.playbackProof,
+    playbackProofAt: proof.playbackProofAt,
+    playbackProofObservedAt: proof.playbackProofObservedAt,
+    mprisPlaybackStatus: proof.mprisPlaybackStatus,
+    mprisPositionMicros: proof.mprisPositionMicros,
     ...extra
   });
 }
@@ -1448,11 +1538,15 @@ async function playPlaylistContinuously(playlist) {
   let statusHeartbeatTimer;
   let activePlaylist = playlist;
   let loopStartedAtMs = Date.now();
+  const playbackProofTracker = {
+    lastAdvancementAtMs: null,
+    lastSample: null
+  };
   let pendingPlaylistReload = false;
   let pendingHandoffMode = "playlist-boundary";
   let continuousRestartAttempt = 0;
   let continuousRetryStatus = null;
-  await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, { pendingPlaylistReload });
+  await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, playbackProofTracker, { pendingPlaylistReload });
   let player = startPlaylistPlayer(activePlaylist);
 
   if (statusHeartbeatIntervalMs > 0) {
@@ -1463,7 +1557,7 @@ async function playPlaylistContinuously(playlist) {
             pendingPlaylistHandoffMode: pendingHandoffMode,
             pendingPlaylistReload
           })
-        : writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, {
+        : writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, playbackProofTracker, {
             pendingPlaylistHandoffMode: pendingHandoffMode,
             pendingPlaylistReload
           });
@@ -1496,7 +1590,7 @@ async function playPlaylistContinuously(playlist) {
               pendingHandoffMode === "asset-boundary" ? "asset" : "playlist"
             } boundary`
           );
-          await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, {
+          await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, playbackProofTracker, {
             nextPlaylistReloadAt: new Date(Date.now() + nextReloadInMs).toISOString(),
             pendingPlaylistHandoffMode: pendingHandoffMode,
             pendingPlaylistReload
@@ -1504,7 +1598,7 @@ async function playPlaylistContinuously(playlist) {
         } else if (pending.state === "unchanged") {
           pendingPlaylistReload = false;
           pendingHandoffMode = "playlist-boundary";
-          await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, { pendingPlaylistReload });
+          await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, playbackProofTracker, { pendingPlaylistReload });
         }
         continue;
       }
@@ -1522,11 +1616,12 @@ async function playPlaylistContinuously(playlist) {
           continuousRestartAttempt = 0;
           continuousRetryStatus = null;
           loopStartedAtMs = Date.now();
+          resetContinuousPlaybackProof(playbackProofTracker);
           log(
             `handoff at ${completedHandoffMode === "asset-boundary" ? "asset" : "playlist"} boundary to ${activePlaylist.playlistId} version ${activePlaylist.version}`
           );
           player = startPlaylistPlayer(activePlaylist);
-          await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, {
+          await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, playbackProofTracker, {
             handoffCompletedAt: new Date().toISOString(),
             pendingPlaylistReload
           });
@@ -1541,7 +1636,7 @@ async function playPlaylistContinuously(playlist) {
         if (pending.state === "unchanged") {
           pendingPlaylistReload = false;
           pendingHandoffMode = "playlist-boundary";
-          await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, { pendingPlaylistReload });
+          await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, playbackProofTracker, { pendingPlaylistReload });
         }
 
         continue;
@@ -1601,9 +1696,10 @@ async function playPlaylistContinuously(playlist) {
         }
 
         loopStartedAtMs = Date.now();
+        resetContinuousPlaybackProof(playbackProofTracker);
         player = startPlaylistPlayer(activePlaylist);
         continuousRetryStatus = null;
-        await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, {
+        await writeContinuousPlaybackStatus(activePlaylist, loopStartedAtMs, playbackProofTracker, {
           continuousRestartAttempt,
           recoveredFromUnexpectedExitAt: new Date().toISOString(),
           pendingPlaylistHandoffMode: pendingHandoffMode,

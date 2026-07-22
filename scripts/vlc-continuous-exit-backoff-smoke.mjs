@@ -144,8 +144,8 @@ setInterval(() => {}, 1000);
     );
 
     const status = await readStatus(statusPath);
-    if (status?.state !== "playing" || status?.playlistId !== "playlist-continuous-exit-smoke") {
-      throw new Error(`Expected playing status after backoff restart: ${JSON.stringify(status)}`);
+    if (status?.state !== "checking" || status?.playlistId !== "playlist-continuous-exit-smoke") {
+      throw new Error(`Expected playback confirmation to reset after backoff restart: ${JSON.stringify(status)}`);
     }
 
     child.kill("SIGTERM");
